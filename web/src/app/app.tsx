@@ -15,6 +15,7 @@ import { AuthCallback } from '@/pages/AuthCallback';
 import { Projects } from '@/pages/Projects';
 import { NewProject } from '@/pages/NewProject';
 import { ProjectDetail } from '@/pages/ProjectDetail';
+import { DeploymentDetail } from '@/pages/DeploymentDetail';
 import { AppLayout } from '@/components/layout/AppLayout';
 
 const queryClient = new QueryClient({
@@ -86,10 +87,22 @@ const projectDetailRoute = createRoute({
   component: ProjectDetail,
 });
 
+// Deployment detail
+const deploymentDetailRoute = createRoute({
+  getParentRoute: () => protectedRoute,
+  path: '/projects/$id/deployments/$did',
+  component: DeploymentDetail,
+});
+
 const routeTree = rootRoute.addChildren([
   loginRoute,
   authCallbackRoute,
-  protectedRoute.addChildren([indexRoute, newProjectRoute, projectDetailRoute]),
+  protectedRoute.addChildren([
+    indexRoute,
+    newProjectRoute,
+    projectDetailRoute,
+    deploymentDetailRoute,
+  ]),
 ]);
 
 const router = createRouter({ routeTree });

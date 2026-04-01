@@ -114,9 +114,13 @@ class ApiClient {
     return this.request(`/projects/${id}`, { method: 'DELETE' });
   }
 
-  // Deployments (Phase 5)
+  // Deployments
   async listDeployments(projectId: string): Promise<Deployment[]> {
     return this.request(`/projects/${projectId}/deployments`);
+  }
+
+  async getDeployment(projectId: string, deploymentId: string): Promise<Deployment> {
+    return this.request(`/projects/${projectId}/deployments/${deploymentId}`);
   }
 
   async triggerDeployment(

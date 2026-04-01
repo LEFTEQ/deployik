@@ -229,28 +229,30 @@ function DeploymentsTab({ projectId }: { projectId: string }) {
       ) : (
         <div className="space-y-2">
           {deployments.map((d) => (
-            <Card key={d.id} className="transition-colors hover:border-primary/30">
-              <CardContent className="flex items-center justify-between p-4">
-                <div className="flex items-center gap-3">
-                  <div className={`h-2.5 w-2.5 rounded-full ${statusColor[d.status] ?? 'bg-muted-foreground'}`} />
-                  <div>
-                    <p className="text-sm font-medium">
-                      {d.commit_sha ? d.commit_sha.slice(0, 7) : 'pending'}{' '}
-                      <span className="font-normal text-muted-foreground">
-                        {d.commit_message || d.status}
-                      </span>
-                    </p>
-                    <p className="text-xs text-muted-foreground">
-                      {d.environment} &middot; {d.branch} &middot;{' '}
-                      {d.build_duration > 0 ? `${d.build_duration}s` : d.status}
-                    </p>
+            <Link key={d.id} to="/projects/$id/deployments/$did" params={{ id: projectId, did: d.id }}>
+              <Card className="transition-colors hover:border-primary/50 cursor-pointer">
+                <CardContent className="flex items-center justify-between p-4">
+                  <div className="flex items-center gap-3">
+                    <div className={`h-2.5 w-2.5 rounded-full ${statusColor[d.status] ?? 'bg-muted-foreground'} ${d.status === 'building' || d.status === 'deploying' ? 'animate-pulse' : ''}`} />
+                    <div>
+                      <p className="text-sm font-medium">
+                        {d.commit_sha ? d.commit_sha.slice(0, 7) : 'pending'}{' '}
+                        <span className="font-normal text-muted-foreground">
+                          {d.commit_message || d.status}
+                        </span>
+                      </p>
+                      <p className="text-xs text-muted-foreground">
+                        {d.environment} &middot; {d.branch} &middot;{' '}
+                        {d.build_duration > 0 ? `${d.build_duration}s` : d.status}
+                      </p>
+                    </div>
                   </div>
-                </div>
-                <Badge variant={d.status === 'live' ? 'default' : d.status === 'failed' ? 'destructive' : 'secondary'}>
-                  {d.status}
-                </Badge>
-              </CardContent>
-            </Card>
+                  <Badge variant={d.status === 'live' ? 'default' : d.status === 'failed' ? 'destructive' : 'secondary'}>
+                    {d.status}
+                  </Badge>
+                </CardContent>
+              </Card>
+            </Link>
           ))}
         </div>
       )}
