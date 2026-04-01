@@ -51,6 +51,7 @@ make docker-build
 - **API routes:** `/api/*` via chi router, `/ws/*` for WebSocket
 - **Auth:** GitHub OAuth → JWT (access + refresh tokens)
 - **Deploy flow:** Manual trigger → clone → docker build → blue-green swap → nginx reload
+- **Next.js patching:** `internal/build/nextjs.go` injects `output: 'standalone'` into plain, typed, and wrapped `next.config.*` variants before Docker builds so `.next/standalone` exists for the runtime image
 - **Env vars:** AES-256-GCM encrypted at rest, masked in API responses
 - **Frontend state:** Zustand for auth, TanStack Query for server state
 

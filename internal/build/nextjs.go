@@ -4,8 +4,20 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 )
+
+var standaloneOutputPattern = regexp.MustCompile(`(?m)\boutput\s*:\s*['"]standalone['"]`)
+
+var nextConfigObjectPatterns = []*regexp.Regexp{
+	regexp.MustCompile(`(?m)\b(?:const|let|var)\s+nextConfig\s*(?::[^=\n]+)?=\s*{`),
+	regexp.MustCompile(`(?m)\b(?:const|let|var)\s+nextConfig\s*(?::[^=\n]+)?=\s*(?:[A-Za-z_$][\w$.]*\(\s*)+{`),
+	regexp.MustCompile(`(?m)module\.exports\s*=\s*{`),
+	regexp.MustCompile(`(?m)module\.exports\s*=\s*(?:[A-Za-z_$][\w$.]*\(\s*)+{`),
+	regexp.MustCompile(`(?m)export\s+default\s*{`),
+	regexp.MustCompile(`(?m)export\s+default\s+(?:[A-Za-z_$][\w$.]*\(\s*)+{`),
+}
 
 // PatchNextConfig ensures next.config has output: 'standalone' set.
 // This is required for the standalone Dockerfile to work.
@@ -49,13 +61,16 @@ export default nextConfig;
 	content := string(data)
 
 	// Already has standalone output
-	if strings.Contains(content, "output") && strings.Contains(content, "standalone") {
+	if standaloneOutputPattern.MatchString(content) {
 		return nil
 	}
 
 	// Inject output: 'standalone' into the config object
-	// Strategy: find the config object pattern and add the property
-	patched := injectStandaloneOutput(content)
+	// Strategy: find the config object pattern and add the property.
+	patched, ok := injectStandaloneOutput(content)
+	if !ok {
+		return fmt.Errorf("could not locate Next.js config object in %s", filepath.Base(configPath))
+	}
 
 	if err := os.WriteFile(configPath, []byte(patched), 0644); err != nil {
 		return fmt.Errorf("write patched next.config: %w", err)
@@ -64,43 +79,22 @@ export default nextConfig;
 	return nil
 }
 
-func injectStandaloneOutput(content string) string {
-	// Try common patterns to inject output: 'standalone'
-
-	// Pattern 1: nextConfig = { ... }
-	// Find the opening brace of the config object
-	for _, pattern := range []string{
-		"nextConfig = {",
-		"nextConfig: {",
-		"module.exports = {",
-		"export default {",
-	} {
-		if idx := strings.Index(content, pattern); idx != -1 {
-			braceIdx := idx + strings.Index(content[idx:], "{")
-			return content[:braceIdx+1] + "\n  output: 'standalone'," + content[braceIdx+1:]
+func injectStandaloneOutput(content string) (string, bool) {
+	for _, pattern := range nextConfigObjectPatterns {
+		loc := pattern.FindStringIndex(content)
+		if loc == nil {
+			continue
 		}
-	}
 
-	// Pattern 2: defineConfig or function call that returns config
-	// Look for the first { after common Next.js config wrappers
-	for _, pattern := range []string{
-		"defineNextConfig({",
-		"withNextIntl({",
-		"withMDX({",
-		"createNextConfig({",
-	} {
-		if idx := strings.Index(content, pattern); idx != -1 {
-			braceIdx := idx + len(pattern) - 1
-			return content[:braceIdx+1] + "\n  output: 'standalone'," + content[braceIdx+1:]
+		match := content[loc[0]:loc[1]]
+		braceIdx := strings.LastIndex(match, "{")
+		if braceIdx == -1 {
+			continue
 		}
+
+		insertAt := loc[0] + braceIdx + 1
+		return content[:insertAt] + "\n  output: 'standalone'," + content[insertAt:], true
 	}
 
-	// Fallback: just append an override at the end
-	// This works for .mjs/.ts files using export default
-	if strings.Contains(content, "export default") {
-		// Wrap the existing export in a standalone override
-		return content + "\n// Injected by Deployik for standalone Docker deployment\n"
-	}
-
-	return content
+	return content, false
 }
