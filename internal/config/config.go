@@ -16,6 +16,10 @@ type Config struct {
 	AllowedGithubUsers []string
 	DataDir            string
 	NginxConfDir       string
+	ProxyContainerName string
+	ProxyCertsDir      string
+	ProxyHTMLDir       string
+	SSLEmail           string
 	BuildDir           string
 	VPSHost            string
 }
@@ -30,6 +34,10 @@ func Load() (*Config, error) {
 		GithubClientSecret: os.Getenv("GITHUB_CLIENT_SECRET"),
 		DataDir:            getEnv("DATA_DIR", "data"),
 		NginxConfDir:       getEnv("NGINX_CONF_DIR", "/opt/nginx-proxy/conf.d"),
+		ProxyContainerName: getEnv("PROXY_CONTAINER_NAME", "nginx-proxy"),
+		ProxyCertsDir:      getEnv("PROXY_CERTS_DIR", "/opt/nginx-proxy/certs"),
+		ProxyHTMLDir:       getEnv("PROXY_HTML_DIR", "/opt/nginx-proxy/html"),
+		SSLEmail:           getEnv("SSL_EMAIL", "admin@example.com"),
 		BuildDir:           getEnv("BUILD_DIR", "/tmp/deployik-builds"),
 		VPSHost:            getEnv("VPS_HOST", "203.0.113.10"),
 	}

@@ -12,9 +12,8 @@ import (
 )
 
 type DomainHandler struct {
-	DB           *db.DB
-	NginxConfDir string
-	VPSHost      string
+	DB      *db.DB
+	Manager *domain.Manager
 }
 
 type addDomainRequest struct {
@@ -80,18 +79,6 @@ func (h *DomainHandler) Add(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Generate nginx config
-	containerName := "deployik-" + project.Name + "-" + env
-	_, err = domain.GenerateNginxConfig(h.NginxConfDir, domain.NginxConfig{
-		ProjectName:   project.Name,
-		Domain:        req.Domain,
-		SSLDomain:     req.Domain,
-		ContainerName: containerName,
-	})
-	if err != nil {
-		log.Printf("Warning: nginx config generation failed for %s: %v", req.Domain, err)
-	}
-
 	writeJSON(w, http.StatusCreated, d)
 }
 
@@ -114,9 +101,12 @@ func (h *DomainHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Remove nginx config
-	if domainName != "" {
-		domain.RemoveNginxConfig(h.NginxConfDir, domainName)
-		domain.ReloadNginx()
+	if domainName != "" && h.Manager != nil {
+		if err := h.Manager.RemoveDomain(domainName); err != nil {
+			log.Printf("Warning: failed to remove nginx config for %s: %v", domainName, err)
+		} else if err := h.Manager.ReloadNginx(); err != nil {
+			log.Printf("Warning: failed to reload nginx after removing %s: %v", domainName, err)
+		}
 	}
 
 	writeJSON(w, http.StatusOK, map[string]string{"status": "deleted"})
@@ -125,6 +115,12 @@ func (h *DomainHandler) Delete(w http.ResponseWriter, r *http.Request) {
 func (h *DomainHandler) Verify(w http.ResponseWriter, r *http.Request) {
 	domainID := chi.URLParam(r, "did")
 	projectID := chi.URLParam(r, "id")
+
+	project, err := h.DB.GetProject(projectID)
+	if err != nil || project == nil {
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": "project not found"})
+		return
+	}
 
 	// Find the domain
 	domains, _ := h.DB.ListDomains(projectID)
@@ -142,7 +138,7 @@ func (h *DomainHandler) Verify(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Verify DNS
-	verified, err := domain.VerifyDNS(target.DomainName, h.VPSHost)
+	verified, err := h.Manager.VerifyDomainDNS(target.DomainName)
 	if err != nil {
 		log.Printf("DNS verification error for %s: %v", target.DomainName, err)
 	}
@@ -150,15 +146,19 @@ func (h *DomainHandler) Verify(w http.ResponseWriter, r *http.Request) {
 	h.DB.UpdateDomainDNS(domainID, verified)
 
 	if !verified {
+		h.DB.UpdateDomainSSL(domainID, "pending", target.SSLExpiresAt)
 		writeJSON(w, http.StatusOK, map[string]interface{}{
 			"dns_verified": false,
-			"message":      "DNS A record does not point to " + h.VPSHost,
+			"message":      "DNS A record does not point to " + h.Manager.VPSHost,
 		})
 		return
 	}
 
-	// DNS verified — try to issue SSL cert
-	err = domain.RequestSSLCert(target.DomainName, "admin@example.com")
+	err = h.Manager.ProvisionDomain(domain.ProvisionConfig{
+		ProjectName:   project.Name,
+		Domain:        target.DomainName,
+		ContainerName: "deployik-" + project.Name + "-" + target.Environment,
+	}, false)
 	if err != nil {
 		log.Printf("SSL cert request failed for %s: %v", target.DomainName, err)
 		h.DB.UpdateDomainSSL(domainID, "error", target.SSLExpiresAt)
@@ -171,9 +171,6 @@ func (h *DomainHandler) Verify(w http.ResponseWriter, r *http.Request) {
 	}
 
 	h.DB.UpdateDomainSSL(domainID, "active", target.SSLExpiresAt)
-
-	// Reload nginx to pick up the new cert
-	domain.ReloadNginx()
 
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"dns_verified": true,

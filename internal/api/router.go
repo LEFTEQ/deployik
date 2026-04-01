@@ -11,22 +11,22 @@ import (
 	"github.com/LEFTEQ/lovinka-deployik/internal/build"
 	"github.com/LEFTEQ/lovinka-deployik/internal/crypto"
 	"github.com/LEFTEQ/lovinka-deployik/internal/db"
+	"github.com/LEFTEQ/lovinka-deployik/internal/domain"
 	"github.com/LEFTEQ/lovinka-deployik/internal/github"
 	"github.com/LEFTEQ/lovinka-deployik/internal/ws"
 )
 
 // RouterConfig holds all dependencies needed by the router.
 type RouterConfig struct {
-	DB           *db.DB
-	JWTSecret    string
-	Encryptor    *crypto.Encryptor
-	OAuthConfig  *github.OAuthConfig
-	AllowedUsers []string
-	FrontendURL  string
-	Pipeline     *build.Pipeline
-	NginxConfDir string
-	VPSHost      string
-	WSHub        *ws.Hub
+	DB            *db.DB
+	JWTSecret     string
+	Encryptor     *crypto.Encryptor
+	OAuthConfig   *github.OAuthConfig
+	AllowedUsers  []string
+	FrontendURL   string
+	Pipeline      *build.Pipeline
+	DomainManager *domain.Manager
+	WSHub         *ws.Hub
 }
 
 func NewRouter(cfg *RouterConfig) *chi.Mux {
@@ -39,10 +39,10 @@ func NewRouter(cfg *RouterConfig) *chi.Mux {
 	r.Use(middleware.CORS)
 
 	authHandler := &handlers.AuthHandler{
-		DB:          cfg.DB,
-		OAuthConfig: cfg.OAuthConfig,
-		JWTSecret:   cfg.JWTSecret,
-		Encryptor:   cfg.Encryptor,
+		DB:           cfg.DB,
+		OAuthConfig:  cfg.OAuthConfig,
+		JWTSecret:    cfg.JWTSecret,
+		Encryptor:    cfg.Encryptor,
 		AllowedUsers: cfg.AllowedUsers,
 		FrontendURL:  cfg.FrontendURL,
 	}
@@ -84,7 +84,7 @@ func NewRouter(cfg *RouterConfig) *chi.Mux {
 			r.Get("/deployments/{did}/logs", deployHandler.GetLogs)
 
 			// Domains
-			domainHandler := &handlers.DomainHandler{DB: cfg.DB, NginxConfDir: cfg.NginxConfDir, VPSHost: cfg.VPSHost}
+			domainHandler := &handlers.DomainHandler{DB: cfg.DB, Manager: cfg.DomainManager}
 			r.Get("/projects/{id}/domains", domainHandler.List)
 			r.Post("/projects/{id}/domains", domainHandler.Add)
 			r.Delete("/projects/{id}/domains/{did}", domainHandler.Delete)

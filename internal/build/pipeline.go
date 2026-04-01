@@ -10,18 +10,20 @@ import (
 
 	"github.com/LEFTEQ/lovinka-deployik/internal/crypto"
 	"github.com/LEFTEQ/lovinka-deployik/internal/db"
+	"github.com/LEFTEQ/lovinka-deployik/internal/domain"
 	"github.com/LEFTEQ/lovinka-deployik/internal/ws"
 )
 
 // Pipeline orchestrates the full deploy flow.
 type Pipeline struct {
-	DB         *db.DB
-	Docker     *DockerClient
-	Encryptor  *crypto.Encryptor
-	Semaphore  *Semaphore
-	BuildDir     string
-	ProxyNetwork string // Docker network name (e.g., "proxy")
-	Hub          *ws.Hub
+	DB            *db.DB
+	Docker        *DockerClient
+	Encryptor     *crypto.Encryptor
+	Semaphore     *Semaphore
+	DomainManager *domain.Manager
+	BuildDir      string
+	ProxyNetwork  string // Docker network name (e.g., "proxy")
+	Hub           *ws.Hub
 }
 
 // LogCallback is called for each build log line.
@@ -177,6 +179,15 @@ func (p *Pipeline) Deploy(ctx context.Context, project *db.Project, deployment *
 	}
 	emit("Health check passed")
 
+	if p.DomainManager != nil {
+		emit("Ensuring environment domains...")
+		if err := p.ensureEnvironmentDomains(project, deployment, containerName, emit); err != nil {
+			p.Docker.StopContainer(ctx, newContainerID)
+			fail(err, "Domain provisioning failed")
+			return
+		}
+	}
+
 	// Step 8: Swap containers (blue-green)
 	if oldExists {
 		emit("Stopping old container...")
@@ -198,4 +209,56 @@ func (p *Pipeline) Deploy(ctx context.Context, project *db.Project, deployment *
 	p.DB.UpdateDeploymentStatus(deployment.ID, "live", "")
 
 	emit(fmt.Sprintf("Deployment live! (%ds)", duration))
+}
+
+func (p *Pipeline) ensureEnvironmentDomains(project *db.Project, deployment *db.Deployment, containerName string, emit func(string)) error {
+	domains, err := p.DB.ListDomains(project.ID)
+	if err != nil {
+		return fmt.Errorf("list domains: %w", err)
+	}
+
+	found := false
+	for _, d := range domains {
+		if d.Environment != deployment.Environment {
+			continue
+		}
+
+		found = true
+		if !d.IsAuto && !d.DNSVerified {
+			emit(fmt.Sprintf("Skipping domain %s until DNS is verified", d.DomainName))
+			continue
+		}
+
+		verified, err := p.DomainManager.VerifyDomainDNS(d.DomainName)
+		if err != nil {
+			_ = p.DB.UpdateDomainDNS(d.ID, false)
+			_ = p.DB.UpdateDomainSSL(d.ID, "error", d.SSLExpiresAt)
+			return fmt.Errorf("%s: verify dns: %w", d.DomainName, err)
+		}
+		_ = p.DB.UpdateDomainDNS(d.ID, verified)
+		if !verified {
+			_ = p.DB.UpdateDomainSSL(d.ID, "pending", d.SSLExpiresAt)
+			return fmt.Errorf("%s: %w", d.DomainName, domain.ErrDNSNotVerified)
+		}
+
+		emit(fmt.Sprintf("Provisioning domain %s...", d.DomainName))
+		err = p.DomainManager.ProvisionDomain(domain.ProvisionConfig{
+			ProjectName:   project.Name,
+			Domain:        d.DomainName,
+			ContainerName: containerName,
+		}, false)
+		if err != nil {
+			_ = p.DB.UpdateDomainSSL(d.ID, "error", d.SSLExpiresAt)
+			return fmt.Errorf("%s: %w", d.DomainName, err)
+		}
+
+		_ = p.DB.UpdateDomainSSL(d.ID, "active", d.SSLExpiresAt)
+		emit(fmt.Sprintf("Domain %s ready", d.DomainName))
+	}
+
+	if !found {
+		emit("No domains configured for this environment")
+	}
+
+	return nil
 }

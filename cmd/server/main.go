@@ -13,6 +13,7 @@ import (
 	"github.com/LEFTEQ/lovinka-deployik/internal/config"
 	"github.com/LEFTEQ/lovinka-deployik/internal/crypto"
 	"github.com/LEFTEQ/lovinka-deployik/internal/db"
+	"github.com/LEFTEQ/lovinka-deployik/internal/domain"
 	"github.com/LEFTEQ/lovinka-deployik/internal/github"
 	"github.com/LEFTEQ/lovinka-deployik/internal/ws"
 )
@@ -26,10 +27,10 @@ func main() {
 		if os.Getenv("DEV_MODE") == "true" {
 			log.Printf("Warning: config error (dev mode): %v", err)
 			cfg = &config.Config{
-				Port:           "8080",
-				DatabasePath:   "data/deployik.db",
-				JWTSecret:      "dev-jwt-secret",
-				EncryptionKey:  "dev-encryption-key",
+				Port:          "8080",
+				DatabasePath:  "data/deployik.db",
+				JWTSecret:     "dev-jwt-secret",
+				EncryptionKey: "dev-encryption-key",
 			}
 		} else {
 			log.Fatalf("Failed to load config: %v", err)
@@ -70,16 +71,25 @@ func main() {
 	}
 
 	wsHub := ws.NewHub()
+	domainManager := domain.NewManager(domain.ManagerConfig{
+		NginxConfDir:   cfg.NginxConfDir,
+		ProxyContainer: cfg.ProxyContainerName,
+		ProxyCertsDir:  cfg.ProxyCertsDir,
+		ProxyHTMLDir:   cfg.ProxyHTMLDir,
+		VPSHost:        cfg.VPSHost,
+		SSLEmail:       cfg.SSLEmail,
+	})
 
 	maxBuilds := 1
 	pipeline := &build.Pipeline{
-		DB:           database,
-		Docker:       dockerClient,
-		Encryptor:    encryptor,
-		Semaphore:    build.NewSemaphore(maxBuilds),
-		BuildDir:     cfg.BuildDir,
-		ProxyNetwork: "proxy",
-		Hub:          wsHub,
+		DB:            database,
+		Docker:        dockerClient,
+		Encryptor:     encryptor,
+		Semaphore:     build.NewSemaphore(maxBuilds),
+		DomainManager: domainManager,
+		BuildDir:      cfg.BuildDir,
+		ProxyNetwork:  "proxy",
+		Hub:           wsHub,
 	}
 
 	// Configure OAuth
@@ -92,16 +102,15 @@ func main() {
 
 	// Create router with all dependencies
 	router := api.NewRouter(&api.RouterConfig{
-		DB:           database,
-		JWTSecret:    cfg.JWTSecret,
-		Encryptor:    encryptor,
-		OAuthConfig:  oauthConfig,
-		AllowedUsers: cfg.AllowedGithubUsers,
-		FrontendURL:  frontendURL,
-		Pipeline:     pipeline,
-		NginxConfDir: cfg.NginxConfDir,
-		VPSHost:      cfg.VPSHost,
-		WSHub:        wsHub,
+		DB:            database,
+		JWTSecret:     cfg.JWTSecret,
+		Encryptor:     encryptor,
+		OAuthConfig:   oauthConfig,
+		AllowedUsers:  cfg.AllowedGithubUsers,
+		FrontendURL:   frontendURL,
+		Pipeline:      pipeline,
+		DomainManager: domainManager,
+		WSHub:         wsHub,
 	})
 
 	addr := fmt.Sprintf(":%s", cfg.Port)
