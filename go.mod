@@ -1,6 +1,6 @@
 module github.com/LEFTEQ/lovinka-deployik
 
-go 1.26.1
+go 1.25.0
 
 require (
 	github.com/docker/docker v27.5.1+incompatible
