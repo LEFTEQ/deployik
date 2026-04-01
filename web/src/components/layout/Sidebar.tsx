@@ -16,19 +16,22 @@ export function Sidebar() {
   const matchRoute = useMatchRoute();
 
   return (
-    <aside className="flex h-screen w-60 flex-col border-r bg-card">
+    <aside className="hidden h-screen w-72 flex-col border-r border-white/6 bg-sidebar-background/80 backdrop-blur-2xl md:flex">
       {/* Logo */}
-      <div className="flex h-14 items-center gap-2 px-4">
-        <div className="flex h-8 w-8 items-center justify-center rounded-md bg-primary text-primary-foreground text-sm font-bold">
+      <div className="flex h-16 items-center gap-3 px-5">
+        <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-[linear-gradient(135deg,rgba(87,123,255,0.95),rgba(56,189,248,0.88))] text-sm font-bold text-primary-foreground shadow-[0_14px_34px_-18px_rgba(59,130,246,0.95)]">
           D
         </div>
-        <span className="text-lg font-semibold tracking-tight">Deployik</span>
+        <div>
+          <p className="text-lg font-semibold tracking-tight">Deployik</p>
+          <p className="text-xs text-muted-foreground">Dark control plane</p>
+        </div>
       </div>
 
       <Separator />
 
       {/* Nav */}
-      <nav className="flex-1 space-y-1 p-2">
+      <nav className="flex-1 space-y-1.5 p-3">
         {navItems.map(({ to, label, icon: Icon }) => {
           const isActive = matchRoute({ to, fuzzy: to !== '/' });
           return (
@@ -36,10 +39,10 @@ export function Sidebar() {
               key={to}
               to={to}
               className={cn(
-                'flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors',
+                'flex items-center gap-3 rounded-xl px-3.5 py-2.5 text-sm font-medium transition-all',
                 isActive
-                  ? 'bg-primary/10 text-primary'
-                  : 'text-muted-foreground hover:bg-accent hover:text-accent-foreground',
+                  ? 'bg-primary/14 text-primary shadow-[inset_0_0_0_1px_rgba(125,153,255,0.18)]'
+                  : 'text-muted-foreground hover:bg-accent/80 hover:text-accent-foreground',
               )}
             >
               <Icon className="h-4 w-4" />
@@ -52,7 +55,7 @@ export function Sidebar() {
       <Separator />
 
       {/* User */}
-      <div className="flex items-center gap-3 p-3">
+      <div className="m-3 flex items-center gap-3 rounded-2xl border border-white/6 bg-black/10 p-3">
         <Avatar className="h-8 w-8">
           <AvatarImage src={user?.avatar_url} alt={user?.username} />
           <AvatarFallback>{user?.username?.[0]?.toUpperCase()}</AvatarFallback>

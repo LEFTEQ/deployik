@@ -198,13 +198,13 @@ func TestEnvVarCRUD(t *testing.T) {
 	db.CreateProject(project)
 
 	// Upsert
-	v := &EnvVariable{ProjectID: project.ID, Environment: "preview", Key: "API_KEY", Value: "encrypted-val"}
+	v := &EnvVariable{ProjectID: project.ID, Environment: "shared", Key: "API_KEY", Value: "encrypted-val"}
 	if err := db.UpsertEnvVar(v); err != nil {
 		t.Fatalf("UpsertEnvVar: %v", err)
 	}
 
 	// List
-	vars, _ := db.ListEnvVars(project.ID, "preview")
+	vars, _ := db.ListEnvVars(project.ID, "shared")
 	if len(vars) != 1 || vars[0].Key != "API_KEY" {
 		t.Errorf("ListEnvVars: got %v", vars)
 	}
@@ -228,6 +228,116 @@ func TestEnvVarCRUD(t *testing.T) {
 	vars, _ = db.ListEnvVars(project.ID, "preview")
 	if len(vars) != 1 {
 		t.Errorf("got %d vars after delete, want 1", len(vars))
+	}
+}
+
+func TestProjectVariableResolution(t *testing.T) {
+	db := newTestDB(t)
+
+	user := &User{ID: NewID(), GithubID: 1, Username: "u", Role: "admin"}
+	db.UpsertUser(user)
+
+	project := &Project{Name: "p1", GithubRepo: "r", GithubOwner: "o", Branch: "main",
+		UserID: user.ID, Framework: "nextjs", BuildCommand: "b", InstallCommand: "i",
+		NodeVersion: "22", Status: "active"}
+	db.CreateProject(project)
+
+	if err := db.BulkSetEnvVars(project.ID, "shared", []EnvVariable{
+		{Key: "API_BASE_URL", Value: "https://shared.example.com"},
+		{Key: "NEXT_PUBLIC_BRAND", Value: "shared-brand"},
+	}); err != nil {
+		t.Fatalf("BulkSetEnvVars (shared): %v", err)
+	}
+
+	if err := db.BulkSetEnvVars(project.ID, "preview", []EnvVariable{
+		{Key: "API_BASE_URL", Value: "https://preview.example.com"},
+	}); err != nil {
+		t.Fatalf("BulkSetEnvVars (preview): %v", err)
+	}
+
+	previewVars, err := db.ListResolvedEnvVars(project.ID, "preview")
+	if err != nil {
+		t.Fatalf("ListResolvedEnvVars (preview): %v", err)
+	}
+	if len(previewVars) != 2 {
+		t.Fatalf("got %d preview vars, want 2", len(previewVars))
+	}
+	if previewVars[0].Key != "API_BASE_URL" || previewVars[0].Value != "https://preview.example.com" {
+		t.Fatalf("preview override = %#v, want preview-scoped value", previewVars[0])
+	}
+	if previewVars[1].Key != "NEXT_PUBLIC_BRAND" || previewVars[1].Value != "shared-brand" {
+		t.Fatalf("preview shared carry-through = %#v, want shared value", previewVars[1])
+	}
+
+	productionVars, err := db.ListResolvedEnvVars(project.ID, "production")
+	if err != nil {
+		t.Fatalf("ListResolvedEnvVars (production): %v", err)
+	}
+	if len(productionVars) != 2 {
+		t.Fatalf("got %d production vars, want 2", len(productionVars))
+	}
+	if productionVars[0].Key != "API_BASE_URL" || productionVars[0].Value != "https://shared.example.com" {
+		t.Fatalf("production shared value = %#v, want shared value", productionVars[0])
+	}
+}
+
+func TestSecretCRUD(t *testing.T) {
+	db := newTestDB(t)
+
+	user := &User{ID: NewID(), GithubID: 1, Username: "u", Role: "admin"}
+	db.UpsertUser(user)
+
+	project := &Project{Name: "p1", GithubRepo: "r", GithubOwner: "o", Branch: "main",
+		UserID: user.ID, Framework: "nextjs", BuildCommand: "b", InstallCommand: "i",
+		NodeVersion: "22", Status: "active"}
+	db.CreateProject(project)
+
+	if err := db.BulkSetSecrets(project.ID, "shared", []ProjectVariable{
+		{Key: "DATABASE_URL", Value: "encrypted-db"},
+	}); err != nil {
+		t.Fatalf("BulkSetSecrets (shared): %v", err)
+	}
+
+	if err := db.BulkSetEnvVars(project.ID, "shared", []ProjectVariable{
+		{Key: "NEXT_PUBLIC_API_URL", Value: "encrypted-api"},
+	}); err != nil {
+		t.Fatalf("BulkSetEnvVars (shared): %v", err)
+	}
+
+	secrets, err := db.ListSecrets(project.ID, "shared")
+	if err != nil {
+		t.Fatalf("ListSecrets: %v", err)
+	}
+	if len(secrets) != 1 || secrets[0].Key != "DATABASE_URL" {
+		t.Fatalf("ListSecrets = %#v, want DATABASE_URL", secrets)
+	}
+
+	envVars, err := db.ListEnvVars(project.ID, "shared")
+	if err != nil {
+		t.Fatalf("ListEnvVars: %v", err)
+	}
+	if len(envVars) != 1 || envVars[0].Key != "NEXT_PUBLIC_API_URL" {
+		t.Fatalf("ListEnvVars = %#v, want NEXT_PUBLIC_API_URL", envVars)
+	}
+
+	if err := db.DeleteSecret(project.ID, "shared", "DATABASE_URL"); err != nil {
+		t.Fatalf("DeleteSecret: %v", err)
+	}
+
+	secrets, err = db.ListSecrets(project.ID, "shared")
+	if err != nil {
+		t.Fatalf("ListSecrets after delete: %v", err)
+	}
+	if len(secrets) != 0 {
+		t.Fatalf("got %d secrets after delete, want 0", len(secrets))
+	}
+
+	envVars, err = db.ListEnvVars(project.ID, "shared")
+	if err != nil {
+		t.Fatalf("ListEnvVars after secret delete: %v", err)
+	}
+	if len(envVars) != 1 {
+		t.Fatalf("got %d env vars after secret delete, want 1", len(envVars))
 	}
 }
 

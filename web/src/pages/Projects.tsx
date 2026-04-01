@@ -18,7 +18,7 @@ import type { Project } from '@/types/api';
 function ProjectCard({ project }: { project: Project }) {
   return (
     <Link to="/projects/$id" params={{ id: project.id }}>
-      <Card className="transition-colors hover:border-primary/50">
+      <Card className="transition-all hover:-translate-y-0.5 hover:border-primary/35">
         <CardHeader className="pb-3">
           <div className="flex items-start justify-between">
             <div>
@@ -62,8 +62,11 @@ export function Projects() {
 
   return (
     <div className="p-6">
-      <div className="mb-6 flex items-center justify-between">
+      <div className="mb-6 flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
         <div>
+          <Badge variant="outline" className="mb-3 border-primary/25 bg-primary/10 text-primary">
+            Deploy faster
+          </Badge>
           <h1 className="text-2xl font-bold tracking-tight">Projects</h1>
           <p className="text-sm text-muted-foreground">
             Manage your deployed applications

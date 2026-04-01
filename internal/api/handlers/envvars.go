@@ -2,7 +2,10 @@ package handlers
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
+	"strings"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 
@@ -10,62 +13,163 @@ import (
 	"github.com/LEFTEQ/lovinka-deployik/internal/db"
 )
 
-type EnvVarHandler struct {
+type VariableHandler struct {
 	DB        *db.DB
 	Encryptor *crypto.Encryptor
+	Kind      db.VariableKind
 }
 
-type envVarEntry struct {
+type variableEntry struct {
 	Key   string `json:"key"`
 	Value string `json:"value"`
 }
 
 type bulkSetRequest struct {
-	Environment string        `json:"environment"`
-	Variables   []envVarEntry `json:"variables"`
+	Environment string          `json:"environment"`
+	Variables   []variableEntry `json:"variables"`
 }
 
-// List returns env vars for a project+environment with masked values.
-func (h *EnvVarHandler) List(w http.ResponseWriter, r *http.Request) {
-	projectID := chi.URLParam(r, "id")
-	env := r.URL.Query().Get("environment")
-	if env == "" {
-		env = "preview"
+type variableResponse struct {
+	ID          string          `json:"id"`
+	ProjectID   string          `json:"project_id"`
+	Environment string          `json:"environment"`
+	Kind        db.VariableKind `json:"kind"`
+	Key         string          `json:"key"`
+	Value       string          `json:"value"`
+	CreatedAt   time.Time       `json:"created_at"`
+}
+
+func normalizeVariableEnvironment(value string) (string, error) {
+	environment := strings.TrimSpace(value)
+	if environment == "" {
+		return "preview", nil
 	}
 
-	vars, err := h.DB.ListEnvVars(projectID, env)
+	switch environment {
+	case "shared", "preview", "production":
+		return environment, nil
+	default:
+		return "", fmt.Errorf("environment must be shared, preview, or production")
+	}
+}
+
+func (h *VariableHandler) storeLabel() string {
+	if h.Kind == db.VariableKindSecret {
+		return "secret"
+	}
+	return "env var"
+}
+
+func (h *VariableHandler) storeLabelPlural() string {
+	if h.Kind == db.VariableKindSecret {
+		return "secrets"
+	}
+	return "env vars"
+}
+
+func (h *VariableHandler) oppositeKind() db.VariableKind {
+	if h.Kind == db.VariableKindSecret {
+		return db.VariableKindEnv
+	}
+	return db.VariableKindSecret
+}
+
+func (h *VariableHandler) oppositeStoreLabelPlural() string {
+	if h.Kind == db.VariableKindSecret {
+		return "env vars"
+	}
+	return "secrets"
+}
+
+func (h *VariableHandler) listProjectVariables(projectID, environment string) ([]db.ProjectVariable, error) {
+	if h.Kind == db.VariableKindSecret {
+		return h.DB.ListSecrets(projectID, environment)
+	}
+	return h.DB.ListEnvVars(projectID, environment)
+}
+
+func (h *VariableHandler) bulkSetProjectVariables(projectID, environment string, vars []db.ProjectVariable) error {
+	if h.Kind == db.VariableKindSecret {
+		return h.DB.BulkSetSecrets(projectID, environment, vars)
+	}
+	return h.DB.BulkSetEnvVars(projectID, environment, vars)
+}
+
+func (h *VariableHandler) deleteProjectVariable(projectID, environment, key string) error {
+	if h.Kind == db.VariableKindSecret {
+		return h.DB.DeleteSecret(projectID, environment, key)
+	}
+	return h.DB.DeleteEnvVar(projectID, environment, key)
+}
+
+func (h *VariableHandler) validateVariableKey(key string) error {
+	if key == "" {
+		return fmt.Errorf("key is required")
+	}
+	if h.Kind == db.VariableKindSecret && strings.HasPrefix(key, "NEXT_PUBLIC_") {
+		return fmt.Errorf("secret keys cannot use NEXT_PUBLIC_ because secrets are runtime-only")
+	}
+	return nil
+}
+
+func (h *VariableHandler) ensureNoStoreConflicts(projectID string, keys []string) error {
+	existingKeys, err := h.DB.ListProjectVariableKeys(projectID, h.oppositeKind())
 	if err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to list env vars"})
+		return err
+	}
+
+	existing := make(map[string]struct{}, len(existingKeys))
+	for _, key := range existingKeys {
+		existing[key] = struct{}{}
+	}
+
+	for _, key := range keys {
+		if _, conflict := existing[key]; conflict {
+			return fmt.Errorf("%s already exists in the %s store; a key can belong to only one store per project", key, h.oppositeStoreLabelPlural())
+		}
+	}
+
+	return nil
+}
+
+// List returns project variables for one scope with masked values.
+func (h *VariableHandler) List(w http.ResponseWriter, r *http.Request) {
+	projectID := chi.URLParam(r, "id")
+	environment, err := normalizeVariableEnvironment(r.URL.Query().Get("environment"))
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 		return
 	}
 
-	// Mask values in the response
-	type maskedVar struct {
-		ID          string `json:"id"`
-		Key         string `json:"key"`
-		Value       string `json:"value"`
-		Environment string `json:"environment"`
+	vars, err := h.listProjectVariables(projectID, environment)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": fmt.Sprintf("failed to list %s", h.storeLabelPlural())})
+		return
 	}
-	result := make([]maskedVar, 0, len(vars))
-	for _, v := range vars {
-		decrypted, err := h.Encryptor.Decrypt(v.Value)
+
+	result := make([]variableResponse, 0, len(vars))
+	for _, variable := range vars {
+		decrypted, err := h.Encryptor.Decrypt(variable.Value)
 		masked := "****"
 		if err == nil {
 			masked = crypto.MaskValue(decrypted)
 		}
-		result = append(result, maskedVar{
-			ID:          v.ID,
-			Key:         v.Key,
+		result = append(result, variableResponse{
+			ID:          variable.ID,
+			ProjectID:   variable.ProjectID,
+			Environment: variable.Environment,
+			Kind:        variable.Kind,
+			Key:         variable.Key,
 			Value:       masked,
-			Environment: v.Environment,
+			CreatedAt:   variable.CreatedAt,
 		})
 	}
 
 	writeJSON(w, http.StatusOK, result)
 }
 
-// BulkSet replaces all env vars for a project+environment.
-func (h *EnvVarHandler) BulkSet(w http.ResponseWriter, r *http.Request) {
+// BulkSet replaces all project variables for one scope and store.
+func (h *VariableHandler) BulkSet(w http.ResponseWriter, r *http.Request) {
 	projectID := chi.URLParam(r, "id")
 
 	var req bulkSetRequest
@@ -74,52 +178,80 @@ func (h *EnvVarHandler) BulkSet(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	env := req.Environment
-	if env == "" {
-		env = "preview"
+	environment, err := normalizeVariableEnvironment(req.Environment)
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		return
 	}
 
-	// Encrypt all values
-	encrypted := make([]db.EnvVariable, 0, len(req.Variables))
-	for _, v := range req.Variables {
-		if v.Key == "" {
+	normalizedKeys := make([]string, 0, len(req.Variables))
+	seenKeys := make(map[string]struct{}, len(req.Variables))
+	encrypted := make([]db.ProjectVariable, 0, len(req.Variables))
+
+	for _, variable := range req.Variables {
+		key := strings.TrimSpace(variable.Key)
+		if key == "" {
 			continue
 		}
-		encValue, err := h.Encryptor.Encrypt(v.Value)
+		if err := h.validateVariableKey(key); err != nil {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+			return
+		}
+		if _, exists := seenKeys[key]; exists {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": fmt.Sprintf("duplicate key %s", key)})
+			return
+		}
+		seenKeys[key] = struct{}{}
+		normalizedKeys = append(normalizedKeys, key)
+
+		encryptedValue, err := h.Encryptor.Encrypt(variable.Value)
 		if err != nil {
 			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "encryption failed"})
 			return
 		}
-		encrypted = append(encrypted, db.EnvVariable{
+		encrypted = append(encrypted, db.ProjectVariable{
 			ProjectID:   projectID,
-			Environment: env,
-			Key:         v.Key,
-			Value:       encValue,
+			Environment: environment,
+			Kind:        h.Kind,
+			Key:         key,
+			Value:       encryptedValue,
 		})
 	}
 
-	if err := h.DB.BulkSetEnvVars(projectID, env, encrypted); err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to save env vars"})
+	if err := h.ensureNoStoreConflicts(projectID, normalizedKeys); err != nil {
+		writeJSON(w, http.StatusConflict, map[string]string{"error": err.Error()})
+		return
+	}
+
+	if err := h.bulkSetProjectVariables(projectID, environment, encrypted); err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": fmt.Sprintf("failed to save %s", h.storeLabelPlural())})
 		return
 	}
 
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"count":       len(encrypted),
-		"environment": env,
+		"environment": environment,
+		"kind":        h.Kind,
 	})
 }
 
-// Delete removes a single env var.
-func (h *EnvVarHandler) Delete(w http.ResponseWriter, r *http.Request) {
+// Delete removes a single project variable from one scope and store.
+func (h *VariableHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	projectID := chi.URLParam(r, "id")
-	key := chi.URLParam(r, "key")
-	env := r.URL.Query().Get("environment")
-	if env == "" {
-		env = "preview"
+	key := strings.TrimSpace(chi.URLParam(r, "key"))
+	if err := h.validateVariableKey(key); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		return
 	}
 
-	if err := h.DB.DeleteEnvVar(projectID, env, key); err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to delete env var"})
+	environment, err := normalizeVariableEnvironment(r.URL.Query().Get("environment"))
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		return
+	}
+
+	if err := h.deleteProjectVariable(projectID, environment, key); err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": fmt.Sprintf("failed to delete %s", h.storeLabel())})
 		return
 	}
 

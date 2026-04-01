@@ -40,21 +40,21 @@ type Project struct {
 }
 
 type Deployment struct {
-	ID            string         `json:"id"`
-	ProjectID     string         `json:"project_id"`
-	Environment   string         `json:"environment"`
-	CommitSHA     string         `json:"commit_sha"`
-	CommitMessage string         `json:"commit_message"`
-	Branch        string         `json:"branch"`
-	Status        string         `json:"status"`
-	ContainerID   string         `json:"container_id"`
-	ContainerName string         `json:"container_name"`
-	ImageTag      string         `json:"image_tag"`
-	BuildDuration int            `json:"build_duration"`
-	TriggeredBy   string         `json:"triggered_by"`
-	ErrorMessage  string         `json:"error_message,omitempty"`
-	CreatedAt     time.Time      `json:"created_at"`
-	FinishedAt    sql.NullTime   `json:"finished_at"`
+	ID            string       `json:"id"`
+	ProjectID     string       `json:"project_id"`
+	Environment   string       `json:"environment"`
+	CommitSHA     string       `json:"commit_sha"`
+	CommitMessage string       `json:"commit_message"`
+	Branch        string       `json:"branch"`
+	Status        string       `json:"status"`
+	ContainerID   string       `json:"container_id"`
+	ContainerName string       `json:"container_name"`
+	ImageTag      string       `json:"image_tag"`
+	BuildDuration int          `json:"build_duration"`
+	TriggeredBy   string       `json:"triggered_by"`
+	ErrorMessage  string       `json:"error_message,omitempty"`
+	CreatedAt     time.Time    `json:"created_at"`
+	FinishedAt    sql.NullTime `json:"finished_at"`
 }
 
 type BuildLog struct {
@@ -78,11 +78,21 @@ type Domain struct {
 	CreatedAt    time.Time    `json:"created_at"`
 }
 
-type EnvVariable struct {
-	ID          string    `json:"id"`
-	ProjectID   string    `json:"project_id"`
-	Environment string    `json:"environment"`
-	Key         string    `json:"key"`
-	Value       string    `json:"value"` // encrypted at rest, masked in API responses
-	CreatedAt   time.Time `json:"created_at"`
+type VariableKind string
+
+const (
+	VariableKindEnv    VariableKind = "env"
+	VariableKindSecret VariableKind = "secret"
+)
+
+type ProjectVariable struct {
+	ID          string       `json:"id"`
+	ProjectID   string       `json:"project_id"`
+	Environment string       `json:"environment"`
+	Kind        VariableKind `json:"kind"`
+	Key         string       `json:"key"`
+	Value       string       `json:"value"` // encrypted at rest, masked in API responses
+	CreatedAt   time.Time    `json:"created_at"`
 }
+
+type EnvVariable = ProjectVariable

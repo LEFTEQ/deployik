@@ -91,10 +91,23 @@ func NewRouter(cfg *RouterConfig) *chi.Mux {
 			r.Post("/projects/{id}/domains/{did}/verify", domainHandler.Verify)
 
 			// Environment Variables
-			envHandler := &handlers.EnvVarHandler{DB: cfg.DB, Encryptor: cfg.Encryptor}
+			envHandler := &handlers.VariableHandler{
+				DB:        cfg.DB,
+				Encryptor: cfg.Encryptor,
+				Kind:      db.VariableKindEnv,
+			}
 			r.Get("/projects/{id}/env", envHandler.List)
 			r.Put("/projects/{id}/env", envHandler.BulkSet)
 			r.Delete("/projects/{id}/env/{key}", envHandler.Delete)
+
+			secretHandler := &handlers.VariableHandler{
+				DB:        cfg.DB,
+				Encryptor: cfg.Encryptor,
+				Kind:      db.VariableKindSecret,
+			}
+			r.Get("/projects/{id}/secrets", secretHandler.List)
+			r.Put("/projects/{id}/secrets", secretHandler.BulkSet)
+			r.Delete("/projects/{id}/secrets/{key}", secretHandler.Delete)
 		})
 	})
 

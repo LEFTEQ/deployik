@@ -32,7 +32,7 @@ const rootRoute = createRootRoute({
   component: () => (
     <TooltipProvider>
       <Outlet />
-      <Toaster position="bottom-right" />
+      <Toaster position="bottom-right" richColors theme="dark" />
     </TooltipProvider>
   ),
 });

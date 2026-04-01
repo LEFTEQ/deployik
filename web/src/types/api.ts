@@ -3,7 +3,7 @@ export interface User {
   github_id: number;
   username: string;
   avatar_url: string;
-  role: 'admin' | 'user';
+  role: "admin" | "user";
   created_at: string;
 }
 
@@ -24,24 +24,24 @@ export interface Project {
   build_command: string;
   install_command: string;
   node_version: string;
-  status: 'active' | 'paused' | 'deleted';
+  status: "active" | "paused" | "deleted";
   created_at: string;
   updated_at: string;
 }
 
 export type DeploymentStatus =
-  | 'queued'
-  | 'building'
-  | 'deploying'
-  | 'live'
-  | 'failed'
-  | 'rolled_back'
-  | 'replaced';
+  | "queued"
+  | "building"
+  | "deploying"
+  | "live"
+  | "failed"
+  | "rolled_back"
+  | "replaced";
 
 export interface Deployment {
   id: string;
   project_id: string;
-  environment: 'preview' | 'production';
+  environment: "preview" | "production";
   commit_sha: string;
   commit_message: string;
   branch: string;
@@ -60,29 +60,37 @@ export interface Domain {
   id: string;
   project_id: string;
   domain: string;
-  environment: 'preview' | 'production';
+  environment: "preview" | "production";
   is_auto: boolean;
   dns_verified: boolean;
-  ssl_status: 'pending' | 'active' | 'error';
+  ssl_status: "pending" | "active" | "error";
   ssl_expires_at: string | null;
   created_at: string;
 }
 
-export interface EnvVariable {
+export type VariableScope = "shared" | "preview" | "production";
+
+export type ProjectVariableKind = "env" | "secret";
+
+export interface ProjectVariable {
   id: string;
   project_id: string;
-  environment: 'preview' | 'production';
+  environment: VariableScope;
+  kind: ProjectVariableKind;
   key: string;
   value: string; // masked in responses
   created_at: string;
 }
+
+export type EnvVariable = ProjectVariable;
+export type SecretVariable = ProjectVariable;
 
 export interface BuildLog {
   id: number;
   deployment_id: string;
   line_number: number;
   content: string;
-  stream: 'stdout' | 'stderr';
+  stream: "stdout" | "stderr";
   timestamp: string;
 }
 

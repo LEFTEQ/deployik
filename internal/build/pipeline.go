@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"log"
 	"os"
-	"strings"
 	"time"
 
 	"github.com/LEFTEQ/lovinka-deployik/internal/crypto"
@@ -100,26 +99,43 @@ func (p *Pipeline) Deploy(ctx context.Context, project *db.Project, deployment *
 		emitErr(fmt.Sprintf("Warning: could not patch next.config: %v", err))
 	}
 
-	// Step 4: Get env vars for build-time injection
-	envVars, err := p.DB.ListEnvVars(project.ID, deployment.Environment)
+	// Step 4: Get project variables
+	envVars, err := p.DB.ListResolvedEnvVars(project.ID, deployment.Environment)
 	if err != nil {
 		log.Printf("Warning: could not load env vars: %v", err)
 	}
+	secretVars, err := p.DB.ListResolvedSecrets(project.ID, deployment.Environment)
+	if err != nil {
+		log.Printf("Warning: could not load secrets: %v", err)
+	}
 
-	var buildEnvVars []EnvVar
-	var runtimeEnvVars []string
+	decryptedEnvVars := make([]db.ProjectVariable, 0, len(envVars))
 	for _, ev := range envVars {
 		value, err := p.Encryptor.Decrypt(ev.Value)
 		if err != nil {
 			emitErr(fmt.Sprintf("Warning: could not decrypt env var %s", ev.Key))
 			continue
 		}
-		// NEXT_PUBLIC_* vars need to be available at build time
-		if strings.HasPrefix(ev.Key, "NEXT_PUBLIC_") {
-			buildEnvVars = append(buildEnvVars, EnvVar{Key: ev.Key, Value: value})
-		}
-		runtimeEnvVars = append(runtimeEnvVars, fmt.Sprintf("%s=%s", ev.Key, value))
+		decryptedEnvVars = append(decryptedEnvVars, db.ProjectVariable{
+			Key:   ev.Key,
+			Value: value,
+		})
 	}
+
+	decryptedSecrets := make([]db.ProjectVariable, 0, len(secretVars))
+	for _, secret := range secretVars {
+		value, err := p.Encryptor.Decrypt(secret.Value)
+		if err != nil {
+			emitErr(fmt.Sprintf("Warning: could not decrypt secret %s", secret.Key))
+			continue
+		}
+		decryptedSecrets = append(decryptedSecrets, db.ProjectVariable{
+			Key:   secret.Key,
+			Value: value,
+		})
+	}
+
+	buildEnvVars, runtimeEnvVars := resolveDeploymentVariables(decryptedEnvVars, decryptedSecrets)
 
 	// Step 5: Generate Dockerfile
 	emit("Generating Dockerfile...")
