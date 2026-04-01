@@ -61,13 +61,8 @@ func (h *ProjectHandler) List(w http.ResponseWriter, r *http.Request) {
 
 func (h *ProjectHandler) Get(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
-	project, err := h.DB.GetProject(id)
-	if err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to get project"})
-		return
-	}
-	if project == nil {
-		writeJSON(w, http.StatusNotFound, map[string]string{"error": "project not found"})
+	project, _, ok := loadAuthorizedProject(w, r, h.DB, id)
+	if !ok {
 		return
 	}
 	writeJSON(w, http.StatusOK, project)
@@ -141,9 +136,8 @@ func (h *ProjectHandler) Create(w http.ResponseWriter, r *http.Request) {
 func (h *ProjectHandler) Update(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 
-	project, err := h.DB.GetProject(id)
-	if err != nil || project == nil {
-		writeJSON(w, http.StatusNotFound, map[string]string{"error": "project not found"})
+	project, _, ok := loadAuthorizedProject(w, r, h.DB, id)
+	if !ok {
 		return
 	}
 
@@ -198,9 +192,8 @@ func (h *ProjectHandler) Update(w http.ResponseWriter, r *http.Request) {
 func (h *ProjectHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 
-	project, err := h.DB.GetProject(id)
-	if err != nil || project == nil {
-		writeJSON(w, http.StatusNotFound, map[string]string{"error": "project not found"})
+	_, _, ok := loadAuthorizedProject(w, r, h.DB, id)
+	if !ok {
 		return
 	}
 

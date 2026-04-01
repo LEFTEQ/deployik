@@ -84,3 +84,35 @@ func TestGenerateDockerfileSupportsStaticRuntime(t *testing.T) {
 		t.Fatalf("expected static runtime serve command, got:\n%s", got)
 	}
 }
+
+func TestGenerateDockerfileQuotesBuildEnvValues(t *testing.T) {
+	t.Parallel()
+
+	repoDir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(repoDir, "package.json"), []byte(`{"name":"app"}`), 0644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	dockerfilePath, err := GenerateDockerfile(repoDir, DockerfileData{
+		NodeVersion:    "22",
+		Runtime:        projectconfig.RuntimeStatic,
+		BuildCommand:   "npm run build",
+		InstallCommand: "npm ci",
+		BuildEnvVars: []EnvVar{
+			{Key: "NEXT_PUBLIC_SITE_NAME", Value: `Acme "Preview"`},
+		},
+	})
+	if err != nil {
+		t.Fatalf("GenerateDockerfile: %v", err)
+	}
+
+	content, err := os.ReadFile(dockerfilePath)
+	if err != nil {
+		t.Fatalf("ReadFile: %v", err)
+	}
+
+	got := string(content)
+	if !strings.Contains(got, `ENV NEXT_PUBLIC_SITE_NAME="Acme \"Preview\""`) {
+		t.Fatalf("expected quoted env assignment, got:\n%s", got)
+	}
+}

@@ -137,6 +137,18 @@ func TestProjectCRUD(t *testing.T) {
 		t.Errorf("output_directory = %q, want %q", got.OutputDirectory, ".next")
 	}
 
+	gotForUser, err := db.GetProjectForUser(project.ID, user.ID)
+	if err != nil || gotForUser == nil {
+		t.Fatalf("GetProjectForUser: %v", err)
+	}
+	gotForOtherUser, err := db.GetProjectForUser(project.ID, NewID())
+	if err != nil {
+		t.Fatalf("GetProjectForUser(other): %v", err)
+	}
+	if gotForOtherUser != nil {
+		t.Fatal("GetProjectForUser should hide projects from other users")
+	}
+
 	// Update
 	got.Branch = "develop"
 	if err := db.UpdateProject(got); err != nil {
@@ -185,6 +197,18 @@ func TestDeploymentCRUD(t *testing.T) {
 	got, _ := db.GetDeployment(deploy.ID)
 	if got.Status != "building" {
 		t.Errorf("status = %q, want %q", got.Status, "building")
+	}
+
+	gotForUser, err := db.GetDeploymentForUser(deploy.ID, user.ID)
+	if err != nil || gotForUser == nil {
+		t.Fatalf("GetDeploymentForUser: %v", err)
+	}
+	gotForOtherUser, err := db.GetDeploymentForUser(deploy.ID, NewID())
+	if err != nil {
+		t.Fatalf("GetDeploymentForUser(other): %v", err)
+	}
+	if gotForOtherUser != nil {
+		t.Fatal("GetDeploymentForUser should hide deployments from other users")
 	}
 
 	// List
@@ -394,6 +418,14 @@ func TestDomainCRUD(t *testing.T) {
 	// Delete custom (should work)
 	if err := db.DeleteDomain(custom.ID); err != nil {
 		t.Fatalf("DeleteDomain: %v", err)
+	}
+
+	// Delete custom through scoped helper
+	if err := db.CreateDomain(custom); err != nil {
+		t.Fatalf("CreateDomain (custom recreate): %v", err)
+	}
+	if err := db.DeleteDomainForProject(project.ID, custom.ID); err != nil {
+		t.Fatalf("DeleteDomainForProject: %v", err)
 	}
 
 	// Delete auto (should not delete due to is_auto check)

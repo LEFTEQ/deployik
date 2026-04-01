@@ -48,6 +48,24 @@ func (db *DB) GetProject(id string) (*Project, error) {
 	return p, nil
 }
 
+func (db *DB) GetProjectForUser(id, userID string) (*Project, error) {
+	p := &Project{}
+	err := db.QueryRow(
+		`SELECT id, name, github_repo, github_owner, branch, user_id, framework,
+		        root_directory, output_directory, build_command, install_command, node_version, status, created_at, updated_at
+		 FROM projects WHERE id = ? AND user_id = ?`, id, userID,
+	).Scan(&p.ID, &p.Name, &p.GithubRepo, &p.GithubOwner, &p.Branch,
+		&p.UserID, &p.Framework, &p.RootDirectory, &p.OutputDirectory, &p.BuildCommand, &p.InstallCommand, &p.NodeVersion,
+		&p.Status, &p.CreatedAt, &p.UpdatedAt)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("get project for user: %w", err)
+	}
+	return p, nil
+}
+
 func (db *DB) CreateProject(p *Project) error {
 	p.ID = NewID()
 	_, err := db.Exec(

@@ -28,6 +28,9 @@ type triggerDeployRequest struct {
 // List returns deployments for a project.
 func (h *DeploymentHandler) List(w http.ResponseWriter, r *http.Request) {
 	projectID := chi.URLParam(r, "id")
+	if _, _, ok := loadAuthorizedProject(w, r, h.DB, projectID); !ok {
+		return
+	}
 
 	deployments, err := h.DB.ListDeployments(projectID, 20)
 	if err != nil {
@@ -42,9 +45,13 @@ func (h *DeploymentHandler) List(w http.ResponseWriter, r *http.Request) {
 
 // Get returns a single deployment.
 func (h *DeploymentHandler) Get(w http.ResponseWriter, r *http.Request) {
+	projectID := chi.URLParam(r, "id")
 	did := chi.URLParam(r, "did")
-	deployment, err := h.DB.GetDeployment(did)
-	if err != nil || deployment == nil {
+	deployment, _, ok := loadAuthorizedDeployment(w, r, h.DB, did)
+	if !ok {
+		return
+	}
+	if deployment.ProjectID != projectID {
 		writeJSON(w, http.StatusNotFound, map[string]string{"error": "deployment not found"})
 		return
 	}
@@ -56,9 +63,8 @@ func (h *DeploymentHandler) Trigger(w http.ResponseWriter, r *http.Request) {
 	claims := auth.GetClaims(r.Context())
 	projectID := chi.URLParam(r, "id")
 
-	project, err := h.DB.GetProject(projectID)
-	if err != nil || project == nil {
-		writeJSON(w, http.StatusNotFound, map[string]string{"error": "project not found"})
+	project, _, ok := loadAuthorizedProject(w, r, h.DB, projectID)
+	if !ok {
 		return
 	}
 
@@ -129,6 +135,9 @@ func (h *DeploymentHandler) Trigger(w http.ResponseWriter, r *http.Request) {
 // GetLogs returns build logs for a deployment.
 func (h *DeploymentHandler) GetLogs(w http.ResponseWriter, r *http.Request) {
 	did := chi.URLParam(r, "did")
+	if _, _, ok := loadAuthorizedDeployment(w, r, h.DB, did); !ok {
+		return
+	}
 	logs, err := h.DB.GetBuildLogs(did)
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to get logs"})

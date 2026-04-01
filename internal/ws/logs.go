@@ -7,6 +7,8 @@ import (
 	"github.com/gorilla/websocket"
 
 	"github.com/LEFTEQ/lovinka-deployik/internal/auth"
+	"github.com/LEFTEQ/lovinka-deployik/internal/authz"
+	"github.com/LEFTEQ/lovinka-deployik/internal/db"
 )
 
 var upgrader = websocket.Upgrader{
@@ -14,7 +16,7 @@ var upgrader = websocket.Upgrader{
 }
 
 // LogsHandler handles WebSocket connections for build log streaming.
-func LogsHandler(hub *Hub, jwtSecret string) http.HandlerFunc {
+func LogsHandler(hub *Hub, database *db.DB, jwtSecret string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		// Authenticate via query param
 		tokenStr := r.URL.Query().Get("token")
@@ -23,7 +25,7 @@ func LogsHandler(hub *Hub, jwtSecret string) http.HandlerFunc {
 			return
 		}
 
-		_, err := auth.ValidateAccessToken(jwtSecret, tokenStr)
+		claims, err := auth.ValidateAccessToken(jwtSecret, tokenStr)
 		if err != nil {
 			http.Error(w, "invalid token", http.StatusUnauthorized)
 			return
@@ -32,6 +34,15 @@ func LogsHandler(hub *Hub, jwtSecret string) http.HandlerFunc {
 		deploymentID := r.PathValue("did")
 		if deploymentID == "" {
 			http.Error(w, "missing deployment id", http.StatusBadRequest)
+			return
+		}
+		deployment, err := authz.LoadDeployment(database, claims, deploymentID)
+		if err != nil {
+			http.Error(w, "failed to load deployment", http.StatusInternalServerError)
+			return
+		}
+		if deployment == nil {
+			http.Error(w, "deployment not found", http.StatusNotFound)
 			return
 		}
 

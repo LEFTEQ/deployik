@@ -5,6 +5,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"text/template"
 
@@ -153,7 +154,7 @@ func generateNextJSDockerfile(data DockerfileData) string {
 
 	// Build-time env vars (NEXT_PUBLIC_*)
 	for _, ev := range data.BuildEnvVars {
-		b.WriteString(fmt.Sprintf("ENV %s=%s\n", ev.Key, ev.Value))
+		b.WriteString(fmt.Sprintf("ENV %s=%s\n", ev.Key, strconv.Quote(ev.Value)))
 	}
 
 	b.WriteString(fmt.Sprintf("RUN %s\n\n", data.BuildCommand))
@@ -203,7 +204,7 @@ func generateStaticDockerfile(data DockerfileData) string {
 	b.WriteString("FROM deps AS builder\n")
 	b.WriteString(fmt.Sprintf("WORKDIR %s\n", appDir))
 	for _, ev := range data.BuildEnvVars {
-		b.WriteString(fmt.Sprintf("ENV %s=%s\n", ev.Key, ev.Value))
+		b.WriteString(fmt.Sprintf("ENV %s=%s\n", ev.Key, strconv.Quote(ev.Value)))
 	}
 	b.WriteString(fmt.Sprintf("RUN %s\n\n", data.BuildCommand))
 

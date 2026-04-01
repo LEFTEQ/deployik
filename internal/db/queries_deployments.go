@@ -53,6 +53,28 @@ func (db *DB) GetDeployment(id string) (*Deployment, error) {
 	return d, nil
 }
 
+func (db *DB) GetDeploymentForUser(id, userID string) (*Deployment, error) {
+	d := &Deployment{}
+	err := db.QueryRow(
+		`SELECT d.id, d.project_id, d.environment, d.commit_sha, d.commit_message, d.branch, d.status,
+		        d.container_id, d.container_name, d.image_tag, d.build_duration, d.triggered_by,
+		        d.error_message, d.created_at, d.finished_at
+		 FROM deployments d
+		 JOIN projects p ON p.id = d.project_id
+		 WHERE d.id = ? AND p.user_id = ?`,
+		id, userID,
+	).Scan(&d.ID, &d.ProjectID, &d.Environment, &d.CommitSHA, &d.CommitMessage,
+		&d.Branch, &d.Status, &d.ContainerID, &d.ContainerName, &d.ImageTag,
+		&d.BuildDuration, &d.TriggeredBy, &d.ErrorMessage, &d.CreatedAt, &d.FinishedAt)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("get deployment for user: %w", err)
+	}
+	return d, nil
+}
+
 func (db *DB) CreateDeployment(d *Deployment) error {
 	d.ID = NewID()
 	_, err := db.Exec(

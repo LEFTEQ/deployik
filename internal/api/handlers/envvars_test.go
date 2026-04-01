@@ -11,6 +11,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
+	"github.com/LEFTEQ/lovinka-deployik/internal/auth"
 	"github.com/LEFTEQ/lovinka-deployik/internal/crypto"
 	"github.com/LEFTEQ/lovinka-deployik/internal/db"
 )
@@ -79,18 +80,20 @@ func newVariableHandlerRequest(t *testing.T, method, path, projectID string, bod
 		parts := strings.Split(path, "/")
 		routeCtx.URLParams.Add("key", parts[len(parts)-1])
 	}
-	return req.WithContext(context.WithValue(req.Context(), chi.RouteCtxKey, routeCtx))
+	req = req.WithContext(context.WithValue(req.Context(), chi.RouteCtxKey, routeCtx))
+	return req.WithContext(auth.WithClaims(req.Context(), &auth.Claims{UserID: "admin", Role: "admin"}))
 }
 
 func TestVariableHandlerBulkSetRejectsPublicSecrets(t *testing.T) {
 	database := newVariableHandlerTestDB(t)
+	project := newTestProject(t, database)
 	encryptor, err := crypto.NewEncryptor("test-key")
 	if err != nil {
 		t.Fatalf("NewEncryptor: %v", err)
 	}
 
 	handler := &VariableHandler{DB: database, Encryptor: encryptor, Kind: db.VariableKindSecret}
-	req := newVariableHandlerRequest(t, http.MethodPut, "/projects/project-1/secrets", "project-1", map[string]any{
+	req := newVariableHandlerRequest(t, http.MethodPut, "/projects/"+project.ID+"/secrets", project.ID, map[string]any{
 		"environment": "shared",
 		"variables": []map[string]string{
 			{"key": "NEXT_PUBLIC_API_URL", "value": "https://api.example.com"},
@@ -105,6 +108,34 @@ func TestVariableHandlerBulkSetRejectsPublicSecrets(t *testing.T) {
 	}
 	if !strings.Contains(rec.Body.String(), "NEXT_PUBLIC_") {
 		t.Fatalf("expected NEXT_PUBLIC_ validation error, got %s", rec.Body.String())
+	}
+}
+
+func TestVariableHandlerBulkSetRejectsInvalidKeys(t *testing.T) {
+	database := newVariableHandlerTestDB(t)
+	project := newTestProject(t, database)
+	encryptor, err := crypto.NewEncryptor("test-key")
+	if err != nil {
+		t.Fatalf("NewEncryptor: %v", err)
+	}
+
+	handler := &VariableHandler{DB: database, Encryptor: encryptor, Kind: db.VariableKindEnv}
+	req := newVariableHandlerRequest(t, http.MethodPut, "/projects/"+project.ID+"/env", project.ID, map[string]any{
+		"environment": "shared",
+		"variables": []map[string]string{
+			{"key": "bad-key", "value": "https://api.example.com"},
+		},
+	})
+
+	req = req.WithContext(auth.WithClaims(req.Context(), &auth.Claims{UserID: project.UserID, Role: "admin"}))
+	rec := httptest.NewRecorder()
+	handler.BulkSet(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusBadRequest)
+	}
+	if !strings.Contains(rec.Body.String(), "letters, numbers, and underscores") {
+		t.Fatalf("expected invalid key error, got %s", rec.Body.String())
 	}
 }
 
@@ -133,7 +164,6 @@ func TestVariableHandlerBulkSetRejectsCrossStoreConflicts(t *testing.T) {
 			{"key": "API_URL", "value": "super-secret"},
 		},
 	})
-
 	rec := httptest.NewRecorder()
 	handler.BulkSet(rec, req)
 
@@ -165,7 +195,6 @@ func TestVariableHandlerListMasksValues(t *testing.T) {
 
 	handler := &VariableHandler{DB: database, Encryptor: encryptor, Kind: db.VariableKindSecret}
 	req := newVariableHandlerRequest(t, http.MethodGet, "/projects/"+project.ID+"/secrets?environment=shared", project.ID, nil)
-
 	rec := httptest.NewRecorder()
 	handler.List(rec, req)
 

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"regexp"
 	"strings"
 	"time"
 
@@ -38,6 +39,8 @@ type variableResponse struct {
 	Value       string          `json:"value"`
 	CreatedAt   time.Time       `json:"created_at"`
 }
+
+var variableKeyPattern = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
 
 func normalizeVariableEnvironment(value string) (string, error) {
 	environment := strings.TrimSpace(value)
@@ -106,6 +109,9 @@ func (h *VariableHandler) validateVariableKey(key string) error {
 	if key == "" {
 		return fmt.Errorf("key is required")
 	}
+	if !variableKeyPattern.MatchString(key) {
+		return fmt.Errorf("key must contain only letters, numbers, and underscores, and cannot start with a number")
+	}
 	if h.Kind == db.VariableKindSecret && strings.HasPrefix(key, "NEXT_PUBLIC_") {
 		return fmt.Errorf("secret keys cannot use NEXT_PUBLIC_ because secrets are runtime-only")
 	}
@@ -135,6 +141,9 @@ func (h *VariableHandler) ensureNoStoreConflicts(projectID string, keys []string
 // List returns project variables for one scope with masked values.
 func (h *VariableHandler) List(w http.ResponseWriter, r *http.Request) {
 	projectID := chi.URLParam(r, "id")
+	if _, _, ok := loadAuthorizedProject(w, r, h.DB, projectID); !ok {
+		return
+	}
 	environment, err := normalizeVariableEnvironment(r.URL.Query().Get("environment"))
 	if err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
@@ -171,6 +180,9 @@ func (h *VariableHandler) List(w http.ResponseWriter, r *http.Request) {
 // BulkSet replaces all project variables for one scope and store.
 func (h *VariableHandler) BulkSet(w http.ResponseWriter, r *http.Request) {
 	projectID := chi.URLParam(r, "id")
+	if _, _, ok := loadAuthorizedProject(w, r, h.DB, projectID); !ok {
+		return
+	}
 
 	var req bulkSetRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -238,6 +250,9 @@ func (h *VariableHandler) BulkSet(w http.ResponseWriter, r *http.Request) {
 // Delete removes a single project variable from one scope and store.
 func (h *VariableHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	projectID := chi.URLParam(r, "id")
+	if _, _, ok := loadAuthorizedProject(w, r, h.DB, projectID); !ok {
+		return
+	}
 	key := strings.TrimSpace(chi.URLParam(r, "key"))
 	if err := h.validateVariableKey(key); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})

@@ -23,6 +23,9 @@ type addDomainRequest struct {
 
 func (h *DomainHandler) List(w http.ResponseWriter, r *http.Request) {
 	projectID := chi.URLParam(r, "id")
+	if _, _, ok := loadAuthorizedProject(w, r, h.DB, projectID); !ok {
+		return
+	}
 	domains, err := h.DB.ListDomains(projectID)
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to list domains"})
@@ -37,9 +40,8 @@ func (h *DomainHandler) List(w http.ResponseWriter, r *http.Request) {
 func (h *DomainHandler) Add(w http.ResponseWriter, r *http.Request) {
 	projectID := chi.URLParam(r, "id")
 
-	project, err := h.DB.GetProject(projectID)
-	if err != nil || project == nil {
-		writeJSON(w, http.StatusNotFound, map[string]string{"error": "project not found"})
+	_, _, ok := loadAuthorizedProject(w, r, h.DB, projectID)
+	if !ok {
 		return
 	}
 
@@ -83,19 +85,29 @@ func (h *DomainHandler) Add(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *DomainHandler) Delete(w http.ResponseWriter, r *http.Request) {
+	projectID := chi.URLParam(r, "id")
+	if _, _, ok := loadAuthorizedProject(w, r, h.DB, projectID); !ok {
+		return
+	}
 	domainID := chi.URLParam(r, "did")
 
 	// Get domain to find its name for nginx cleanup
-	domains, _ := h.DB.ListDomains(chi.URLParam(r, "id"))
+	domains, _ := h.DB.ListDomains(projectID)
 	var domainName string
+	found := false
 	for _, d := range domains {
 		if d.ID == domainID {
 			domainName = d.DomainName
+			found = true
 			break
 		}
 	}
+	if !found {
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": "domain not found"})
+		return
+	}
 
-	if err := h.DB.DeleteDomain(domainID); err != nil {
+	if err := h.DB.DeleteDomainForProject(projectID, domainID); err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to delete domain"})
 		return
 	}
@@ -116,9 +128,8 @@ func (h *DomainHandler) Verify(w http.ResponseWriter, r *http.Request) {
 	domainID := chi.URLParam(r, "did")
 	projectID := chi.URLParam(r, "id")
 
-	project, err := h.DB.GetProject(projectID)
-	if err != nil || project == nil {
-		writeJSON(w, http.StatusNotFound, map[string]string{"error": "project not found"})
+	project, _, ok := loadAuthorizedProject(w, r, h.DB, projectID)
+	if !ok {
 		return
 	}
 
