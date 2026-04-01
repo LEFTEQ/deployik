@@ -12,7 +12,7 @@ import (
 func Authenticate(jwtSecret string) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			tokenStr := extractToken(r)
+			tokenStr := ExtractAccessToken(r)
 			if tokenStr == "" {
 				http.Error(w, `{"error":"missing authorization token"}`, http.StatusUnauthorized)
 				return
@@ -30,16 +30,15 @@ func Authenticate(jwtSecret string) func(http.Handler) http.Handler {
 	}
 }
 
-func extractToken(r *http.Request) string {
+func ExtractAccessToken(r *http.Request) string {
 	// Check Authorization header
 	bearer := r.Header.Get("Authorization")
 	if strings.HasPrefix(bearer, "Bearer ") {
 		return strings.TrimPrefix(bearer, "Bearer ")
 	}
 
-	// Check query param (for WebSocket connections)
-	if token := r.URL.Query().Get("token"); token != "" {
-		return token
+	if cookie, err := r.Cookie(auth.AccessCookieName); err == nil && cookie.Value != "" {
+		return cookie.Value
 	}
 
 	return ""

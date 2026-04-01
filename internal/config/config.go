@@ -2,6 +2,7 @@ package config
 
 import (
 	"fmt"
+	"net/url"
 	"os"
 	"strings"
 )
@@ -14,6 +15,9 @@ type Config struct {
 	GithubClientID     string
 	GithubClientSecret string
 	AllowedGithubUsers []string
+	AdminGithubUsers   []string
+	FrontendURL        string
+	AllowedOrigins     []string
 	DataDir            string
 	NginxConfDir       string
 	ProxyContainerName string
@@ -32,6 +36,7 @@ func Load() (*Config, error) {
 		EncryptionKey:      os.Getenv("ENCRYPTION_KEY"),
 		GithubClientID:     os.Getenv("GITHUB_CLIENT_ID"),
 		GithubClientSecret: os.Getenv("GITHUB_CLIENT_SECRET"),
+		FrontendURL:        strings.TrimRight(getEnv("FRONTEND_URL", "http://localhost:5173"), "/"),
 		DataDir:            getEnv("DATA_DIR", "data"),
 		NginxConfDir:       getEnv("NGINX_CONF_DIR", "/opt/nginx-proxy/conf.d"),
 		ProxyContainerName: getEnv("PROXY_CONTAINER_NAME", "nginx-proxy"),
@@ -43,10 +48,23 @@ func Load() (*Config, error) {
 	}
 
 	if users := os.Getenv("ALLOWED_GITHUB_USERS"); users != "" {
-		for _, u := range strings.Split(users, ",") {
-			if trimmed := strings.TrimSpace(u); trimmed != "" {
-				cfg.AllowedGithubUsers = append(cfg.AllowedGithubUsers, trimmed)
-			}
+		cfg.AllowedGithubUsers = splitCSV(users)
+	}
+
+	if users := os.Getenv("ADMIN_GITHUB_USERS"); users != "" {
+		cfg.AdminGithubUsers = splitCSV(users)
+	}
+
+	allowedOrigins := map[string]struct{}{}
+	if cfg.FrontendURL != "" {
+		allowedOrigins[cfg.FrontendURL] = struct{}{}
+	}
+	for _, origin := range splitCSV(os.Getenv("ALLOWED_ORIGINS")) {
+		allowedOrigins[strings.TrimRight(origin, "/")] = struct{}{}
+	}
+	for origin := range allowedOrigins {
+		if origin != "" {
+			cfg.AllowedOrigins = append(cfg.AllowedOrigins, origin)
 		}
 	}
 
@@ -59,6 +77,27 @@ func Load() (*Config, error) {
 	}
 
 	return cfg, nil
+}
+
+func splitCSV(value string) []string {
+	if value == "" {
+		return nil
+	}
+	var values []string
+	for _, item := range strings.Split(value, ",") {
+		if trimmed := strings.TrimSpace(item); trimmed != "" {
+			values = append(values, trimmed)
+		}
+	}
+	return values
+}
+
+func (cfg *Config) FrontendCookieSecure() bool {
+	frontendURL, err := url.Parse(cfg.FrontendURL)
+	if err != nil {
+		return false
+	}
+	return frontendURL.Scheme == "https"
 }
 
 func getEnv(key, fallback string) string {

@@ -7,6 +7,8 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
+	"github.com/LEFTEQ/lovinka-deployik/internal/audit"
+	"github.com/LEFTEQ/lovinka-deployik/internal/auth"
 	"github.com/LEFTEQ/lovinka-deployik/internal/db"
 	"github.com/LEFTEQ/lovinka-deployik/internal/domain"
 )
@@ -14,6 +16,7 @@ import (
 type DomainHandler struct {
 	DB      *db.DB
 	Manager *domain.Manager
+	Audit   *audit.Recorder
 }
 
 type addDomainRequest struct {
@@ -82,6 +85,18 @@ func (h *DomainHandler) Add(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusCreated, d)
+	claims := auth.GetClaims(r.Context())
+	h.Audit.Record(audit.Entry{
+		UserID:       claims.UserID,
+		Action:       "domain.add",
+		ResourceType: "domain",
+		ResourceID:   d.ID,
+		ProjectID:    projectID,
+		Metadata: map[string]any{
+			"domain":      d.DomainName,
+			"environment": d.Environment,
+		},
+	})
 }
 
 func (h *DomainHandler) Delete(w http.ResponseWriter, r *http.Request) {
@@ -122,6 +137,17 @@ func (h *DomainHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, map[string]string{"status": "deleted"})
+	claims := auth.GetClaims(r.Context())
+	h.Audit.Record(audit.Entry{
+		UserID:       claims.UserID,
+		Action:       "domain.delete",
+		ResourceType: "domain",
+		ResourceID:   domainID,
+		ProjectID:    projectID,
+		Metadata: map[string]any{
+			"domain": domainName,
+		},
+	})
 }
 
 func (h *DomainHandler) Verify(w http.ResponseWriter, r *http.Request) {
@@ -162,6 +188,19 @@ func (h *DomainHandler) Verify(w http.ResponseWriter, r *http.Request) {
 			"dns_verified": false,
 			"message":      "DNS A record does not point to " + h.Manager.VPSHost,
 		})
+		claims := auth.GetClaims(r.Context())
+		h.Audit.Record(audit.Entry{
+			UserID:       claims.UserID,
+			Action:       "domain.verify",
+			ResourceType: "domain",
+			ResourceID:   domainID,
+			ProjectID:    projectID,
+			Metadata: map[string]any{
+				"domain":       target.DomainName,
+				"dns_verified": false,
+				"ssl_status":   "pending",
+			},
+		})
 		return
 	}
 
@@ -178,6 +217,19 @@ func (h *DomainHandler) Verify(w http.ResponseWriter, r *http.Request) {
 			"ssl_status":   "error",
 			"message":      "DNS verified but SSL cert issuance failed",
 		})
+		claims := auth.GetClaims(r.Context())
+		h.Audit.Record(audit.Entry{
+			UserID:       claims.UserID,
+			Action:       "domain.verify",
+			ResourceType: "domain",
+			ResourceID:   domainID,
+			ProjectID:    projectID,
+			Metadata: map[string]any{
+				"domain":       target.DomainName,
+				"dns_verified": true,
+				"ssl_status":   "error",
+			},
+		})
 		return
 	}
 
@@ -187,5 +239,18 @@ func (h *DomainHandler) Verify(w http.ResponseWriter, r *http.Request) {
 		"dns_verified": true,
 		"ssl_status":   "active",
 		"message":      "Domain verified and SSL cert active",
+	})
+	claims := auth.GetClaims(r.Context())
+	h.Audit.Record(audit.Entry{
+		UserID:       claims.UserID,
+		Action:       "domain.verify",
+		ResourceType: "domain",
+		ResourceID:   domainID,
+		ProjectID:    projectID,
+		Metadata: map[string]any{
+			"domain":       target.DomainName,
+			"dns_verified": true,
+			"ssl_status":   "active",
+		},
 	})
 }

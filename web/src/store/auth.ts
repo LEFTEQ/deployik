@@ -1,45 +1,35 @@
-import { create } from 'zustand';
-import { persist } from 'zustand/middleware';
-import type { User } from '@/types/api';
+import { create } from "zustand";
+import type { User } from "@/types/api";
+
+type AuthStatus = "unknown" | "authenticated" | "unauthenticated";
 
 interface AuthState {
-  accessToken: string | null;
-  refreshToken: string | null;
   user: User | null;
+  status: AuthStatus;
   isAuthenticated: boolean;
-  setAuth: (accessToken: string, refreshToken: string, user: User) => void;
-  logout: () => void;
+  setAuthenticated: (user: User) => void;
+  clearAuth: () => void;
   isAdmin: () => boolean;
 }
 
-export const useAuthStore = create<AuthState>()(
-  persist(
-    (set, get) => ({
-      accessToken: null,
-      refreshToken: null,
-      user: null,
-      isAuthenticated: false,
+export const useAuthStore = create<AuthState>()((set, get) => ({
+  user: null,
+  status: "unknown",
+  isAuthenticated: false,
 
-      setAuth: (accessToken, refreshToken, user) =>
-        set({
-          accessToken,
-          refreshToken,
-          user,
-          isAuthenticated: true,
-        }),
-
-      logout: () =>
-        set({
-          accessToken: null,
-          refreshToken: null,
-          user: null,
-          isAuthenticated: false,
-        }),
-
-      isAdmin: () => get().user?.role === 'admin',
+  setAuthenticated: (user) =>
+    set({
+      user,
+      status: "authenticated",
+      isAuthenticated: true,
     }),
-    {
-      name: 'deployik-auth',
-    },
-  ),
-);
+
+  clearAuth: () =>
+    set({
+      user: null,
+      status: "unauthenticated",
+      isAuthenticated: false,
+    }),
+
+  isAdmin: () => get().user?.role === "admin",
+}));

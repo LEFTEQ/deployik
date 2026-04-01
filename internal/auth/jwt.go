@@ -38,19 +38,6 @@ func GenerateAccessToken(secret, userID, username, role string) (string, error) 
 	return token.SignedString([]byte(secret))
 }
 
-// GenerateRefreshToken creates a long-lived refresh token.
-func GenerateRefreshToken(secret, userID string) (string, error) {
-	claims := jwt.RegisteredClaims{
-		ExpiresAt: jwt.NewNumericDate(time.Now().Add(RefreshTokenExpiry)),
-		IssuedAt:  jwt.NewNumericDate(time.Now()),
-		Issuer:    "deployik",
-		Subject:   userID,
-	}
-
-	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
-	return token.SignedString([]byte(secret))
-}
-
 // ValidateAccessToken parses and validates an access token.
 func ValidateAccessToken(secret, tokenStr string) (*Claims, error) {
 	token, err := jwt.ParseWithClaims(tokenStr, &Claims{}, func(t *jwt.Token) (interface{}, error) {
@@ -69,24 +56,4 @@ func ValidateAccessToken(secret, tokenStr string) (*Claims, error) {
 	}
 
 	return claims, nil
-}
-
-// ValidateRefreshToken parses and validates a refresh token, returning the user ID.
-func ValidateRefreshToken(secret, tokenStr string) (string, error) {
-	token, err := jwt.ParseWithClaims(tokenStr, &jwt.RegisteredClaims{}, func(t *jwt.Token) (interface{}, error) {
-		if _, ok := t.Method.(*jwt.SigningMethodHMAC); !ok {
-			return nil, fmt.Errorf("unexpected signing method: %v", t.Header["alg"])
-		}
-		return []byte(secret), nil
-	})
-	if err != nil {
-		return "", fmt.Errorf("parse refresh token: %w", err)
-	}
-
-	claims, ok := token.Claims.(*jwt.RegisteredClaims)
-	if !ok || !token.Valid {
-		return "", fmt.Errorf("invalid refresh token")
-	}
-
-	return claims.Subject, nil
 }

@@ -1,6 +1,9 @@
 package db
 
-import "testing"
+import (
+	"testing"
+	"time"
+)
 
 func newTestDB(t *testing.T) *DB {
 	t.Helper()
@@ -19,7 +22,7 @@ func TestMigrations(t *testing.T) {
 	db := newTestDB(t)
 
 	// Verify tables exist
-	tables := []string{"users", "projects", "deployments", "build_logs", "domains", "env_variables", "_migrations"}
+	tables := []string{"users", "projects", "deployments", "build_logs", "domains", "env_variables", "refresh_tokens", "audit_logs", "_migrations"}
 	for _, table := range tables {
 		var count int
 		err := db.QueryRow("SELECT COUNT(*) FROM " + table).Scan(&count)
@@ -370,6 +373,79 @@ func TestSecretCRUD(t *testing.T) {
 	}
 	if len(envVars) != 1 {
 		t.Fatalf("got %d env vars after secret delete, want 1", len(envVars))
+	}
+}
+
+func TestRefreshSessionRotation(t *testing.T) {
+	db := newTestDB(t)
+
+	user := &User{ID: NewID(), GithubID: 1, Username: "u", Role: "admin"}
+	if err := db.UpsertUser(user); err != nil {
+		t.Fatalf("UpsertUser: %v", err)
+	}
+
+	oldHash := "old-hash"
+	if err := db.CreateRefreshSession(&RefreshSession{
+		UserID:    user.ID,
+		TokenHash: oldHash,
+		ExpiresAt: time.Now().Add(time.Hour),
+	}); err != nil {
+		t.Fatalf("CreateRefreshSession: %v", err)
+	}
+
+	session, err := db.GetActiveRefreshSessionByHash(oldHash)
+	if err != nil {
+		t.Fatalf("GetActiveRefreshSessionByHash(old): %v", err)
+	}
+	if session == nil {
+		t.Fatal("expected active refresh session")
+	}
+
+	if err := db.RotateRefreshSession(session.ID, user.ID, "new-hash", time.Now().Add(time.Hour)); err != nil {
+		t.Fatalf("RotateRefreshSession: %v", err)
+	}
+
+	oldSession, err := db.GetActiveRefreshSessionByHash(oldHash)
+	if err != nil {
+		t.Fatalf("GetActiveRefreshSessionByHash(rotated old): %v", err)
+	}
+	if oldSession != nil {
+		t.Fatal("old refresh session should no longer be active")
+	}
+
+	newSession, err := db.GetActiveRefreshSessionByHash("new-hash")
+	if err != nil {
+		t.Fatalf("GetActiveRefreshSessionByHash(new): %v", err)
+	}
+	if newSession == nil {
+		t.Fatal("expected rotated refresh session")
+	}
+}
+
+func TestCreateAuditLog(t *testing.T) {
+	db := newTestDB(t)
+
+	user := &User{ID: NewID(), GithubID: 1, Username: "u", Role: "admin"}
+	if err := db.UpsertUser(user); err != nil {
+		t.Fatalf("UpsertUser: %v", err)
+	}
+
+	if err := db.CreateAuditLog(&AuditLog{
+		UserID:       user.ID,
+		Action:       "project.create",
+		ResourceType: "project",
+		ResourceID:   "project-1",
+		Metadata:     `{"name":"demo"}`,
+	}); err != nil {
+		t.Fatalf("CreateAuditLog: %v", err)
+	}
+
+	var count int
+	if err := db.QueryRow("SELECT COUNT(*) FROM audit_logs WHERE action = ?", "project.create").Scan(&count); err != nil {
+		t.Fatalf("QueryRow audit_logs: %v", err)
+	}
+	if count != 1 {
+		t.Fatalf("count = %d, want 1", count)
 	}
 }
 

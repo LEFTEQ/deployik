@@ -1,11 +1,11 @@
-import { useEffect, useRef } from 'react';
-import { useNavigate, useSearch } from '@tanstack/react-router';
-import { api } from '@/lib/api';
-import { useAuthStore } from '@/store/auth';
+import { useEffect, useRef } from "react";
+import { useNavigate, useSearch } from "@tanstack/react-router";
+import { api } from "@/lib/api";
+import { useAuthStore } from "@/store/auth";
 
 export function AuthCallback() {
   const navigate = useNavigate();
-  const search = useSearch({ from: '/auth/callback' });
+  const search = useSearch({ from: "/auth/callback" });
   const processedRef = useRef(false);
 
   useEffect(() => {
@@ -13,22 +13,22 @@ export function AuthCallback() {
     processedRef.current = true;
 
     const code = (search as Record<string, string>).code;
-    if (!code) {
-      navigate({ to: '/login' });
+    const state = (search as Record<string, string>).state;
+    if (!code || !state) {
+      navigate({ to: "/login" });
       return;
     }
 
     api
-      .getGithubCallbackTokens(code)
+      .completeGithubAuth(code, state)
       .then((data) => {
-        useAuthStore
-          .getState()
-          .setAuth(data.access_token, data.refresh_token, data.user);
-        navigate({ to: '/' });
+        useAuthStore.getState().setAuthenticated(data.user);
+        navigate({ to: "/" });
       })
       .catch((err) => {
-        console.error('Auth callback failed:', err);
-        navigate({ to: '/login' });
+        console.error("Auth callback failed:", err);
+        useAuthStore.getState().clearAuth();
+        navigate({ to: "/login" });
       });
   }, [navigate, search]);
 

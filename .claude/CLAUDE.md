@@ -34,7 +34,7 @@ internal/
     router.go             chi route definitions (public + protected groups)
     spa.go                Serves embedded SPA with client-side routing fallback
     handlers/
-      auth.go             GitHub OAuth callback, JWT issuance, refresh, /me
+      auth.go             GitHub OAuth callback, OAuth state verification, cookie session issuance, refresh, logout, /me
       projects.go         CRUD + GitHub repo/branch listing
       deployments.go      List, trigger, get, build logs
       domains.go          Add, list, delete, verify (DNS + SSL)
@@ -42,12 +42,17 @@ internal/
       access.go           loadAuthorizedProject/Deployment helpers (calls authz)
       helpers.go          writeJSON utility
     middleware/
-      auth.go             JWT extraction from Bearer header or query param
-      cors.go             CORS headers
+      auth.go             JWT extraction from Bearer header or access cookie
+      cors.go             Allowlist-based CORS/origin checks
+      ratelimit.go        In-memory per-IP rate limiter for auth, mutations, and ws routes
 
   auth/
-    jwt.go                GenerateAccessToken, GenerateRefreshToken, Validate*
+    jwt.go                GenerateAccessToken, ValidateAccessToken
+    session.go            Opaque token generation + hashing, shared cookie names
     context.go            WithClaims/GetClaims context helpers
+
+  audit/
+    recorder.go           Writes sensitive action events into audit_logs
 
   authz/
     access.go             CanAccessProject, LoadProject, LoadDeployment (ownership + admin bypass)
@@ -74,13 +79,16 @@ internal/
       001_initial.sql          Users, projects, deployments, build_logs, domains, env_variables
       002_project_variable_kinds.sql  Adds kind (env/secret) + shared scope to env_variables
       003_project_build_settings.sql  Adds root_directory, output_directory to projects
-    models.go             User, Project, Deployment, BuildLog, Domain, ProjectVariable, VariableKind
+      004_auth_sessions_and_audit_logs.sql  Adds refresh_tokens and audit_logs
+    models.go             User, RefreshSession, AuditLog, Project, Deployment, BuildLog, Domain, ProjectVariable, VariableKind
     queries_users.go      GetUserByGithubID, GetUserByID, UpsertUser
     queries_projects.go   ListProjects, GetProject, GetProjectForUser, Create, Update, Delete (soft)
     queries_deployments.go  List, Get, GetForUser, Create, UpdateStatus/Container/Duration, GetLiveDeployment
     queries_envvars.go    ListProjectVariables, ListResolvedEnvVars/Secrets, BulkSet*, Delete*, key conflict checks
     queries_domains.go    List, GetByName, Create, UpdateDNS/SSL, Delete, DeleteForProject
     queries_buildlogs.go  Insert, GetBuildLogs, PruneBuildLogs
+    queries_refresh_tokens.go  Create/GetActive/Rotate/Revoke refresh sessions
+    queries_audit_logs.go CreateAuditLog
 
   domain/
     ssl.go                Manager: ProvisionDomain (DNS verify -> certbot -> nginx -> reload)
@@ -96,14 +104,14 @@ internal/
 
   ws/
     hub.go                Pub/sub hub: Subscribe, Unsubscribe, Publish per deployment
-    logs.go               WebSocket handler with JWT auth via query param
+    logs.go               WebSocket handler with cookie/header auth + origin allowlist
 
 web/src/
   app/app.tsx             TanStack Router tree, QueryClient, providers
   main.tsx                React root render
   pages/
     Login.tsx             GitHub OAuth redirect
-    AuthCallback.tsx      Exchanges code for tokens, stores in Zustand
+    AuthCallback.tsx      Exchanges code/state for cookie session, stores only user state
     Projects.tsx          Dashboard: project list
     NewProject.tsx        Two-step: select repo -> configure build settings
     ProjectDetail.tsx     Tabs: deployments, domains, env vars, secrets, settings
@@ -117,7 +125,7 @@ web/src/
   hooks/
     useBuildLogs.ts       WebSocket hook for real-time build log streaming
   lib/
-    api.ts                ApiClient class wrapping fetch with JWT auth, auto-logout on 401
+    api.ts                ApiClient class wrapping fetch with cookie auth, refresh retry, auto-logout on unrecoverable 401
     utils.ts              cn() utility (clsx + tailwind-merge)
   store/
     auth.ts               Zustand store persisted to localStorage (tokens, user, isAuthenticated)
@@ -131,22 +139,25 @@ SQLite with 3 migrations. Tables:
 
 | Table | Key Fields | Notes |
 |---|---|---|
-| `users` | id (ULID), github_id (unique), username, github_token (encrypted), role (admin/user) | First user auto-promoted to admin |
+| `users` | id (ULID), github_id (unique), username, github_token (encrypted), role (admin/user) | `ADMIN_GITHUB_USERS` provides explicit admin bootstrap; first user only auto-promotes when no admin list is configured |
 | `projects` | id (ULID), name (unique slug), github_repo, github_owner, branch, user_id (FK), framework, root_directory, output_directory, build_command, install_command, node_version, status | Soft-delete via status='deleted' |
 | `deployments` | id (ULID), project_id (FK), environment (preview/production), status (queued/building/deploying/live/failed/rolled_back/replaced), commit_sha, container_id, build_duration | |
 | `build_logs` | id (auto), deployment_id (FK), line_number, content, stream (stdout/stderr) | |
 | `domains` | id (ULID), project_id (FK), domain (unique), environment, is_auto, dns_verified, ssl_status (pending/active/error) | Auto-domains cannot be deleted |
 | `env_variables` | id (ULID), project_id (FK), environment (shared/preview/production), kind (env/secret), key, value (encrypted) | UNIQUE(project_id, environment, key) |
+| `refresh_tokens` | id (ULID), user_id (FK), token_hash, expires_at, last_used_at, revoked_at | Opaque refresh tokens are hashed at rest and rotated on use |
+| `audit_logs` | id (auto), user_id (nullable FK), action, resource_type, resource_id, project_id, deployment_id, metadata | Records login/refresh/logout and sensitive mutating actions |
 
 ## API Endpoints
 
 ### Public
 - `GET  /api/health` -- Health check
 - `GET  /api/auth/github` -- Redirects to GitHub OAuth
-- `GET  /api/auth/github/callback?code=` -- Exchanges code, returns JWT tokens + user
-- `POST /api/auth/refresh` -- Body: `{refresh_token}`, returns new tokens
+- `GET  /api/auth/github/callback?code=&state=` -- Verifies OAuth state, sets session cookies, returns user
+- `POST /api/auth/refresh` -- Rotates refresh cookie, returns user
+- `POST /api/auth/logout` -- Revokes refresh session and clears cookies
 
-### Protected (Bearer token required)
+### Protected (access cookie or Bearer token required)
 - `GET  /api/auth/me` -- Current user
 
 **GitHub:**
@@ -183,15 +194,18 @@ SQLite with 3 migrations. Tables:
 - `DELETE /api/projects/{id}/secrets/{key}?environment=` -- Delete secret
 
 ### WebSocket
-- `GET /ws/deployments/{did}/logs?token=` -- Real-time build log streaming
+- `GET /ws/deployments/{did}/logs` -- Real-time build log streaming (access cookie or Bearer token)
 
 ## Key Patterns and Conventions
 
 ### Go Backend
 
 - **Router:** chi v5 with middleware chain: Logger -> Recoverer -> RequestID -> RealIP -> CORS
-- **Auth middleware:** Extracts JWT from `Authorization: Bearer` header or `?token=` query param
+- **Auth middleware:** Extracts JWT from `Authorization: Bearer` header or the `deployik_access_token` cookie
 - **Authorization:** All project-scoped endpoints call `loadAuthorizedProject()` or `loadAuthorizedDeployment()` from `handlers/access.go`, which delegates to `authz.LoadProject()` / `authz.LoadDeployment()`. Admins see all; regular users see only their own.
+- **Session model:** The SPA never stores tokens. `AuthCallback.tsx` exchanges `code` + `state`, the server sets `HttpOnly` cookies, `api.ts` uses `credentials: 'include'`, and route guards rehydrate auth via `/api/auth/me`.
+- **Refresh rotation:** Refresh tokens are opaque random strings, stored only as SHA-256 hashes in `refresh_tokens`, revoked on logout, and rotated every time `/api/auth/refresh` succeeds.
+- **Perimeter controls:** `cors.go` blocks origins outside `Config.AllowedOrigins`, `ratelimit.go` applies per-IP limits to auth/mutation/ws routes, and `audit/recorder.go` records security-relevant mutations to `audit_logs`.
 - **IDs:** ULIDs generated via `db.NewID()` (time-sortable, no collision risk)
 - **Encryption:** All sensitive values (GitHub tokens, env vars, secrets) encrypted with AES-256-GCM before storage. Key derived from `ENCRYPTION_KEY` env var via SHA-256.
 - **Migrations:** Embedded SQL files in `internal/db/migrations/`, applied in order, tracked in `_migrations` table. Each migration runs in a transaction.

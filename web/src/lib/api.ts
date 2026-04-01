@@ -15,14 +15,12 @@ import type {
 const API_URL = import.meta.env.VITE_API_URL || "/api";
 
 class ApiClient {
+  private refreshPromise: Promise<void> | null = null;
+
   private getHeaders(hasBody = false): HeadersInit {
     const headers: HeadersInit = {};
     if (hasBody) {
       headers["Content-Type"] = "application/json";
-    }
-    const token = useAuthStore.getState().accessToken;
-    if (token) {
-      headers["Authorization"] = `Bearer ${token}`;
     }
     return headers;
   }
@@ -30,18 +28,34 @@ class ApiClient {
   private async request<T>(
     endpoint: string,
     options: RequestInit = {},
+    allowRefresh = true,
   ): Promise<T> {
     const hasBody = !!options.body;
     const response = await fetch(`${API_URL}${endpoint}`, {
       ...options,
+      credentials: "include",
       headers: {
         ...this.getHeaders(hasBody),
         ...options.headers,
       },
     });
 
+    if (
+      response.status === 401 &&
+      allowRefresh &&
+      this.shouldRefresh(endpoint)
+    ) {
+      try {
+        await this.refreshSession();
+      } catch {
+        useAuthStore.getState().clearAuth();
+        throw new Error("Session expired");
+      }
+      return this.request<T>(endpoint, options, false);
+    }
+
     if (response.status === 401) {
-      useAuthStore.getState().logout();
+      useAuthStore.getState().clearAuth();
       throw new Error("Session expired");
     }
 
@@ -57,22 +71,42 @@ class ApiClient {
     return JSON.parse(text);
   }
 
-  // Auth
-  async getGithubCallbackTokens(code: string): Promise<AuthResponse> {
-    return this.request(
-      `/auth/github/callback?code=${encodeURIComponent(code)}`,
+  private shouldRefresh(endpoint: string): boolean {
+    return !["/auth/refresh", "/auth/logout", "/auth/github/callback"].some(
+      (path) => endpoint.startsWith(path),
     );
   }
 
-  async refreshToken(refreshToken: string): Promise<AuthResponse> {
-    return this.request("/auth/refresh", {
-      method: "POST",
-      body: JSON.stringify({ refresh_token: refreshToken }),
-    });
+  private async refreshSession(): Promise<void> {
+    if (!this.refreshPromise) {
+      this.refreshPromise = this.request<AuthResponse>(
+        "/auth/refresh",
+        { method: "POST" },
+        false,
+      )
+        .then((data) => {
+          useAuthStore.getState().setAuthenticated(data.user);
+        })
+        .finally(() => {
+          this.refreshPromise = null;
+        });
+    }
+    await this.refreshPromise;
+  }
+
+  // Auth
+  async completeGithubAuth(code: string, state: string): Promise<AuthResponse> {
+    return this.request(
+      `/auth/github/callback?code=${encodeURIComponent(code)}&state=${encodeURIComponent(state)}`,
+    );
   }
 
   async getMe(): Promise<User> {
     return this.request("/auth/me");
+  }
+
+  async logout(): Promise<void> {
+    return this.request("/auth/logout", { method: "POST" }, false);
   }
 
   // GitHub
@@ -248,10 +282,9 @@ class ApiClient {
 
   // WebSocket URL builder
   getWebSocketUrl(path: string): string {
-    const token = useAuthStore.getState().accessToken;
     const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
     const wsBase = `${protocol}//${window.location.host}`;
-    return `${wsBase}/ws${path}?token=${token}`;
+    return `${wsBase}/ws${path}`;
   }
 }
 

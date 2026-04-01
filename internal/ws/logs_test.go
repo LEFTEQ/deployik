@@ -61,11 +61,12 @@ func TestLogsHandlerRejectsForeignDeploymentAccess(t *testing.T) {
 		t.Fatalf("GenerateAccessToken: %v", err)
 	}
 
-	req := httptest.NewRequest(http.MethodGet, "/ws/deployments/"+deployment.ID+"/logs?token="+token, nil)
+	req := httptest.NewRequest(http.MethodGet, "/ws/deployments/"+deployment.ID+"/logs", nil)
+	req.AddCookie(&http.Cookie{Name: auth.AccessCookieName, Value: token})
 	req.SetPathValue("did", deployment.ID)
 	rec := httptest.NewRecorder()
 
-	LogsHandler(NewHub(), database, "secret")(rec, req)
+	LogsHandler(NewHub(), database, "secret", []string{"http://localhost:5173"})(rec, req)
 
 	if rec.Code != http.StatusNotFound {
 		t.Fatalf("status = %d, want %d", rec.Code, http.StatusNotFound)

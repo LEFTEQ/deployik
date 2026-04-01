@@ -42,7 +42,8 @@ func (db *DB) UpsertUser(u *User) error {
 		 ON CONFLICT(github_id) DO UPDATE SET
 		   username = excluded.username,
 		   avatar_url = excluded.avatar_url,
-		   github_token = excluded.github_token`,
+		   github_token = excluded.github_token,
+		   role = excluded.role`,
 		u.ID, u.GithubID, u.Username, u.AvatarURL, u.GithubToken, u.Role,
 	)
 	if err != nil {

@@ -10,6 +10,8 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
+	"github.com/LEFTEQ/lovinka-deployik/internal/audit"
+	"github.com/LEFTEQ/lovinka-deployik/internal/auth"
 	"github.com/LEFTEQ/lovinka-deployik/internal/crypto"
 	"github.com/LEFTEQ/lovinka-deployik/internal/db"
 )
@@ -18,6 +20,7 @@ type VariableHandler struct {
 	DB        *db.DB
 	Encryptor *crypto.Encryptor
 	Kind      db.VariableKind
+	Audit     *audit.Recorder
 }
 
 type variableEntry struct {
@@ -245,6 +248,18 @@ func (h *VariableHandler) BulkSet(w http.ResponseWriter, r *http.Request) {
 		"environment": environment,
 		"kind":        h.Kind,
 	})
+	claims := auth.GetClaims(r.Context())
+	h.Audit.Record(audit.Entry{
+		UserID:       claims.UserID,
+		Action:       string(h.Kind) + ".bulk_set",
+		ResourceType: string(h.Kind),
+		ResourceID:   projectID + ":" + environment,
+		ProjectID:    projectID,
+		Metadata: map[string]any{
+			"environment": environment,
+			"count":       len(encrypted),
+		},
+	})
 }
 
 // Delete removes a single project variable from one scope and store.
@@ -271,4 +286,16 @@ func (h *VariableHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, map[string]string{"status": "deleted"})
+	claims := auth.GetClaims(r.Context())
+	h.Audit.Record(audit.Entry{
+		UserID:       claims.UserID,
+		Action:       string(h.Kind) + ".delete",
+		ResourceType: string(h.Kind),
+		ResourceID:   key,
+		ProjectID:    projectID,
+		Metadata: map[string]any{
+			"environment": environment,
+			"key":         key,
+		},
+	})
 }

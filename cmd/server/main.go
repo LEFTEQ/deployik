@@ -27,10 +27,12 @@ func main() {
 		if os.Getenv("DEV_MODE") == "true" {
 			log.Printf("Warning: config error (dev mode): %v", err)
 			cfg = &config.Config{
-				Port:          "8080",
-				DatabasePath:  "data/deployik.db",
-				JWTSecret:     "dev-jwt-secret",
-				EncryptionKey: "dev-encryption-key",
+				Port:           "8080",
+				DatabasePath:   "data/deployik.db",
+				JWTSecret:      "dev-jwt-secret",
+				EncryptionKey:  "dev-encryption-key",
+				FrontendURL:    "http://localhost:5173",
+				AllowedOrigins: []string{"http://localhost:5173"},
 			}
 		} else {
 			log.Fatalf("Failed to load config: %v", err)
@@ -93,24 +95,26 @@ func main() {
 	}
 
 	// Configure OAuth
-	frontendURL := getEnv("FRONTEND_URL", "http://localhost:5173")
 	oauthConfig := &github.OAuthConfig{
 		ClientID:     cfg.GithubClientID,
 		ClientSecret: cfg.GithubClientSecret,
-		RedirectURI:  frontendURL + "/auth/callback",
+		RedirectURI:  cfg.FrontendURL + "/auth/callback",
 	}
 
 	// Create router with all dependencies
 	router := api.NewRouter(&api.RouterConfig{
-		DB:            database,
-		JWTSecret:     cfg.JWTSecret,
-		Encryptor:     encryptor,
-		OAuthConfig:   oauthConfig,
-		AllowedUsers:  cfg.AllowedGithubUsers,
-		FrontendURL:   frontendURL,
-		Pipeline:      pipeline,
-		DomainManager: domainManager,
-		WSHub:         wsHub,
+		DB:             database,
+		JWTSecret:      cfg.JWTSecret,
+		Encryptor:      encryptor,
+		OAuthConfig:    oauthConfig,
+		AllowedUsers:   cfg.AllowedGithubUsers,
+		AdminUsers:     cfg.AdminGithubUsers,
+		FrontendURL:    cfg.FrontendURL,
+		CookieSecure:   cfg.FrontendCookieSecure(),
+		AllowedOrigins: cfg.AllowedOrigins,
+		Pipeline:       pipeline,
+		DomainManager:  domainManager,
+		WSHub:          wsHub,
 	})
 
 	addr := fmt.Sprintf(":%s", cfg.Port)
@@ -119,11 +123,4 @@ func main() {
 	if err := http.ListenAndServe(addr, router); err != nil {
 		log.Fatalf("Server failed: %v", err)
 	}
-}
-
-func getEnv(key, fallback string) string {
-	if v := os.Getenv(key); v != "" {
-		return v
-	}
-	return fallback
 }

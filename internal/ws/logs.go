@@ -6,20 +6,16 @@ import (
 
 	"github.com/gorilla/websocket"
 
+	"github.com/LEFTEQ/lovinka-deployik/internal/api/middleware"
 	"github.com/LEFTEQ/lovinka-deployik/internal/auth"
 	"github.com/LEFTEQ/lovinka-deployik/internal/authz"
 	"github.com/LEFTEQ/lovinka-deployik/internal/db"
 )
 
-var upgrader = websocket.Upgrader{
-	CheckOrigin: func(r *http.Request) bool { return true },
-}
-
 // LogsHandler handles WebSocket connections for build log streaming.
-func LogsHandler(hub *Hub, database *db.DB, jwtSecret string) http.HandlerFunc {
+func LogsHandler(hub *Hub, database *db.DB, jwtSecret string, allowedOrigins []string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		// Authenticate via query param
-		tokenStr := r.URL.Query().Get("token")
+		tokenStr := middleware.ExtractAccessToken(r)
 		if tokenStr == "" {
 			http.Error(w, "missing token", http.StatusUnauthorized)
 			return
@@ -44,6 +40,12 @@ func LogsHandler(hub *Hub, database *db.DB, jwtSecret string) http.HandlerFunc {
 		if deployment == nil {
 			http.Error(w, "deployment not found", http.StatusNotFound)
 			return
+		}
+
+		upgrader := websocket.Upgrader{
+			CheckOrigin: func(r *http.Request) bool {
+				return middleware.OriginAllowed(r.Header.Get("Origin"), allowedOrigins)
+			},
 		}
 
 		conn, err := upgrader.Upgrade(w, r, nil)

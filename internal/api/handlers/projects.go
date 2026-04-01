@@ -8,6 +8,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
+	"github.com/LEFTEQ/lovinka-deployik/internal/audit"
 	"github.com/LEFTEQ/lovinka-deployik/internal/auth"
 	"github.com/LEFTEQ/lovinka-deployik/internal/crypto"
 	"github.com/LEFTEQ/lovinka-deployik/internal/db"
@@ -18,6 +19,7 @@ import (
 type ProjectHandler struct {
 	DB        *db.DB
 	Encryptor *crypto.Encryptor
+	Audit     *audit.Recorder
 }
 
 var slugRegex = regexp.MustCompile(`^[a-z0-9]([a-z0-9-]*[a-z0-9])?$`)
@@ -131,6 +133,18 @@ func (h *ProjectHandler) Create(w http.ResponseWriter, r *http.Request) {
 	h.DB.CreateDomain(previewDomain)
 
 	writeJSON(w, http.StatusCreated, project)
+	h.Audit.Record(audit.Entry{
+		UserID:       claims.UserID,
+		Action:       "project.create",
+		ResourceType: "project",
+		ResourceID:   project.ID,
+		ProjectID:    project.ID,
+		Metadata: map[string]any{
+			"name":         project.Name,
+			"github_owner": project.GithubOwner,
+			"github_repo":  project.GithubRepo,
+		},
+	})
 }
 
 func (h *ProjectHandler) Update(w http.ResponseWriter, r *http.Request) {
@@ -187,6 +201,20 @@ func (h *ProjectHandler) Update(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, project)
+	claims := auth.GetClaims(r.Context())
+	h.Audit.Record(audit.Entry{
+		UserID:       claims.UserID,
+		Action:       "project.update",
+		ResourceType: "project",
+		ResourceID:   project.ID,
+		ProjectID:    project.ID,
+		Metadata: map[string]any{
+			"name":           project.Name,
+			"branch":         project.Branch,
+			"framework":      project.Framework,
+			"root_directory": project.RootDirectory,
+		},
+	})
 }
 
 func (h *ProjectHandler) Delete(w http.ResponseWriter, r *http.Request) {
@@ -203,6 +231,14 @@ func (h *ProjectHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, map[string]string{"status": "deleted"})
+	claims := auth.GetClaims(r.Context())
+	h.Audit.Record(audit.Entry{
+		UserID:       claims.UserID,
+		Action:       "project.delete",
+		ResourceType: "project",
+		ResourceID:   id,
+		ProjectID:    id,
+	})
 }
 
 // ListGithubRepos lists the authenticated user's GitHub repos.

@@ -1,18 +1,19 @@
-import { Link, useMatchRoute } from '@tanstack/react-router';
-import { LayoutDashboard, Plus, LogOut } from 'lucide-react';
-import { useAuthStore } from '@/store/auth';
-import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
-import { Button } from '@/components/ui/button';
-import { Separator } from '@/components/ui/separator';
-import { cn } from '@/lib/utils';
+import { Link, useMatchRoute } from "@tanstack/react-router";
+import { LayoutDashboard, Plus, LogOut } from "lucide-react";
+import { useAuthStore } from "@/store/auth";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { Button } from "@/components/ui/button";
+import { Separator } from "@/components/ui/separator";
+import { cn } from "@/lib/utils";
+import { api } from "@/lib/api";
 
 const navItems = [
-  { to: '/' as const, label: 'Projects', icon: LayoutDashboard },
-  { to: '/new' as const, label: 'New Project', icon: Plus },
+  { to: "/" as const, label: "Projects", icon: LayoutDashboard },
+  { to: "/new" as const, label: "New Project", icon: Plus },
 ];
 
 export function Sidebar() {
-  const { user, logout } = useAuthStore();
+  const { user, clearAuth } = useAuthStore();
   const matchRoute = useMatchRoute();
 
   return (
@@ -33,16 +34,16 @@ export function Sidebar() {
       {/* Nav */}
       <nav className="flex-1 space-y-1.5 p-3">
         {navItems.map(({ to, label, icon: Icon }) => {
-          const isActive = matchRoute({ to, fuzzy: to !== '/' });
+          const isActive = matchRoute({ to, fuzzy: to !== "/" });
           return (
             <Link
               key={to}
               to={to}
               className={cn(
-                'flex items-center gap-3 rounded-xl px-3.5 py-2.5 text-sm font-medium transition-all',
+                "flex items-center gap-3 rounded-xl px-3.5 py-2.5 text-sm font-medium transition-all",
                 isActive
-                  ? 'bg-primary/14 text-primary shadow-[inset_0_0_0_1px_rgba(125,153,255,0.18)]'
-                  : 'text-muted-foreground hover:bg-accent/80 hover:text-accent-foreground',
+                  ? "bg-primary/14 text-primary shadow-[inset_0_0_0_1px_rgba(125,153,255,0.18)]"
+                  : "text-muted-foreground hover:bg-accent/80 hover:text-accent-foreground",
               )}
             >
               <Icon className="h-4 w-4" />
@@ -68,9 +69,13 @@ export function Sidebar() {
           variant="ghost"
           size="icon"
           className="h-8 w-8 shrink-0"
-          onClick={() => {
-            logout();
-            window.location.href = '/login';
+          onClick={async () => {
+            try {
+              await api.logout();
+            } finally {
+              clearAuth();
+            }
+            window.location.href = "/login";
           }}
         >
           <LogOut className="h-4 w-4" />

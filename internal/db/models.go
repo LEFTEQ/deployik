@@ -23,6 +23,28 @@ type User struct {
 	CreatedAt   time.Time `json:"created_at"`
 }
 
+type RefreshSession struct {
+	ID         string       `json:"id"`
+	UserID     string       `json:"user_id"`
+	TokenHash  string       `json:"-"`
+	ExpiresAt  time.Time    `json:"expires_at"`
+	LastUsedAt sql.NullTime `json:"last_used_at"`
+	RevokedAt  sql.NullTime `json:"revoked_at"`
+	CreatedAt  time.Time    `json:"created_at"`
+}
+
+type AuditLog struct {
+	ID           int64     `json:"id"`
+	UserID       string    `json:"user_id"`
+	Action       string    `json:"action"`
+	ResourceType string    `json:"resource_type"`
+	ResourceID   string    `json:"resource_id"`
+	ProjectID    string    `json:"project_id"`
+	DeploymentID string    `json:"deployment_id"`
+	Metadata     string    `json:"metadata"`
+	CreatedAt    time.Time `json:"created_at"`
+}
+
 type Project struct {
 	ID              string    `json:"id"`
 	Name            string    `json:"name"`

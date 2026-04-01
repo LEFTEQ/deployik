@@ -8,6 +8,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
+	"github.com/LEFTEQ/lovinka-deployik/internal/audit"
 	"github.com/LEFTEQ/lovinka-deployik/internal/auth"
 	"github.com/LEFTEQ/lovinka-deployik/internal/build"
 	"github.com/LEFTEQ/lovinka-deployik/internal/crypto"
@@ -18,6 +19,7 @@ type DeploymentHandler struct {
 	DB        *db.DB
 	Encryptor *crypto.Encryptor
 	Pipeline  *build.Pipeline
+	Audit     *audit.Recorder
 }
 
 type triggerDeployRequest struct {
@@ -130,6 +132,18 @@ func (h *DeploymentHandler) Trigger(w http.ResponseWriter, r *http.Request) {
 	}()
 
 	writeJSON(w, http.StatusAccepted, deployment)
+	h.Audit.Record(audit.Entry{
+		UserID:       claims.UserID,
+		Action:       "deployment.trigger",
+		ResourceType: "deployment",
+		ResourceID:   deployment.ID,
+		ProjectID:    project.ID,
+		DeploymentID: deployment.ID,
+		Metadata: map[string]any{
+			"environment": env,
+			"branch":      branch,
+		},
+	})
 }
 
 // GetLogs returns build logs for a deployment.
