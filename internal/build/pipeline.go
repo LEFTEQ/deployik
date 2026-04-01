@@ -10,17 +10,19 @@ import (
 
 	"github.com/LEFTEQ/lovinka-deployik/internal/crypto"
 	"github.com/LEFTEQ/lovinka-deployik/internal/db"
+	"github.com/LEFTEQ/lovinka-deployik/internal/domain"
 	"github.com/LEFTEQ/lovinka-deployik/internal/ws"
 )
 
 // Pipeline orchestrates the full deploy flow.
 type Pipeline struct {
-	DB         *db.DB
-	Docker     *DockerClient
-	Encryptor  *crypto.Encryptor
-	Semaphore  *Semaphore
+	DB           *db.DB
+	Docker       *DockerClient
+	Encryptor    *crypto.Encryptor
+	Semaphore    *Semaphore
 	BuildDir     string
 	ProxyNetwork string // Docker network name (e.g., "proxy")
+	NginxConfDir string
 	Hub          *ws.Hub
 }
 
@@ -186,16 +188,82 @@ func (p *Pipeline) Deploy(ctx context.Context, project *db.Project, deployment *
 	// Rename new container to the canonical name
 	p.Docker.cli.ContainerRename(ctx, newContainerID, containerName)
 
-	// Step 9: Mark previous live deployment as replaced
+	// Step 9: Ensure environment domains route to the live container.
+	p.ensureDomains(project, deployment.Environment, containerName, emit, emitErr)
+
+	// Step 10: Mark previous live deployment as replaced
 	if liveDeploy, _ := p.DB.GetLiveDeployment(project.ID, deployment.Environment); liveDeploy != nil && liveDeploy.ID != deployment.ID {
 		p.DB.UpdateDeploymentStatus(liveDeploy.ID, "replaced", "")
 	}
 
-	// Step 10: Finalize
+	// Step 11: Finalize
 	duration := int(time.Since(startTime).Seconds())
 	p.DB.UpdateDeploymentContainer(deployment.ID, newContainerID, containerName, imageTag)
 	p.DB.UpdateDeploymentDuration(deployment.ID, duration)
 	p.DB.UpdateDeploymentStatus(deployment.ID, "live", "")
 
 	emit(fmt.Sprintf("Deployment live! (%ds)", duration))
+}
+
+func (p *Pipeline) ensureDomains(project *db.Project, environment, containerName string, emit, emitErr func(string)) {
+	if p.NginxConfDir == "" {
+		return
+	}
+
+	domains, err := p.DB.ListDomains(project.ID)
+	if err != nil {
+		emitErr(fmt.Sprintf("Warning: could not load domains: %v", err))
+		return
+	}
+
+	if len(domains) == 0 {
+		return
+	}
+
+	changed := false
+
+	for _, d := range domains {
+		if d.Environment != environment {
+			continue
+		}
+
+		emit(fmt.Sprintf("Ensuring domain %s routes to %s...", d.DomainName, containerName))
+		if _, err := domain.GenerateNginxConfig(p.NginxConfDir, domain.NginxConfig{
+			ProjectName:   project.Name,
+			Domain:        d.DomainName,
+			SSLDomain:     d.DomainName,
+			ContainerName: containerName,
+		}); err != nil {
+			emitErr(fmt.Sprintf("Warning: nginx config generation failed for %s: %v", d.DomainName, err))
+			continue
+		}
+		changed = true
+
+		// Auto preview domains are created without a dedicated cert. Request one
+		// after the first successful deployment so HTTPS can terminate correctly.
+		if d.IsAuto {
+			emit(fmt.Sprintf("Ensuring SSL certificate for %s...", d.DomainName))
+			if err := domain.RequestSSLCert(d.DomainName, "admin@example.com"); err != nil {
+				emitErr(fmt.Sprintf("Warning: SSL cert issuance failed for %s: %v", d.DomainName, err))
+				continue
+			}
+			if err := p.DB.UpdateDomainDNS(d.ID, true); err != nil {
+				emitErr(fmt.Sprintf("Warning: could not update DNS status for %s: %v", d.DomainName, err))
+			}
+			if err := p.DB.UpdateDomainSSL(d.ID, "active", d.SSLExpiresAt); err != nil {
+				emitErr(fmt.Sprintf("Warning: could not update SSL status for %s: %v", d.DomainName, err))
+			}
+		}
+	}
+
+	if !changed {
+		return
+	}
+
+	if err := domain.ReloadNginx(); err != nil {
+		emitErr(fmt.Sprintf("Warning: nginx reload failed: %v", err))
+		return
+	}
+
+	emit("Nginx reloaded")
 }

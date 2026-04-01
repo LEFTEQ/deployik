@@ -26,10 +26,10 @@ func main() {
 		if os.Getenv("DEV_MODE") == "true" {
 			log.Printf("Warning: config error (dev mode): %v", err)
 			cfg = &config.Config{
-				Port:           "8080",
-				DatabasePath:   "data/deployik.db",
-				JWTSecret:      "dev-jwt-secret",
-				EncryptionKey:  "dev-encryption-key",
+				Port:          "8080",
+				DatabasePath:  "data/deployik.db",
+				JWTSecret:     "dev-jwt-secret",
+				EncryptionKey: "dev-encryption-key",
 			}
 		} else {
 			log.Fatalf("Failed to load config: %v", err)
@@ -79,6 +79,7 @@ func main() {
 		Semaphore:    build.NewSemaphore(maxBuilds),
 		BuildDir:     cfg.BuildDir,
 		ProxyNetwork: "proxy",
+		NginxConfDir: cfg.NginxConfDir,
 		Hub:          wsHub,
 	}
 
