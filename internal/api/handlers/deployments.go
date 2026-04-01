@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"context"
 	"encoding/json"
 	"log"
 	"net/http"
@@ -116,7 +117,7 @@ func (h *DeploymentHandler) Trigger(w http.ResponseWriter, r *http.Request) {
 			}
 		}()
 
-		h.Pipeline.Deploy(r.Context(), project, deployment, githubToken, func(line string, stream string) {
+		h.Pipeline.Deploy(context.Background(), project, deployment, githubToken, func(line string, stream string) {
 			log.Printf("[deploy:%s] %s", deployment.ID[:8], line)
 			// Build log stored by pipeline; WebSocket streaming in Phase 9
 		})
