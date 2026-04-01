@@ -10,6 +10,7 @@ import (
 
 	"github.com/LEFTEQ/lovinka-deployik/internal/crypto"
 	"github.com/LEFTEQ/lovinka-deployik/internal/db"
+	"github.com/LEFTEQ/lovinka-deployik/internal/ws"
 )
 
 // Pipeline orchestrates the full deploy flow.
@@ -18,8 +19,9 @@ type Pipeline struct {
 	Docker     *DockerClient
 	Encryptor  *crypto.Encryptor
 	Semaphore  *Semaphore
-	BuildDir   string
+	BuildDir     string
 	ProxyNetwork string // Docker network name (e.g., "proxy")
+	Hub          *ws.Hub
 }
 
 // LogCallback is called for each build log line.
@@ -29,12 +31,23 @@ type LogCallback func(line string, stream string)
 func (p *Pipeline) Deploy(ctx context.Context, project *db.Project, deployment *db.Deployment, githubToken string, onLog LogCallback) {
 	startTime := time.Now()
 
+	logLineNum := 0
 	emit := func(msg string) {
+		logLineNum++
+		p.DB.InsertBuildLog(deployment.ID, logLineNum, msg, "stdout")
+		if p.Hub != nil {
+			p.Hub.Publish(ws.LogLine{DeploymentID: deployment.ID, LineNumber: logLineNum, Content: msg, Stream: "stdout"})
+		}
 		if onLog != nil {
 			onLog(msg, "stdout")
 		}
 	}
 	emitErr := func(msg string) {
+		logLineNum++
+		p.DB.InsertBuildLog(deployment.ID, logLineNum, msg, "stderr")
+		if p.Hub != nil {
+			p.Hub.Publish(ws.LogLine{DeploymentID: deployment.ID, LineNumber: logLineNum, Content: msg, Stream: "stderr"})
+		}
 		if onLog != nil {
 			onLog(msg, "stderr")
 		}
@@ -119,13 +132,11 @@ func (p *Pipeline) Deploy(ctx context.Context, project *db.Project, deployment *
 	imageTag := fmt.Sprintf("deployik-%s-%s:%s", project.Name, deployment.Environment, deployment.ID[:8])
 
 	emit(fmt.Sprintf("Building image %s...", imageTag))
-	lineNum := 0
 	_, err = p.Docker.BuildImage(ctx, repoDir, imageTag, func(line string) {
-		lineNum++
-		// Store build log
-		p.DB.InsertBuildLog(deployment.ID, lineNum, line, "stdout")
-		if onLog != nil {
-			onLog(line, "stdout")
+		logLineNum++
+		p.DB.InsertBuildLog(deployment.ID, logLineNum, line, "stdout")
+		if p.Hub != nil {
+			p.Hub.Publish(ws.LogLine{DeploymentID: deployment.ID, LineNumber: logLineNum, Content: line, Stream: "stdout"})
 		}
 	})
 	if err != nil {

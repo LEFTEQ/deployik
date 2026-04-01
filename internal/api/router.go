@@ -12,6 +12,7 @@ import (
 	"github.com/LEFTEQ/lovinka-deployik/internal/crypto"
 	"github.com/LEFTEQ/lovinka-deployik/internal/db"
 	"github.com/LEFTEQ/lovinka-deployik/internal/github"
+	"github.com/LEFTEQ/lovinka-deployik/internal/ws"
 )
 
 // RouterConfig holds all dependencies needed by the router.
@@ -25,6 +26,7 @@ type RouterConfig struct {
 	Pipeline     *build.Pipeline
 	NginxConfDir string
 	VPSHost      string
+	WSHub        *ws.Hub
 }
 
 func NewRouter(cfg *RouterConfig) *chi.Mux {
@@ -95,6 +97,9 @@ func NewRouter(cfg *RouterConfig) *chi.Mux {
 			r.Delete("/projects/{id}/env/{key}", envHandler.Delete)
 		})
 	})
+
+	// WebSocket routes
+	r.Get("/ws/deployments/{did}/logs", ws.LogsHandler(cfg.WSHub, cfg.JWTSecret))
 
 	// Serve embedded SPA for all non-API routes
 	r.NotFound(SPAHandler())

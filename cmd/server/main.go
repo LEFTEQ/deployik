@@ -14,6 +14,7 @@ import (
 	"github.com/LEFTEQ/lovinka-deployik/internal/crypto"
 	"github.com/LEFTEQ/lovinka-deployik/internal/db"
 	"github.com/LEFTEQ/lovinka-deployik/internal/github"
+	"github.com/LEFTEQ/lovinka-deployik/internal/ws"
 )
 
 //go:embed all:web_dist
@@ -68,6 +69,8 @@ func main() {
 		defer dockerClient.Close()
 	}
 
+	wsHub := ws.NewHub()
+
 	maxBuilds := 1
 	pipeline := &build.Pipeline{
 		DB:           database,
@@ -76,6 +79,7 @@ func main() {
 		Semaphore:    build.NewSemaphore(maxBuilds),
 		BuildDir:     cfg.BuildDir,
 		ProxyNetwork: "proxy",
+		Hub:          wsHub,
 	}
 
 	// Configure OAuth
@@ -97,6 +101,7 @@ func main() {
 		Pipeline:     pipeline,
 		NginxConfDir: cfg.NginxConfDir,
 		VPSHost:      cfg.VPSHost,
+		WSHub:        wsHub,
 	})
 
 	addr := fmt.Sprintf(":%s", cfg.Port)
