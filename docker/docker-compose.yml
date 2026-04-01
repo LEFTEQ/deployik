@@ -1,0 +1,39 @@
+name: deployik
+
+services:
+  app:
+    image: ghcr.io/lefteq/lovinka-deployik:${IMAGE_TAG:-latest}
+    container_name: deployik
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      - PORT=8080
+      - DATABASE_PATH=/data/deployik.db
+      - DATA_DIR=/data
+      - NGINX_CONF_DIR=/nginx-conf
+      - BUILD_DIR=/tmp/deployik-builds
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - /opt/nginx-proxy/conf.d:/nginx-conf
+      - deployik_data:/data
+      - /tmp/deployik-builds:/tmp/deployik-builds
+    networks:
+      - proxy
+    healthcheck:
+      test: ['CMD-SHELL', 'wget -q --spider http://localhost:8080/api/health || exit 1']
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    logging:
+      driver: json-file
+      options:
+        max-size: "50m"
+        max-file: "5"
+
+volumes:
+  deployik_data:
+
+networks:
+  proxy:
+    external: true
