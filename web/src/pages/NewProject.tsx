@@ -1,47 +1,57 @@
-import { useState } from 'react';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { useNavigate } from '@tanstack/react-router';
-import { Search, Lock, Globe, GitBranch, ArrowLeft } from 'lucide-react';
-import { Link } from '@tanstack/react-router';
-import { toast } from 'sonner';
-import { api } from '@/lib/api';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
+import { useState } from "react";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useNavigate } from "@tanstack/react-router";
+import { Search, Lock, Globe, GitBranch, ArrowLeft } from "lucide-react";
+import { Link } from "@tanstack/react-router";
+import { toast } from "sonner";
+import { api } from "@/lib/api";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import {
   Card,
   CardContent,
   CardDescription,
   CardHeader,
   CardTitle,
-} from '@/components/ui/card';
+} from "@/components/ui/card";
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from '@/components/ui/select';
-import { Badge } from '@/components/ui/badge';
-import { Skeleton } from '@/components/ui/skeleton';
-import type { GitHubRepo } from '@/types/api';
+} from "@/components/ui/select";
+import { Badge } from "@/components/ui/badge";
+import { Skeleton } from "@/components/ui/skeleton";
+import {
+  BuildSettingsFields,
+  getFrameworkDefaults,
+} from "@/components/projects/build-settings";
+import type { GitHubRepo } from "@/types/api";
 
 export function NewProject() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
-  const [search, setSearch] = useState('');
+  const [search, setSearch] = useState("");
   const [selectedRepo, setSelectedRepo] = useState<GitHubRepo | null>(null);
-  const [name, setName] = useState('');
-  const [branch, setBranch] = useState('');
-  const [nodeVersion, setNodeVersion] = useState('22');
+  const [name, setName] = useState("");
+  const [branch, setBranch] = useState("");
+  const [buildSettings, setBuildSettings] = useState(() =>
+    getFrameworkDefaults("nextjs"),
+  );
 
   const { data: repos, isLoading: reposLoading } = useQuery({
-    queryKey: ['github-repos'],
+    queryKey: ["github-repos"],
     queryFn: () => api.listGithubRepos(),
   });
 
   const { data: branches } = useQuery({
-    queryKey: ['github-branches', selectedRepo?.owner.login, selectedRepo?.name],
+    queryKey: [
+      "github-branches",
+      selectedRepo?.owner.login,
+      selectedRepo?.name,
+    ],
     queryFn: () =>
       api.listGithubBranches(selectedRepo!.owner.login, selectedRepo!.name),
     enabled: !!selectedRepo,
@@ -54,12 +64,17 @@ export function NewProject() {
         github_repo: selectedRepo!.name,
         github_owner: selectedRepo!.owner.login,
         branch: branch || selectedRepo!.default_branch,
-        node_version: nodeVersion,
+        framework: buildSettings.framework,
+        root_directory: buildSettings.rootDirectory,
+        output_directory: buildSettings.outputDirectory,
+        install_command: buildSettings.installCommand,
+        build_command: buildSettings.buildCommand,
+        node_version: buildSettings.nodeVersion,
       }),
     onSuccess: (project) => {
-      queryClient.invalidateQueries({ queryKey: ['projects'] });
-      toast.success('Project created');
-      navigate({ to: '/projects/$id', params: { id: project.id } });
+      queryClient.invalidateQueries({ queryKey: ["projects"] });
+      toast.success("Project created");
+      navigate({ to: "/projects/$id", params: { id: project.id } });
     },
     onError: (err) => toast.error(err.message),
   });
@@ -74,7 +89,10 @@ export function NewProject() {
   if (!selectedRepo) {
     return (
       <div className="mx-auto max-w-2xl p-6">
-        <Link to="/" className="mb-4 inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground">
+        <Link
+          to="/"
+          className="mb-4 inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
+        >
           <ArrowLeft className="h-4 w-4" />
           Back to projects
         </Link>
@@ -104,7 +122,7 @@ export function NewProject() {
             ))
           ) : !filteredRepos?.length ? (
             <p className="py-8 text-center text-sm text-muted-foreground">
-              {search ? 'No matching repositories' : 'No repositories found'}
+              {search ? "No matching repositories" : "No repositories found"}
             </p>
           ) : (
             filteredRepos.map((repo) => (
@@ -113,8 +131,9 @@ export function NewProject() {
                 className="cursor-pointer transition-colors hover:border-primary/50"
                 onClick={() => {
                   setSelectedRepo(repo);
-                  setName(repo.name.toLowerCase().replace(/[^a-z0-9-]/g, '-'));
+                  setName(repo.name.toLowerCase().replace(/[^a-z0-9-]/g, "-"));
                   setBranch(repo.default_branch);
+                  setBuildSettings(getFrameworkDefaults("nextjs"));
                 }}
               >
                 <CardContent className="flex items-center justify-between p-4">
@@ -131,7 +150,14 @@ export function NewProject() {
                           <GitBranch className="h-3 w-3" />
                           {repo.default_branch}
                         </span>
-                        {repo.language && <Badge variant="outline" className="text-xs px-1.5 py-0">{repo.language}</Badge>}
+                        {repo.language && (
+                          <Badge
+                            variant="outline"
+                            className="text-xs px-1.5 py-0"
+                          >
+                            {repo.language}
+                          </Badge>
+                        )}
                       </div>
                     </div>
                   </div>
@@ -176,11 +202,18 @@ export function NewProject() {
             <Input
               id="name"
               value={name}
-              onChange={(e) => setName(e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, '-'))}
+              onChange={(e) =>
+                setName(
+                  e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, "-"),
+                )
+              }
               placeholder="my-app"
             />
             <p className="text-xs text-muted-foreground">
-              Used as subdomain: <span className="font-medium">{name || 'my-app'}.preview.example.com</span>
+              Used as subdomain:{" "}
+              <span className="font-medium">
+                {name || "my-app"}.preview.example.com
+              </span>
             </p>
           </div>
 
@@ -204,32 +237,20 @@ export function NewProject() {
             </Select>
           </div>
 
-          <div className="space-y-2">
-            <Label htmlFor="nodeVersion">Node.js Version</Label>
-            <Select value={nodeVersion} onValueChange={setNodeVersion}>
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="22">Node.js 22 (LTS)</SelectItem>
-                <SelectItem value="20">Node.js 20</SelectItem>
-                <SelectItem value="18">Node.js 18</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
+          <BuildSettingsFields
+            value={buildSettings}
+            onChange={setBuildSettings}
+          />
 
           <div className="flex justify-end gap-3 pt-4">
-            <Button
-              variant="outline"
-              onClick={() => setSelectedRepo(null)}
-            >
+            <Button variant="outline" onClick={() => setSelectedRepo(null)}>
               Cancel
             </Button>
             <Button
               onClick={() => createMutation.mutate()}
               disabled={!name || createMutation.isPending}
             >
-              {createMutation.isPending ? 'Creating...' : 'Create Project'}
+              {createMutation.isPending ? "Creating..." : "Create Project"}
             </Button>
           </div>
         </CardContent>

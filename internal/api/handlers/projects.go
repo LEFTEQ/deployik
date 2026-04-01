@@ -12,6 +12,7 @@ import (
 	"github.com/LEFTEQ/lovinka-deployik/internal/crypto"
 	"github.com/LEFTEQ/lovinka-deployik/internal/db"
 	"github.com/LEFTEQ/lovinka-deployik/internal/github"
+	"github.com/LEFTEQ/lovinka-deployik/internal/projectconfig"
 )
 
 type ProjectHandler struct {
@@ -22,23 +23,27 @@ type ProjectHandler struct {
 var slugRegex = regexp.MustCompile(`^[a-z0-9]([a-z0-9-]*[a-z0-9])?$`)
 
 type createProjectRequest struct {
-	Name           string `json:"name"`
-	GithubRepo     string `json:"github_repo"`
-	GithubOwner    string `json:"github_owner"`
-	Branch         string `json:"branch"`
-	Framework      string `json:"framework"`
-	BuildCommand   string `json:"build_command"`
-	InstallCommand string `json:"install_command"`
-	NodeVersion    string `json:"node_version"`
+	Name            string `json:"name"`
+	GithubRepo      string `json:"github_repo"`
+	GithubOwner     string `json:"github_owner"`
+	Branch          string `json:"branch"`
+	Framework       string `json:"framework"`
+	RootDirectory   string `json:"root_directory"`
+	OutputDirectory string `json:"output_directory"`
+	BuildCommand    string `json:"build_command"`
+	InstallCommand  string `json:"install_command"`
+	NodeVersion     string `json:"node_version"`
 }
 
 type updateProjectRequest struct {
-	Name           *string `json:"name,omitempty"`
-	Branch         *string `json:"branch,omitempty"`
-	Framework      *string `json:"framework,omitempty"`
-	BuildCommand   *string `json:"build_command,omitempty"`
-	InstallCommand *string `json:"install_command,omitempty"`
-	NodeVersion    *string `json:"node_version,omitempty"`
+	Name            *string `json:"name,omitempty"`
+	Branch          *string `json:"branch,omitempty"`
+	Framework       *string `json:"framework,omitempty"`
+	RootDirectory   *string `json:"root_directory,omitempty"`
+	OutputDirectory *string `json:"output_directory,omitempty"`
+	BuildCommand    *string `json:"build_command,omitempty"`
+	InstallCommand  *string `json:"install_command,omitempty"`
+	NodeVersion     *string `json:"node_version,omitempty"`
 }
 
 func (h *ProjectHandler) List(w http.ResponseWriter, r *http.Request) {
@@ -89,39 +94,26 @@ func (h *ProjectHandler) Create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Defaults
-	branch := req.Branch
-	if branch == "" {
-		branch = "main"
-	}
-	framework := req.Framework
-	if framework == "" {
-		framework = "nextjs"
-	}
-	buildCmd := req.BuildCommand
-	if buildCmd == "" {
-		buildCmd = "bun run build"
-	}
-	installCmd := req.InstallCommand
-	if installCmd == "" {
-		installCmd = "bun install"
-	}
-	nodeVersion := req.NodeVersion
-	if nodeVersion == "" {
-		nodeVersion = "22"
-	}
-
 	project := &db.Project{
-		Name:           name,
-		GithubRepo:     req.GithubRepo,
-		GithubOwner:    req.GithubOwner,
-		Branch:         branch,
-		UserID:         claims.UserID,
-		Framework:      framework,
-		BuildCommand:   buildCmd,
-		InstallCommand: installCmd,
-		NodeVersion:    nodeVersion,
-		Status:         "active",
+		Name:            name,
+		GithubRepo:      req.GithubRepo,
+		GithubOwner:     req.GithubOwner,
+		Branch:          strings.TrimSpace(req.Branch),
+		UserID:          claims.UserID,
+		Framework:       req.Framework,
+		RootDirectory:   req.RootDirectory,
+		OutputDirectory: req.OutputDirectory,
+		BuildCommand:    req.BuildCommand,
+		InstallCommand:  req.InstallCommand,
+		NodeVersion:     req.NodeVersion,
+		Status:          "active",
+	}
+	if project.Branch == "" {
+		project.Branch = "main"
+	}
+	if err := projectconfig.ApplyProjectDefaults(project); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		return
 	}
 
 	if err := h.DB.CreateProject(project); err != nil {
@@ -170,10 +162,16 @@ func (h *ProjectHandler) Update(w http.ResponseWriter, r *http.Request) {
 		project.Name = name
 	}
 	if req.Branch != nil {
-		project.Branch = *req.Branch
+		project.Branch = strings.TrimSpace(*req.Branch)
 	}
 	if req.Framework != nil {
 		project.Framework = *req.Framework
+	}
+	if req.RootDirectory != nil {
+		project.RootDirectory = *req.RootDirectory
+	}
+	if req.OutputDirectory != nil {
+		project.OutputDirectory = *req.OutputDirectory
 	}
 	if req.BuildCommand != nil {
 		project.BuildCommand = *req.BuildCommand
@@ -183,6 +181,10 @@ func (h *ProjectHandler) Update(w http.ResponseWriter, r *http.Request) {
 	}
 	if req.NodeVersion != nil {
 		project.NodeVersion = *req.NodeVersion
+	}
+	if err := projectconfig.ApplyProjectDefaults(project); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		return
 	}
 
 	if err := h.DB.UpdateProject(project); err != nil {

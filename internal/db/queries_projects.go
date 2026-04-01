@@ -8,7 +8,7 @@ import (
 func (db *DB) ListProjects(userID string) ([]Project, error) {
 	rows, err := db.Query(
 		`SELECT id, name, github_repo, github_owner, branch, user_id, framework,
-		        build_command, install_command, node_version, status, created_at, updated_at
+		        root_directory, output_directory, build_command, install_command, node_version, status, created_at, updated_at
 		 FROM projects WHERE user_id = ? AND status != 'deleted'
 		 ORDER BY updated_at DESC`, userID,
 	)
@@ -21,7 +21,7 @@ func (db *DB) ListProjects(userID string) ([]Project, error) {
 	for rows.Next() {
 		var p Project
 		if err := rows.Scan(&p.ID, &p.Name, &p.GithubRepo, &p.GithubOwner, &p.Branch,
-			&p.UserID, &p.Framework, &p.BuildCommand, &p.InstallCommand, &p.NodeVersion,
+			&p.UserID, &p.Framework, &p.RootDirectory, &p.OutputDirectory, &p.BuildCommand, &p.InstallCommand, &p.NodeVersion,
 			&p.Status, &p.CreatedAt, &p.UpdatedAt); err != nil {
 			return nil, fmt.Errorf("scan project: %w", err)
 		}
@@ -34,10 +34,10 @@ func (db *DB) GetProject(id string) (*Project, error) {
 	p := &Project{}
 	err := db.QueryRow(
 		`SELECT id, name, github_repo, github_owner, branch, user_id, framework,
-		        build_command, install_command, node_version, status, created_at, updated_at
+		        root_directory, output_directory, build_command, install_command, node_version, status, created_at, updated_at
 		 FROM projects WHERE id = ?`, id,
 	).Scan(&p.ID, &p.Name, &p.GithubRepo, &p.GithubOwner, &p.Branch,
-		&p.UserID, &p.Framework, &p.BuildCommand, &p.InstallCommand, &p.NodeVersion,
+		&p.UserID, &p.Framework, &p.RootDirectory, &p.OutputDirectory, &p.BuildCommand, &p.InstallCommand, &p.NodeVersion,
 		&p.Status, &p.CreatedAt, &p.UpdatedAt)
 	if err == sql.ErrNoRows {
 		return nil, nil
@@ -52,10 +52,10 @@ func (db *DB) CreateProject(p *Project) error {
 	p.ID = NewID()
 	_, err := db.Exec(
 		`INSERT INTO projects (id, name, github_repo, github_owner, branch, user_id, framework,
-		                       build_command, install_command, node_version, status)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		                       root_directory, output_directory, build_command, install_command, node_version, status)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		p.ID, p.Name, p.GithubRepo, p.GithubOwner, p.Branch, p.UserID, p.Framework,
-		p.BuildCommand, p.InstallCommand, p.NodeVersion, p.Status,
+		p.RootDirectory, p.OutputDirectory, p.BuildCommand, p.InstallCommand, p.NodeVersion, p.Status,
 	)
 	if err != nil {
 		return fmt.Errorf("create project: %w", err)
@@ -65,10 +65,10 @@ func (db *DB) CreateProject(p *Project) error {
 
 func (db *DB) UpdateProject(p *Project) error {
 	_, err := db.Exec(
-		`UPDATE projects SET name = ?, branch = ?, framework = ?, build_command = ?,
+		`UPDATE projects SET name = ?, branch = ?, framework = ?, root_directory = ?, output_directory = ?, build_command = ?,
 		        install_command = ?, node_version = ?, status = ?, updated_at = datetime('now')
 		 WHERE id = ?`,
-		p.Name, p.Branch, p.Framework, p.BuildCommand, p.InstallCommand,
+		p.Name, p.Branch, p.Framework, p.RootDirectory, p.OutputDirectory, p.BuildCommand, p.InstallCommand,
 		p.NodeVersion, p.Status, p.ID,
 	)
 	if err != nil {

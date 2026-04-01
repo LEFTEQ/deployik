@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -40,7 +41,7 @@ type BuildStreamLine struct {
 
 // BuildImage builds a Docker image from a directory containing a Dockerfile.
 // Returns the image ID and calls onLog for each build output line.
-func (d *DockerClient) BuildImage(ctx context.Context, contextDir, imageTag string, onLog func(line string)) (string, error) {
+func (d *DockerClient) BuildImage(ctx context.Context, contextDir, dockerfilePath, imageTag string, onLog func(line string)) (string, error) {
 	// Create tar archive of the build context
 	tar, err := archive.TarWithOptions(contextDir, &archive.TarOptions{})
 	if err != nil {
@@ -48,10 +49,21 @@ func (d *DockerClient) BuildImage(ctx context.Context, contextDir, imageTag stri
 	}
 	defer tar.Close()
 
+	relDockerfile := "Dockerfile"
+	if dockerfilePath != "" {
+		relativePath, err := filepath.Rel(contextDir, dockerfilePath)
+		if err == nil && !strings.HasPrefix(relativePath, "..") {
+			relDockerfile = filepath.ToSlash(relativePath)
+		}
+		if relDockerfile == "" || relDockerfile == "." {
+			relDockerfile = "Dockerfile"
+		}
+	}
+
 	resp, err := d.cli.ImageBuild(ctx, tar, types.ImageBuildOptions{
-		Tags:       []string{imageTag},
-		Dockerfile: "Dockerfile",
-		Remove:     true,
+		Tags:        []string{imageTag},
+		Dockerfile:  relDockerfile,
+		Remove:      true,
 		ForceRemove: true,
 	})
 	if err != nil {

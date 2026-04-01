@@ -21,6 +21,8 @@ export interface Project {
   branch: string;
   user_id: string;
   framework: string;
+  root_directory: string;
+  output_directory: string;
   build_command: string;
   install_command: string;
   node_version: string;

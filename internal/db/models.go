@@ -24,19 +24,21 @@ type User struct {
 }
 
 type Project struct {
-	ID             string    `json:"id"`
-	Name           string    `json:"name"`
-	GithubRepo     string    `json:"github_repo"`
-	GithubOwner    string    `json:"github_owner"`
-	Branch         string    `json:"branch"`
-	UserID         string    `json:"user_id"`
-	Framework      string    `json:"framework"`
-	BuildCommand   string    `json:"build_command"`
-	InstallCommand string    `json:"install_command"`
-	NodeVersion    string    `json:"node_version"`
-	Status         string    `json:"status"`
-	CreatedAt      time.Time `json:"created_at"`
-	UpdatedAt      time.Time `json:"updated_at"`
+	ID              string    `json:"id"`
+	Name            string    `json:"name"`
+	GithubRepo      string    `json:"github_repo"`
+	GithubOwner     string    `json:"github_owner"`
+	Branch          string    `json:"branch"`
+	UserID          string    `json:"user_id"`
+	Framework       string    `json:"framework"`
+	RootDirectory   string    `json:"root_directory"`
+	OutputDirectory string    `json:"output_directory"`
+	BuildCommand    string    `json:"build_command"`
+	InstallCommand  string    `json:"install_command"`
+	NodeVersion     string    `json:"node_version"`
+	Status          string    `json:"status"`
+	CreatedAt       time.Time `json:"created_at"`
+	UpdatedAt       time.Time `json:"updated_at"`
 }
 
 type Deployment struct {

@@ -5,11 +5,13 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"path/filepath"
 	"time"
 
 	"github.com/LEFTEQ/lovinka-deployik/internal/crypto"
 	"github.com/LEFTEQ/lovinka-deployik/internal/db"
 	"github.com/LEFTEQ/lovinka-deployik/internal/domain"
+	"github.com/LEFTEQ/lovinka-deployik/internal/projectconfig"
 	"github.com/LEFTEQ/lovinka-deployik/internal/ws"
 )
 
@@ -93,10 +95,27 @@ func (p *Pipeline) Deploy(ctx context.Context, project *db.Project, deployment *
 		emit(fmt.Sprintf("Commit: %s %s", sha[:8], message))
 	}
 
+	settings, err := projectconfig.Resolve(project)
+	if err != nil {
+		fail(err, "Invalid build settings")
+		return
+	}
+
+	projectDir := repoDir
+	if settings.RootDirectory != "" {
+		projectDir = filepath.Join(repoDir, filepath.FromSlash(settings.RootDirectory))
+		if _, err := os.Stat(projectDir); err != nil {
+			fail(err, "Project root directory not found")
+			return
+		}
+	}
+
 	// Step 3: Patch Next.js config for standalone output
-	emit("Patching Next.js config for standalone output...")
-	if err := PatchNextConfig(repoDir); err != nil {
-		emitErr(fmt.Sprintf("Warning: could not patch next.config: %v", err))
+	if settings.Runtime == projectconfig.RuntimeNextJSStandalone {
+		emit("Patching Next.js config for standalone output...")
+		if err := PatchNextConfig(projectDir); err != nil {
+			emitErr(fmt.Sprintf("Warning: could not patch next.config: %v", err))
+		}
 	}
 
 	// Step 4: Get project variables
@@ -139,11 +158,14 @@ func (p *Pipeline) Deploy(ctx context.Context, project *db.Project, deployment *
 
 	// Step 5: Generate Dockerfile
 	emit("Generating Dockerfile...")
-	_, err = GenerateDockerfile(repoDir, DockerfileData{
-		NodeVersion:    project.NodeVersion,
-		InstallCommand: project.InstallCommand,
-		BuildCommand:   project.BuildCommand,
-		BuildEnvVars:   buildEnvVars,
+	dockerfilePath, err := GenerateDockerfile(repoDir, DockerfileData{
+		NodeVersion:     settings.NodeVersion,
+		InstallCommand:  settings.InstallCommand,
+		BuildCommand:    settings.BuildCommand,
+		RootDirectory:   settings.RootDirectory,
+		OutputDirectory: settings.OutputDirectory,
+		Runtime:         settings.Runtime,
+		BuildEnvVars:    buildEnvVars,
 	})
 	if err != nil {
 		fail(err, "Dockerfile generation failed")
@@ -156,7 +178,7 @@ func (p *Pipeline) Deploy(ctx context.Context, project *db.Project, deployment *
 	imageTag := fmt.Sprintf("deployik-%s-%s:%s", project.Name, deployment.Environment, deployment.ID[:8])
 
 	emit(fmt.Sprintf("Building image %s...", imageTag))
-	_, err = p.Docker.BuildImage(ctx, repoDir, imageTag, func(line string) {
+	_, err = p.Docker.BuildImage(ctx, repoDir, dockerfilePath, imageTag, func(line string) {
 		logLineNum++
 		p.DB.InsertBuildLog(deployment.ID, logLineNum, line, "stdout")
 		if p.Hub != nil {

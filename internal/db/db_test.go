@@ -91,16 +91,18 @@ func TestProjectCRUD(t *testing.T) {
 	db.UpsertUser(user)
 
 	project := &Project{
-		Name:           "test-project",
-		GithubRepo:     "my-app",
-		GithubOwner:    "user1",
-		Branch:         "main",
-		UserID:         user.ID,
-		Framework:      "nextjs",
-		BuildCommand:   "bun run build",
-		InstallCommand: "bun install",
-		NodeVersion:    "22",
-		Status:         "active",
+		Name:            "test-project",
+		GithubRepo:      "my-app",
+		GithubOwner:     "user1",
+		Branch:          "main",
+		UserID:          user.ID,
+		Framework:       "nextjs",
+		RootDirectory:   "apps/web",
+		OutputDirectory: ".next",
+		BuildCommand:    "bun run build",
+		InstallCommand:  "bun install",
+		NodeVersion:     "22",
+		Status:          "active",
 	}
 
 	// Create
@@ -128,6 +130,12 @@ func TestProjectCRUD(t *testing.T) {
 	if got.Name != "test-project" {
 		t.Errorf("name = %q, want %q", got.Name, "test-project")
 	}
+	if got.RootDirectory != "apps/web" {
+		t.Errorf("root_directory = %q, want %q", got.RootDirectory, "apps/web")
+	}
+	if got.OutputDirectory != ".next" {
+		t.Errorf("output_directory = %q, want %q", got.OutputDirectory, ".next")
+	}
 
 	// Update
 	got.Branch = "develop"
@@ -152,7 +160,7 @@ func TestDeploymentCRUD(t *testing.T) {
 	db.UpsertUser(user)
 
 	project := &Project{Name: "p1", GithubRepo: "r", GithubOwner: "o", Branch: "main",
-		UserID: user.ID, Framework: "nextjs", BuildCommand: "build", InstallCommand: "install",
+		UserID: user.ID, Framework: "nextjs", RootDirectory: "", OutputDirectory: ".next", BuildCommand: "build", InstallCommand: "install",
 		NodeVersion: "22", Status: "active"}
 	db.CreateProject(project)
 
@@ -193,7 +201,7 @@ func TestEnvVarCRUD(t *testing.T) {
 	db.UpsertUser(user)
 
 	project := &Project{Name: "p1", GithubRepo: "r", GithubOwner: "o", Branch: "main",
-		UserID: user.ID, Framework: "nextjs", BuildCommand: "b", InstallCommand: "i",
+		UserID: user.ID, Framework: "nextjs", RootDirectory: "", OutputDirectory: ".next", BuildCommand: "b", InstallCommand: "i",
 		NodeVersion: "22", Status: "active"}
 	db.CreateProject(project)
 

@@ -22,6 +22,10 @@ import { formatDistanceToNow } from "date-fns";
 import { toast } from "sonner";
 import { api } from "@/lib/api";
 import { cn } from "@/lib/utils";
+import {
+  BuildSettingsFields,
+  formatFrameworkLabel,
+} from "@/components/projects/build-settings";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -335,7 +339,7 @@ export function ProjectDetail() {
                       Framework
                     </p>
                     <p className="mt-2 text-sm font-medium text-foreground">
-                      {project.framework}
+                      {formatFrameworkLabel(project.framework)}
                     </p>
                   </div>
                   <div className="rounded-2xl border border-white/8 bg-black/10 px-4 py-3">
@@ -781,17 +785,25 @@ function SettingsTab({
 }) {
   const queryClient = useQueryClient();
   const [branch, setBranch] = useState(project.branch);
-  const [buildCommand, setBuildCommand] = useState(project.build_command);
-  const [installCommand, setInstallCommand] = useState(project.install_command);
-  const [nodeVersion, setNodeVersion] = useState(project.node_version);
+  const [buildSettings, setBuildSettings] = useState({
+    framework: project.framework,
+    rootDirectory: project.root_directory,
+    outputDirectory: project.output_directory,
+    buildCommand: project.build_command,
+    installCommand: project.install_command,
+    nodeVersion: project.node_version,
+  });
 
   const updateMutation = useMutation({
     mutationFn: () =>
       api.updateProject(project.id, {
         branch,
-        build_command: buildCommand,
-        install_command: installCommand,
-        node_version: nodeVersion,
+        framework: buildSettings.framework,
+        root_directory: buildSettings.rootDirectory,
+        output_directory: buildSettings.outputDirectory,
+        build_command: buildSettings.buildCommand,
+        install_command: buildSettings.installCommand,
+        node_version: buildSettings.nodeVersion,
       }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["project", project.id] });
@@ -811,33 +823,10 @@ function SettingsTab({
             <Label>Branch</Label>
             <Input value={branch} onChange={(e) => setBranch(e.target.value)} />
           </div>
-          <div className="space-y-2">
-            <Label>Build Command</Label>
-            <Input
-              value={buildCommand}
-              onChange={(e) => setBuildCommand(e.target.value)}
-            />
-          </div>
-          <div className="space-y-2">
-            <Label>Install Command</Label>
-            <Input
-              value={installCommand}
-              onChange={(e) => setInstallCommand(e.target.value)}
-            />
-          </div>
-          <div className="space-y-2">
-            <Label>Node.js Version</Label>
-            <Select value={nodeVersion} onValueChange={setNodeVersion}>
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="22">Node.js 22 (LTS)</SelectItem>
-                <SelectItem value="20">Node.js 20</SelectItem>
-                <SelectItem value="18">Node.js 18</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
+          <BuildSettingsFields
+            value={buildSettings}
+            onChange={setBuildSettings}
+          />
           <Button
             onClick={() => updateMutation.mutate()}
             disabled={updateMutation.isPending}
