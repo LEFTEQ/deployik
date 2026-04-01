@@ -48,21 +48,24 @@ func GenerateDockerfile(repoDir string, data DockerfileData) (string, error) {
 		data.UsePnpm = true
 	}
 
-	// Default install command based on detected package manager
-	if data.InstallCommand == "" {
-		if data.UseBun {
-			data.InstallCommand = "bun install --frozen-lockfile"
-		} else if data.UsePnpm {
-			data.InstallCommand = "pnpm install --frozen-lockfile"
-		} else {
+	// Override install/build commands to match detected package manager.
+	// The project config may have defaults (e.g. "bun run build") that don't
+	// match the actual repo. The lock file is the source of truth.
+	if data.UsePnpm {
+		data.InstallCommand = "corepack enable && pnpm install --frozen-lockfile"
+		if !strings.Contains(data.BuildCommand, "pnpm") {
+			data.BuildCommand = "pnpm run build"
+		}
+	} else if data.UseBun {
+		data.InstallCommand = "bun install --frozen-lockfile"
+		if !strings.Contains(data.BuildCommand, "bun") {
+			data.BuildCommand = "bun run build"
+		}
+	} else {
+		if data.InstallCommand == "" {
 			data.InstallCommand = "npm ci"
 		}
-	}
-
-	if data.BuildCommand == "" {
-		if data.UseBun {
-			data.BuildCommand = "bun run build"
-		} else {
+		if data.BuildCommand == "" || strings.HasPrefix(data.BuildCommand, "bun ") || strings.HasPrefix(data.BuildCommand, "pnpm ") {
 			data.BuildCommand = "npm run build"
 		}
 	}
@@ -101,7 +104,7 @@ func generateNextJSDockerfile(data DockerfileData) string {
 	}
 	b.WriteString(fmt.Sprintf("COPY %s ./\n", strings.Join(copyFiles, " ")))
 
-	// Install
+	// Install dependencies
 	if data.UseBun {
 		b.WriteString("RUN npm i -g bun && bun install --frozen-lockfile\n\n")
 	} else if data.UsePnpm {
@@ -110,8 +113,13 @@ func generateNextJSDockerfile(data DockerfileData) string {
 		b.WriteString("RUN npm ci\n\n")
 	}
 
-	// Build stage
+	// Build stage — package manager must also be available here
 	b.WriteString("FROM base AS builder\n")
+	if data.UseBun {
+		b.WriteString("RUN npm i -g bun\n")
+	} else if data.UsePnpm {
+		b.WriteString("RUN corepack enable\n")
+	}
 	b.WriteString("COPY --from=deps /app/node_modules ./node_modules\n")
 	b.WriteString("COPY . .\n")
 
