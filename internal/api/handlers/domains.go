@@ -1,0 +1,183 @@
+package handlers
+
+import (
+	"encoding/json"
+	"log"
+	"net/http"
+
+	"github.com/go-chi/chi/v5"
+
+	"github.com/LEFTEQ/lovinka-deployik/internal/db"
+	"github.com/LEFTEQ/lovinka-deployik/internal/domain"
+)
+
+type DomainHandler struct {
+	DB           *db.DB
+	NginxConfDir string
+	VPSHost      string
+}
+
+type addDomainRequest struct {
+	Domain      string `json:"domain"`
+	Environment string `json:"environment"`
+}
+
+func (h *DomainHandler) List(w http.ResponseWriter, r *http.Request) {
+	projectID := chi.URLParam(r, "id")
+	domains, err := h.DB.ListDomains(projectID)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to list domains"})
+		return
+	}
+	if domains == nil {
+		domains = []db.Domain{}
+	}
+	writeJSON(w, http.StatusOK, domains)
+}
+
+func (h *DomainHandler) Add(w http.ResponseWriter, r *http.Request) {
+	projectID := chi.URLParam(r, "id")
+
+	project, err := h.DB.GetProject(projectID)
+	if err != nil || project == nil {
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": "project not found"})
+		return
+	}
+
+	var req addDomainRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request body"})
+		return
+	}
+
+	if req.Domain == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "domain is required"})
+		return
+	}
+
+	env := req.Environment
+	if env == "" {
+		env = "production"
+	}
+
+	// Check if domain already exists
+	existing, _ := h.DB.GetDomainByName(req.Domain)
+	if existing != nil {
+		writeJSON(w, http.StatusConflict, map[string]string{"error": "domain already in use"})
+		return
+	}
+
+	d := &db.Domain{
+		ProjectID:   projectID,
+		DomainName:  req.Domain,
+		Environment: env,
+		IsAuto:      false,
+		SSLStatus:   "pending",
+	}
+
+	if err := h.DB.CreateDomain(d); err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to add domain"})
+		return
+	}
+
+	// Generate nginx config
+	containerName := "deployik-" + project.Name + "-" + env
+	_, err = domain.GenerateNginxConfig(h.NginxConfDir, domain.NginxConfig{
+		ProjectName:   project.Name,
+		Domain:        req.Domain,
+		SSLDomain:     req.Domain,
+		ContainerName: containerName,
+	})
+	if err != nil {
+		log.Printf("Warning: nginx config generation failed for %s: %v", req.Domain, err)
+	}
+
+	writeJSON(w, http.StatusCreated, d)
+}
+
+func (h *DomainHandler) Delete(w http.ResponseWriter, r *http.Request) {
+	domainID := chi.URLParam(r, "did")
+
+	// Get domain to find its name for nginx cleanup
+	domains, _ := h.DB.ListDomains(chi.URLParam(r, "id"))
+	var domainName string
+	for _, d := range domains {
+		if d.ID == domainID {
+			domainName = d.DomainName
+			break
+		}
+	}
+
+	if err := h.DB.DeleteDomain(domainID); err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to delete domain"})
+		return
+	}
+
+	// Remove nginx config
+	if domainName != "" {
+		domain.RemoveNginxConfig(h.NginxConfDir, domainName)
+		domain.ReloadNginx()
+	}
+
+	writeJSON(w, http.StatusOK, map[string]string{"status": "deleted"})
+}
+
+func (h *DomainHandler) Verify(w http.ResponseWriter, r *http.Request) {
+	domainID := chi.URLParam(r, "did")
+	projectID := chi.URLParam(r, "id")
+
+	// Find the domain
+	domains, _ := h.DB.ListDomains(projectID)
+	var target *db.Domain
+	for _, d := range domains {
+		if d.ID == domainID {
+			target = &d
+			break
+		}
+	}
+
+	if target == nil {
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": "domain not found"})
+		return
+	}
+
+	// Verify DNS
+	verified, err := domain.VerifyDNS(target.DomainName, h.VPSHost)
+	if err != nil {
+		log.Printf("DNS verification error for %s: %v", target.DomainName, err)
+	}
+
+	h.DB.UpdateDomainDNS(domainID, verified)
+
+	if !verified {
+		writeJSON(w, http.StatusOK, map[string]interface{}{
+			"dns_verified": false,
+			"message":      "DNS A record does not point to " + h.VPSHost,
+		})
+		return
+	}
+
+	// DNS verified — try to issue SSL cert
+	err = domain.RequestSSLCert(target.DomainName, "admin@example.com")
+	if err != nil {
+		log.Printf("SSL cert request failed for %s: %v", target.DomainName, err)
+		h.DB.UpdateDomainSSL(domainID, "error", target.SSLExpiresAt)
+		writeJSON(w, http.StatusOK, map[string]interface{}{
+			"dns_verified": true,
+			"ssl_status":   "error",
+			"message":      "DNS verified but SSL cert issuance failed",
+		})
+		return
+	}
+
+	h.DB.UpdateDomainSSL(domainID, "active", target.SSLExpiresAt)
+
+	// Reload nginx to pick up the new cert
+	domain.ReloadNginx()
+
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"dns_verified": true,
+		"ssl_status":   "active",
+		"message":      "Domain verified and SSL cert active",
+	})
+}

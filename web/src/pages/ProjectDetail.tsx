@@ -369,38 +369,206 @@ function SettingsTab({
   );
 }
 
-function DomainsTab({ projectId: _projectId }: { projectId: string }) {
+function DomainsTab({ projectId }: { projectId: string }) {
+  const queryClient = useQueryClient();
+  const [newDomain, setNewDomain] = useState('');
+
+  const { data: domains, isLoading } = useQuery({
+    queryKey: ['domains', projectId],
+    queryFn: () => api.listDomains(projectId),
+  });
+
+  const addMutation = useMutation({
+    mutationFn: () =>
+      api.addDomain(projectId, { domain: newDomain, environment: 'production' }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['domains', projectId] });
+      setNewDomain('');
+      toast.success('Domain added');
+    },
+    onError: (err) => toast.error(err.message),
+  });
+
+  const verifyMutation = useMutation({
+    mutationFn: (domainId: string) => api.verifyDomain(projectId, domainId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['domains', projectId] });
+      toast.success('Verification complete');
+    },
+    onError: (err) => toast.error(err.message),
+  });
+
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle className="text-base">Domains</CardTitle>
-        <CardDescription>
-          Domain management will be available in Phase 6
-        </CardDescription>
-      </CardHeader>
-      <CardContent>
-        <p className="text-sm text-muted-foreground">
-          Custom domain support coming soon.
-        </p>
-      </CardContent>
-    </Card>
+    <div className="space-y-4">
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Add Custom Domain</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="flex gap-2">
+            <Input
+              placeholder="example.com"
+              value={newDomain}
+              onChange={(e) => setNewDomain(e.target.value)}
+            />
+            <Button
+              onClick={() => addMutation.mutate()}
+              disabled={!newDomain || addMutation.isPending}
+            >
+              Add
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+
+      {isLoading ? (
+        <Skeleton className="h-32 w-full" />
+      ) : (
+        <div className="space-y-2">
+          {domains?.map((d) => (
+            <Card key={d.id}>
+              <CardContent className="flex items-center justify-between p-4">
+                <div>
+                  <p className="text-sm font-medium">{d.domain}</p>
+                  <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                    <Badge variant={d.is_auto ? 'secondary' : 'outline'} className="text-xs">
+                      {d.is_auto ? 'auto' : d.environment}
+                    </Badge>
+                    <span>DNS: {d.dns_verified ? 'verified' : 'pending'}</span>
+                    <span>SSL: {d.ssl_status}</span>
+                  </div>
+                </div>
+                {!d.is_auto && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => verifyMutation.mutate(d.id)}
+                    disabled={verifyMutation.isPending}
+                  >
+                    Verify
+                  </Button>
+                )}
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+      )}
+    </div>
   );
 }
 
-function EnvVarsTab({ projectId: _projectId }: { projectId: string }) {
+function EnvVarsTab({ projectId }: { projectId: string }) {
+  const queryClient = useQueryClient();
+  const [env, setEnv] = useState<'preview' | 'production'>('preview');
+  const [rows, setRows] = useState<{ key: string; value: string }[]>([{ key: '', value: '' }]);
+
+  const { data: existingVars, isLoading } = useQuery({
+    queryKey: ['envvars', projectId, env],
+    queryFn: () => api.listEnvVars(projectId, env),
+  });
+
+  const saveMutation = useMutation({
+    mutationFn: () =>
+      api.bulkSetEnvVars(projectId, {
+        environment: env,
+        variables: rows.filter((r) => r.key.trim() !== ''),
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['envvars', projectId, env] });
+      toast.success('Environment variables saved');
+    },
+    onError: (err) => toast.error(err.message),
+  });
+
+  const addRow = () => setRows([...rows, { key: '', value: '' }]);
+  const updateRow = (idx: number, field: 'key' | 'value', val: string) => {
+    const updated = [...rows];
+    updated[idx] = { ...updated[idx]!, [field]: val };
+    setRows(updated);
+  };
+  const removeRow = (idx: number) => setRows(rows.filter((_, i) => i !== idx));
+
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle className="text-base">Environment Variables</CardTitle>
-        <CardDescription>
-          Environment variable management will be available in Phase 7
-        </CardDescription>
-      </CardHeader>
-      <CardContent>
-        <p className="text-sm text-muted-foreground">
-          Encrypted env var support coming soon.
-        </p>
-      </CardContent>
-    </Card>
+    <div className="space-y-4">
+      <div className="flex items-center gap-2">
+        <Button
+          size="sm"
+          variant={env === 'preview' ? 'default' : 'outline'}
+          onClick={() => setEnv('preview')}
+        >
+          Preview
+        </Button>
+        <Button
+          size="sm"
+          variant={env === 'production' ? 'default' : 'outline'}
+          onClick={() => setEnv('production')}
+        >
+          Production
+        </Button>
+      </div>
+
+      {isLoading ? (
+        <Skeleton className="h-32 w-full" />
+      ) : existingVars?.length ? (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Current Variables ({env})</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-1 font-mono text-sm">
+              {existingVars.map((v) => (
+                <div key={v.id} className="flex gap-2">
+                  <span className="text-muted-foreground">{v.key}</span>
+                  <span>=</span>
+                  <span>{v.value}</span>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      ) : null}
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Set Variables ({env})</CardTitle>
+          <CardDescription>
+            This will replace all existing variables for this environment
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-2">
+          {rows.map((row, idx) => (
+            <div key={idx} className="flex gap-2">
+              <Input
+                placeholder="KEY"
+                value={row.key}
+                onChange={(e) => updateRow(idx, 'key', e.target.value.toUpperCase())}
+                className="font-mono"
+              />
+              <Input
+                placeholder="value"
+                value={row.value}
+                onChange={(e) => updateRow(idx, 'value', e.target.value)}
+                className="font-mono"
+              />
+              <Button variant="ghost" size="icon" onClick={() => removeRow(idx)}>
+                <Trash2 className="h-4 w-4" />
+              </Button>
+            </div>
+          ))}
+          <div className="flex gap-2 pt-2">
+            <Button variant="outline" size="sm" onClick={addRow}>
+              Add Row
+            </Button>
+            <Button
+              size="sm"
+              onClick={() => saveMutation.mutate()}
+              disabled={saveMutation.isPending}
+            >
+              {saveMutation.isPending ? 'Saving...' : 'Save Variables'}
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+    </div>
   );
 }

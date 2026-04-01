@@ -23,6 +23,8 @@ type RouterConfig struct {
 	AllowedUsers []string
 	FrontendURL  string
 	Pipeline     *build.Pipeline
+	NginxConfDir string
+	VPSHost      string
 }
 
 func NewRouter(cfg *RouterConfig) *chi.Mux {
@@ -78,6 +80,19 @@ func NewRouter(cfg *RouterConfig) *chi.Mux {
 			r.Post("/projects/{id}/deployments", deployHandler.Trigger)
 			r.Get("/projects/{id}/deployments/{did}", deployHandler.Get)
 			r.Get("/deployments/{did}/logs", deployHandler.GetLogs)
+
+			// Domains
+			domainHandler := &handlers.DomainHandler{DB: cfg.DB, NginxConfDir: cfg.NginxConfDir, VPSHost: cfg.VPSHost}
+			r.Get("/projects/{id}/domains", domainHandler.List)
+			r.Post("/projects/{id}/domains", domainHandler.Add)
+			r.Delete("/projects/{id}/domains/{did}", domainHandler.Delete)
+			r.Post("/projects/{id}/domains/{did}/verify", domainHandler.Verify)
+
+			// Environment Variables
+			envHandler := &handlers.EnvVarHandler{DB: cfg.DB, Encryptor: cfg.Encryptor}
+			r.Get("/projects/{id}/env", envHandler.List)
+			r.Put("/projects/{id}/env", envHandler.BulkSet)
+			r.Delete("/projects/{id}/env/{key}", envHandler.Delete)
 		})
 	})
 

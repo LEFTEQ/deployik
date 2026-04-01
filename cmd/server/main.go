@@ -95,6 +95,8 @@ func main() {
 		AllowedUsers: cfg.AllowedGithubUsers,
 		FrontendURL:  frontendURL,
 		Pipeline:     pipeline,
+		NginxConfDir: cfg.NginxConfDir,
+		VPSHost:      cfg.VPSHost,
 	})
 
 	addr := fmt.Sprintf(":%s", cfg.Port)

@@ -129,18 +129,64 @@ class ApiClient {
     });
   }
 
-  // Domains (Phase 6)
+  // Domains
   async listDomains(projectId: string): Promise<Domain[]> {
     return this.request(`/projects/${projectId}/domains`);
   }
 
-  // Env vars (Phase 7)
+  async addDomain(
+    projectId: string,
+    data: { domain: string; environment: string },
+  ): Promise<Domain> {
+    return this.request(`/projects/${projectId}/domains`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async deleteDomain(projectId: string, domainId: string): Promise<void> {
+    return this.request(`/projects/${projectId}/domains/${domainId}`, {
+      method: 'DELETE',
+    });
+  }
+
+  async verifyDomain(
+    projectId: string,
+    domainId: string,
+  ): Promise<{ dns_verified: boolean; ssl_status: string; message: string }> {
+    return this.request(`/projects/${projectId}/domains/${domainId}/verify`, {
+      method: 'POST',
+    });
+  }
+
+  // Env vars
   async listEnvVars(
     projectId: string,
     environment: string,
   ): Promise<EnvVariable[]> {
     return this.request(
       `/projects/${projectId}/env?environment=${environment}`,
+    );
+  }
+
+  async bulkSetEnvVars(
+    projectId: string,
+    data: { environment: string; variables: { key: string; value: string }[] },
+  ): Promise<{ count: number }> {
+    return this.request(`/projects/${projectId}/env`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async deleteEnvVar(
+    projectId: string,
+    key: string,
+    environment: string,
+  ): Promise<void> {
+    return this.request(
+      `/projects/${projectId}/env/${key}?environment=${environment}`,
+      { method: 'DELETE' },
     );
   }
 
