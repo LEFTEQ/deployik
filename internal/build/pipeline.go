@@ -92,7 +92,13 @@ func (p *Pipeline) Deploy(ctx context.Context, project *db.Project, deployment *
 		emit(fmt.Sprintf("Commit: %s %s", sha[:8], message))
 	}
 
-	// Step 3: Get env vars for build-time injection
+	// Step 3: Patch Next.js config for standalone output
+	emit("Patching Next.js config for standalone output...")
+	if err := PatchNextConfig(repoDir); err != nil {
+		emitErr(fmt.Sprintf("Warning: could not patch next.config: %v", err))
+	}
+
+	// Step 4: Get env vars for build-time injection
 	envVars, err := p.DB.ListEnvVars(project.ID, deployment.Environment)
 	if err != nil {
 		log.Printf("Warning: could not load env vars: %v", err)
@@ -113,7 +119,7 @@ func (p *Pipeline) Deploy(ctx context.Context, project *db.Project, deployment *
 		runtimeEnvVars = append(runtimeEnvVars, fmt.Sprintf("%s=%s", ev.Key, value))
 	}
 
-	// Step 4: Generate Dockerfile
+	// Step 5: Generate Dockerfile
 	emit("Generating Dockerfile...")
 	_, err = GenerateDockerfile(repoDir, DockerfileData{
 		NodeVersion:    project.NodeVersion,
