@@ -598,7 +598,15 @@ function DeploymentsTab({
   domains: Domain[] | undefined;
   isLoading: boolean;
 }) {
+  const navigate = useNavigate();
   const queryClient = useQueryClient();
+
+  const openDeploymentDetails = (deploymentId: string) => {
+    navigate({
+      to: "/projects/$id/deployments/$did",
+      params: { id: projectId, did: deploymentId },
+    });
+  };
 
   const deployMutation = useMutation({
     mutationFn: (env: string) =>
@@ -684,9 +692,18 @@ function DeploymentsTab({
                   <TableRow
                     key={deployment.id}
                     className={cn(
-                      "border-white/8",
+                      "cursor-pointer border-white/8 transition-colors hover:bg-white/[0.04] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary/40",
                       deployment.status === "live" && "bg-white/[0.03]",
                     )}
+                    role="link"
+                    tabIndex={0}
+                    onClick={() => openDeploymentDetails(deployment.id)}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter" || event.key === " ") {
+                        event.preventDefault();
+                        openDeploymentDetails(deployment.id);
+                      }
+                    }}
                   >
                     <TableCell className="pl-6">
                       <div className="flex items-center gap-3">
@@ -761,6 +778,7 @@ function DeploymentsTab({
                             href={liveUrl}
                             target="_blank"
                             rel="noopener noreferrer"
+                            onClick={(event) => event.stopPropagation()}
                           >
                             <ExternalLink className="mr-1.5 h-3.5 w-3.5" />
                             Open
@@ -775,6 +793,7 @@ function DeploymentsTab({
                         <Link
                           to="/projects/$id/deployments/$did"
                           params={{ id: projectId, did: deployment.id }}
+                          onClick={(event) => event.stopPropagation()}
                         >
                           Logs
                         </Link>
