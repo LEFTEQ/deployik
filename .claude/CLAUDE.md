@@ -52,7 +52,6 @@ make docker-build
 - **Auth:** GitHub OAuth → JWT (access + refresh tokens)
 - **Deploy flow:** Manual trigger → clone → docker build → blue-green swap → nginx reload
 - **Next.js patching:** `internal/build/nextjs.go` injects `output: 'standalone'` into plain, typed, and wrapped `next.config.*` variants before Docker builds so `.next/standalone` exists for the runtime image
-- **Preview domains:** successful preview deploys must provision `/opt/nginx-proxy/conf.d` and request a dedicated cert for `{project}.preview.example.com`; `*.example.com` does not cover nested `*.preview.example.com`
 - **Env vars:** AES-256-GCM encrypted at rest, masked in API responses
 - **Frontend state:** Zustand for auth, TanStack Query for server state
 

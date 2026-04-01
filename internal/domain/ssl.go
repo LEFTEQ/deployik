@@ -16,7 +16,6 @@ func RequestSSLCert(domain, email string) error {
 		"--email", email,
 		"--agree-tos",
 		"--no-eff-email",
-		"--keep-until-expiring",
 		"-d", domain,
 	)
 

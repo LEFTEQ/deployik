@@ -139,7 +139,7 @@ func (h *ProjectHandler) Create(w http.ResponseWriter, r *http.Request) {
 		DomainName:  name + ".preview.example.com",
 		Environment: "preview",
 		IsAuto:      true,
-		SSLStatus:   "pending",
+		SSLStatus:   "active", // wildcard cert covers this
 	}
 	h.DB.CreateDomain(previewDomain)
 
