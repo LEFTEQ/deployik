@@ -11,6 +11,18 @@ export interface AuthResponse {
   user: User;
 }
 
+export interface Organization {
+  id: string;
+  name: string;
+  slug: string;
+  is_personal: boolean;
+  personal_owner_user_id?: string;
+  membership_role: "owner" | "member";
+  project_count: number;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface Project {
   id: string;
   name: string;
@@ -18,7 +30,10 @@ export interface Project {
   github_owner: string;
   branch: string;
   user_id: string;
+  organization_id: string;
+  organization_name?: string;
   framework: string;
+  package_manager: string;
   root_directory: string;
   output_directory: string;
   build_command: string;

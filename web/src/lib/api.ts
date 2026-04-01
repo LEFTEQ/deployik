@@ -2,6 +2,7 @@ import { useAuthStore } from "@/store/auth";
 import type {
   AuthResponse,
   User,
+  Organization,
   Project,
   Deployment,
   Domain,
@@ -105,6 +106,10 @@ class ApiClient {
     return this.request("/auth/me");
   }
 
+  async listOrganizations(): Promise<Organization[]> {
+    return this.request("/organizations");
+  }
+
   async logout(): Promise<void> {
     return this.request("/auth/logout", { method: "POST" }, false);
   }
@@ -124,8 +129,13 @@ class ApiClient {
   }
 
   // Projects
-  async listProjects(): Promise<Project[]> {
-    return this.request("/projects");
+  async listProjects(organizationId?: string): Promise<Project[]> {
+    const params = new URLSearchParams();
+    if (organizationId) {
+      params.set("organization_id", organizationId);
+    }
+    const suffix = params.toString();
+    return this.request(`/projects${suffix ? `?${suffix}` : ""}`);
   }
 
   async getProject(id: string): Promise<Project> {

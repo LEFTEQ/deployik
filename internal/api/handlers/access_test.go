@@ -117,3 +117,39 @@ func TestProjectGetAllowsAdminCrossTenantAccess(t *testing.T) {
 		t.Fatalf("project id = %q, want %q", payload.ID, project.ID)
 	}
 }
+
+func TestProjectGetAllowsOrganizationMemberAccess(t *testing.T) {
+	database := newVariableHandlerTestDB(t)
+	project := newTestProject(t, database)
+
+	member := &db.User{ID: db.NewID(), GithubID: 2, Username: "member", GithubToken: "token", Role: "user"}
+	if err := database.UpsertUser(member); err != nil {
+		t.Fatalf("UpsertUser(member): %v", err)
+	}
+
+	organization := &db.Organization{Name: "FixIt Technologies"}
+	if err := database.CreateOrganization(organization); err != nil {
+		t.Fatalf("CreateOrganization: %v", err)
+	}
+	if err := database.AddOrganizationMember(organization.ID, project.UserID, db.OrganizationRoleOwner); err != nil {
+		t.Fatalf("AddOrganizationMember(owner): %v", err)
+	}
+	if err := database.AddOrganizationMember(organization.ID, member.ID, db.OrganizationRoleMember); err != nil {
+		t.Fatalf("AddOrganizationMember(member): %v", err)
+	}
+
+	if _, err := database.Exec("UPDATE projects SET organization_id = ? WHERE id = ?", organization.ID, project.ID); err != nil {
+		t.Fatalf("set organization_id: %v", err)
+	}
+
+	handler := &ProjectHandler{DB: database}
+	req := routeRequest(httptest.NewRequest(http.MethodGet, "/projects/"+project.ID, nil), map[string]string{"id": project.ID})
+	req = addClaims(req, member.ID, member.Role)
+
+	rec := httptest.NewRecorder()
+	handler.Get(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusOK)
+	}
+}

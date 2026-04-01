@@ -23,6 +23,25 @@ type User struct {
 	CreatedAt   time.Time `json:"created_at"`
 }
 
+type Organization struct {
+	ID                  string    `json:"id"`
+	Name                string    `json:"name"`
+	Slug                string    `json:"slug"`
+	IsPersonal          bool      `json:"is_personal"`
+	PersonalOwnerUserID string    `json:"personal_owner_user_id,omitempty"`
+	MembershipRole      string    `json:"membership_role"`
+	ProjectCount        int       `json:"project_count"`
+	CreatedAt           time.Time `json:"created_at"`
+	UpdatedAt           time.Time `json:"updated_at"`
+}
+
+type OrganizationMembership struct {
+	OrganizationID string    `json:"organization_id"`
+	UserID         string    `json:"user_id"`
+	Role           string    `json:"role"`
+	CreatedAt      time.Time `json:"created_at"`
+}
+
 type RefreshSession struct {
 	ID         string       `json:"id"`
 	UserID     string       `json:"user_id"`
@@ -46,21 +65,24 @@ type AuditLog struct {
 }
 
 type Project struct {
-	ID              string    `json:"id"`
-	Name            string    `json:"name"`
-	GithubRepo      string    `json:"github_repo"`
-	GithubOwner     string    `json:"github_owner"`
-	Branch          string    `json:"branch"`
-	UserID          string    `json:"user_id"`
-	Framework       string    `json:"framework"`
-	RootDirectory   string    `json:"root_directory"`
-	OutputDirectory string    `json:"output_directory"`
-	BuildCommand    string    `json:"build_command"`
-	InstallCommand  string    `json:"install_command"`
-	NodeVersion     string    `json:"node_version"`
-	Status          string    `json:"status"`
-	CreatedAt       time.Time `json:"created_at"`
-	UpdatedAt       time.Time `json:"updated_at"`
+	ID               string    `json:"id"`
+	Name             string    `json:"name"`
+	GithubRepo       string    `json:"github_repo"`
+	GithubOwner      string    `json:"github_owner"`
+	Branch           string    `json:"branch"`
+	UserID           string    `json:"user_id"`
+	OrganizationID   string    `json:"organization_id"`
+	OrganizationName string    `json:"organization_name,omitempty"`
+	Framework        string    `json:"framework"`
+	PackageManager   string    `json:"package_manager"`
+	RootDirectory    string    `json:"root_directory"`
+	OutputDirectory  string    `json:"output_directory"`
+	BuildCommand     string    `json:"build_command"`
+	InstallCommand   string    `json:"install_command"`
+	NodeVersion      string    `json:"node_version"`
+	Status           string    `json:"status"`
+	CreatedAt        time.Time `json:"created_at"`
+	UpdatedAt        time.Time `json:"updated_at"`
 }
 
 type Deployment struct {

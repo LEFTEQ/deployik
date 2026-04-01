@@ -3,6 +3,7 @@ import { Link } from '@tanstack/react-router';
 import { Plus, GitBranch, Clock, Circle } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
 import { api } from '@/lib/api';
+import { useOrganizations } from '@/hooks/use-organizations';
 import { Button } from '@/components/ui/button';
 import {
   Card,
@@ -26,6 +27,14 @@ function ProjectCard({ project }: { project: Project }) {
               <CardDescription className="mt-1">
                 {project.github_owner}/{project.github_repo}
               </CardDescription>
+              {project.organization_name ? (
+                <Badge
+                  variant="outline"
+                  className="mt-2 border-white/10 bg-white/5 text-xs text-muted-foreground"
+                >
+                  {project.organization_name}
+                </Badge>
+              ) : null}
             </div>
             <Badge
               variant={project.status === 'active' ? 'default' : 'secondary'}
@@ -55,9 +64,16 @@ function ProjectCard({ project }: { project: Project }) {
 }
 
 export function Projects() {
+  const {
+    organizations,
+    selectedOrganization,
+    selectedOrganizationId,
+    isLoading: organizationsLoading,
+  } = useOrganizations();
   const { data: projects, isLoading } = useQuery({
-    queryKey: ['projects'],
-    queryFn: () => api.listProjects(),
+    queryKey: ['projects', selectedOrganizationId ?? 'all'],
+    queryFn: () => api.listProjects(selectedOrganizationId ?? undefined),
+    enabled: !organizationsLoading,
   });
 
   return (
@@ -69,7 +85,9 @@ export function Projects() {
           </Badge>
           <h1 className="text-2xl font-bold tracking-tight">Projects</h1>
           <p className="text-sm text-muted-foreground">
-            Manage your deployed applications
+            {selectedOrganization
+              ? `${selectedOrganization.name} workspace`
+              : 'Manage your deployed applications'}
           </p>
         </div>
         <Link to="/new">
@@ -80,7 +98,7 @@ export function Projects() {
         </Link>
       </div>
 
-      {isLoading ? (
+      {organizationsLoading || isLoading ? (
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {[1, 2, 3].map((i) => (
             <Card key={i}>
@@ -94,11 +112,18 @@ export function Projects() {
             </Card>
           ))}
         </div>
+      ) : !organizations.length ? (
+        <Card className="flex flex-col items-center justify-center py-16">
+          <p className="text-lg font-medium">No workspaces found</p>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Sign in again if your organization memberships were just changed.
+          </p>
+        </Card>
       ) : !projects?.length ? (
         <Card className="flex flex-col items-center justify-center py-16">
-          <p className="text-lg font-medium">No projects yet</p>
+          <p className="text-lg font-medium">No projects in this workspace</p>
           <p className="mt-1 text-sm text-muted-foreground">
-            Create your first project to get started
+            Create a project in {selectedOrganization?.name ?? 'this workspace'} to get started
           </p>
           <Link to="/new" className="mt-4">
             <Button>

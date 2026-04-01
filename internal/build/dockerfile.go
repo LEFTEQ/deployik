@@ -14,6 +14,7 @@ import (
 
 // DockerfileData holds values for the Dockerfile template.
 type DockerfileData struct {
+	PackageManager   string
 	NodeVersion      string
 	InstallCommand   string
 	BuildCommand     string
@@ -22,8 +23,10 @@ type DockerfileData struct {
 	Runtime          string
 	HasBunLock       bool
 	HasPnpmLock      bool
+	HasYarnLock      bool
 	UseBun           bool
 	UsePnpm          bool
+	UseYarn          bool
 	BuildEnvVars     []EnvVar
 	InstallDirectory string
 }
@@ -63,35 +66,30 @@ func GenerateDockerfile(repoDir string, data DockerfileData) (string, error) {
 
 	if _, err := os.Stat(filepath.Join(installDirAbs, "bun.lockb")); err == nil {
 		data.HasBunLock = true
-		data.UseBun = true
 	} else if _, err := os.Stat(filepath.Join(installDirAbs, "bun.lock")); err == nil {
 		data.HasBunLock = true
-		data.UseBun = true
 	} else if _, err := os.Stat(filepath.Join(installDirAbs, "pnpm-lock.yaml")); err == nil {
 		data.HasPnpmLock = true
-		data.UsePnpm = true
+	} else if _, err := os.Stat(filepath.Join(installDirAbs, "yarn.lock")); err == nil {
+		data.HasYarnLock = true
 	}
 
-	// Override install/build commands to match detected package manager.
-	// The project config may have defaults (e.g. "bun run build") that don't
-	// match the actual repo. The lock file is the source of truth.
-	if data.UsePnpm {
-		data.InstallCommand = "corepack enable && pnpm install --frozen-lockfile"
-		if !strings.Contains(data.BuildCommand, "pnpm") {
-			data.BuildCommand = "pnpm run build"
-		}
-	} else if data.UseBun {
-		data.InstallCommand = "bun install --frozen-lockfile"
-		if !strings.Contains(data.BuildCommand, "bun") {
-			data.BuildCommand = "bun run build"
-		}
-	} else {
-		if data.InstallCommand == "" {
-			data.InstallCommand = "npm ci"
-		}
-		if data.BuildCommand == "" || strings.HasPrefix(data.BuildCommand, "bun ") || strings.HasPrefix(data.BuildCommand, "pnpm ") {
-			data.BuildCommand = "npm run build"
-		}
+	effectiveManager := resolvePackageManager(data)
+	switch effectiveManager {
+	case projectconfig.PackageManagerPnpm:
+		data.UsePnpm = true
+	case projectconfig.PackageManagerYarn:
+		data.UseYarn = true
+	case projectconfig.PackageManagerNpm:
+	default:
+		data.UseBun = true
+	}
+
+	if data.InstallCommand == "" || (isAutoPackageManager(data.PackageManager) && isKnownInstallDefault(data.InstallCommand)) {
+		data.InstallCommand = projectconfig.DefaultInstallCommand(effectiveManager)
+	}
+	if data.BuildCommand == "" || (isAutoPackageManager(data.PackageManager) && isKnownBuildDefault(data.BuildCommand)) {
+		data.BuildCommand = projectconfig.DefaultBuildCommand(effectiveManager)
 	}
 
 	if data.NodeVersion == "" {
@@ -141,12 +139,13 @@ func generateNextJSDockerfile(data DockerfileData) string {
 
 	// Install dependencies
 	if data.UseBun {
-		b.WriteString("RUN npm i -g bun && bun install --frozen-lockfile\n\n")
+		b.WriteString("RUN npm i -g bun\n")
 	} else if data.UsePnpm {
-		b.WriteString("RUN corepack enable && pnpm install --frozen-lockfile\n\n")
-	} else {
-		b.WriteString(fmt.Sprintf("RUN %s\n\n", data.InstallCommand))
+		b.WriteString("RUN corepack enable\n")
+	} else if data.UseYarn {
+		b.WriteString("RUN corepack enable\n")
 	}
+	b.WriteString(fmt.Sprintf("RUN %s\n\n", data.InstallCommand))
 
 	// Build stage — package manager must also be available here
 	b.WriteString("FROM deps AS builder\n")
@@ -194,12 +193,13 @@ func generateStaticDockerfile(data DockerfileData) string {
 		b.WriteString(fmt.Sprintf("WORKDIR %s\n", installDir))
 	}
 	if data.UseBun {
-		b.WriteString("RUN npm i -g bun && bun install --frozen-lockfile\n\n")
+		b.WriteString("RUN npm i -g bun\n")
 	} else if data.UsePnpm {
-		b.WriteString("RUN corepack enable && pnpm install --frozen-lockfile\n\n")
-	} else {
-		b.WriteString(fmt.Sprintf("RUN %s\n\n", data.InstallCommand))
+		b.WriteString("RUN corepack enable\n")
+	} else if data.UseYarn {
+		b.WriteString("RUN corepack enable\n")
 	}
+	b.WriteString(fmt.Sprintf("RUN %s\n\n", data.InstallCommand))
 
 	b.WriteString("FROM deps AS builder\n")
 	b.WriteString(fmt.Sprintf("WORKDIR %s\n", appDir))
@@ -238,7 +238,7 @@ func detectInstallDirectory(repoDir, rootDirectory string) string {
 	}
 
 	for _, dir := range directories {
-		for _, candidate := range []string{"bun.lockb", "bun.lock", "pnpm-lock.yaml", "package-lock.json"} {
+		for _, candidate := range []string{"bun.lockb", "bun.lock", "pnpm-lock.yaml", "yarn.lock", "package-lock.json"} {
 			if _, err := os.Stat(filepath.Join(dir.absolute, candidate)); err == nil {
 				return dir.relative
 			}
@@ -272,6 +272,70 @@ func dockerProjectPath(rootDirectory, relative string) string {
 		parts = append(parts, strings.TrimPrefix(path.Clean(relative), "./"))
 	}
 	return path.Join(parts...)
+}
+
+func resolvePackageManager(data DockerfileData) string {
+	normalized := projectconfig.NormalizePackageManager(data.PackageManager)
+	if normalized != projectconfig.PackageManagerAuto {
+		return normalized
+	}
+	if data.HasBunLock {
+		return projectconfig.PackageManagerBun
+	}
+	if data.HasPnpmLock {
+		return projectconfig.PackageManagerPnpm
+	}
+	if data.HasYarnLock {
+		return projectconfig.PackageManagerYarn
+	}
+
+	commandText := strings.ToLower(strings.TrimSpace(data.InstallCommand + " " + data.BuildCommand))
+	switch {
+	case strings.Contains(commandText, " pnpm") || strings.HasPrefix(commandText, "pnpm"):
+		return projectconfig.PackageManagerPnpm
+	case strings.Contains(commandText, " yarn") || strings.HasPrefix(commandText, "yarn"):
+		return projectconfig.PackageManagerYarn
+	case strings.Contains(commandText, " npm") || strings.HasPrefix(commandText, "npm"):
+		return projectconfig.PackageManagerNpm
+	default:
+		return projectconfig.PackageManagerBun
+	}
+}
+
+func isAutoPackageManager(value string) bool {
+	return projectconfig.NormalizePackageManager(value) == projectconfig.PackageManagerAuto
+}
+
+func isKnownInstallDefault(command string) bool {
+	trimmed := strings.TrimSpace(command)
+	for _, packageManager := range []string{
+		projectconfig.PackageManagerAuto,
+		projectconfig.PackageManagerBun,
+		projectconfig.PackageManagerPnpm,
+		projectconfig.PackageManagerNpm,
+		projectconfig.PackageManagerYarn,
+	} {
+		if trimmed == projectconfig.DefaultInstallCommand(packageManager) {
+			return true
+		}
+	}
+	return false
+}
+
+func isKnownBuildDefault(command string) bool {
+	trimmed := strings.TrimSpace(command)
+	for _, packageManager := range []string{
+		projectconfig.PackageManagerAuto,
+		projectconfig.PackageManagerBun,
+		projectconfig.PackageManagerPnpm,
+		projectconfig.PackageManagerNpm,
+		projectconfig.PackageManagerYarn,
+	} {
+		if trimmed == projectconfig.DefaultBuildCommand(packageManager) {
+			return true
+		}
+	}
+	return false
 }
 
 // ParseTemplateFile parses a Go template file (for future extensibility).

@@ -3,6 +3,7 @@ import { useParams, Link, useNavigate } from "@tanstack/react-router";
 import {
   ArrowLeft,
   ArrowUpRight,
+  Building2,
   CheckCircle2,
   CircleDot,
   ExternalLink,
@@ -326,6 +327,12 @@ export function ProjectDetail() {
                     <span>
                       {project.github_owner}/{project.github_repo}
                     </span>
+                    {project.organization_name ? (
+                      <span className="flex items-center gap-1">
+                        <Building2 className="h-3.5 w-3.5" />
+                        {project.organization_name}
+                      </span>
+                    ) : null}
                     <span className="flex items-center gap-1">
                       <GitBranch className="h-3.5 w-3.5" />
                       {project.branch}
@@ -333,7 +340,7 @@ export function ProjectDetail() {
                   </p>
                 </div>
 
-                <div className="grid gap-3 sm:grid-cols-3">
+                <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
                   <div className="rounded-2xl border border-white/8 bg-black/10 px-4 py-3">
                     <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">
                       Framework
@@ -348,6 +355,14 @@ export function ProjectDetail() {
                     </p>
                     <p className="mt-2 text-sm font-medium text-foreground">
                       Node.js {project.node_version}
+                    </p>
+                  </div>
+                  <div className="rounded-2xl border border-white/8 bg-black/10 px-4 py-3">
+                    <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">
+                      Workspace
+                    </p>
+                    <p className="mt-2 truncate text-sm font-medium text-foreground">
+                      {project.organization_name || "Personal"}
                     </p>
                   </div>
                   <div className="rounded-2xl border border-white/8 bg-black/10 px-4 py-3">
@@ -787,6 +802,7 @@ function SettingsTab({
   const [branch, setBranch] = useState(project.branch);
   const [buildSettings, setBuildSettings] = useState({
     framework: project.framework,
+    packageManager: project.package_manager,
     rootDirectory: project.root_directory,
     outputDirectory: project.output_directory,
     buildCommand: project.build_command,
@@ -799,6 +815,7 @@ function SettingsTab({
       api.updateProject(project.id, {
         branch,
         framework: buildSettings.framework,
+        package_manager: buildSettings.packageManager,
         root_directory: buildSettings.rootDirectory,
         output_directory: buildSettings.outputDirectory,
         build_command: buildSettings.buildCommand,
@@ -819,6 +836,10 @@ function SettingsTab({
           <CardTitle className="text-base">Build Settings</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
+          <div className="space-y-2">
+            <Label>Workspace</Label>
+            <Input value={project.organization_name || "Personal"} disabled />
+          </div>
           <div className="space-y-2">
             <Label>Branch</Label>
             <Input value={branch} onChange={(e) => setBranch(e.target.value)} />

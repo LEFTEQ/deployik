@@ -159,6 +159,7 @@ func (p *Pipeline) Deploy(ctx context.Context, project *db.Project, deployment *
 	// Step 5: Generate Dockerfile
 	emit("Generating Dockerfile...")
 	dockerfilePath, err := GenerateDockerfile(repoDir, DockerfileData{
+		PackageManager:  settings.PackageManager,
 		NodeVersion:     settings.NodeVersion,
 		InstallCommand:  settings.InstallCommand,
 		BuildCommand:    settings.BuildCommand,

@@ -1,9 +1,20 @@
 import { Link, useMatchRoute } from "@tanstack/react-router";
-import { LayoutDashboard, Plus, LogOut } from "lucide-react";
+import { Building2, LayoutDashboard, Plus, LogOut } from "lucide-react";
 import { useAuthStore } from "@/store/auth";
+import { useOrganizationStore } from "@/store/organization";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Skeleton } from "@/components/ui/skeleton";
+import { useOrganizations } from "@/hooks/use-organizations";
 import { cn } from "@/lib/utils";
 import { api } from "@/lib/api";
 
@@ -14,6 +25,13 @@ const navItems = [
 
 export function Sidebar() {
   const { user, clearAuth } = useAuthStore();
+  const {
+    organizations,
+    selectedOrganizationId,
+    selectedOrganization,
+    setSelectedOrganizationId,
+    isLoading: organizationsLoading,
+  } = useOrganizations();
   const matchRoute = useMatchRoute();
 
   return (
@@ -33,6 +51,51 @@ export function Sidebar() {
 
       {/* Nav */}
       <nav className="flex-1 space-y-1.5 p-3">
+        <div className="mb-4 rounded-2xl border border-white/8 bg-black/10 p-3">
+          <div className="mb-3 flex items-center gap-2 text-xs font-medium uppercase tracking-[0.22em] text-muted-foreground">
+            <Building2 className="h-3.5 w-3.5" />
+            Workspace
+          </div>
+          {organizationsLoading ? (
+            <Skeleton className="h-10 w-full rounded-xl" />
+          ) : organizations.length ? (
+            <div className="space-y-2">
+              <Select
+                value={selectedOrganizationId ?? undefined}
+                onValueChange={setSelectedOrganizationId}
+              >
+                <SelectTrigger className="h-11 rounded-xl border-white/10 bg-white/5 text-left">
+                  <SelectValue placeholder="Select workspace" />
+                </SelectTrigger>
+                <SelectContent>
+                  {organizations.map((organization) => (
+                    <SelectItem key={organization.id} value={organization.id}>
+                      {organization.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {selectedOrganization ? (
+                <div className="flex items-center justify-between gap-2 text-xs text-muted-foreground">
+                  <span>
+                    {selectedOrganization.project_count}{" "}
+                    {selectedOrganization.project_count === 1
+                      ? "project"
+                      : "projects"}
+                  </span>
+                  <Badge variant="outline" className="border-white/10 bg-white/5">
+                    {selectedOrganization.is_personal ? "Personal" : "Organization"}
+                  </Badge>
+                </div>
+              ) : null}
+            </div>
+          ) : (
+            <p className="text-xs text-muted-foreground">
+              No workspaces available.
+            </p>
+          )}
+        </div>
+
         {navItems.map(({ to, label, icon: Icon }) => {
           const isActive = matchRoute({ to, fuzzy: to !== "/" });
           return (
@@ -73,6 +136,7 @@ export function Sidebar() {
             try {
               await api.logout();
             } finally {
+              useOrganizationStore.getState().clearSelection();
               clearAuth();
             }
             window.location.href = "/login";

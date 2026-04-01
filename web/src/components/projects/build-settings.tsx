@@ -14,9 +14,11 @@ import {
 } from "@/components/ui/select";
 
 export type FrameworkPreset = "nextjs" | "vite" | "astro" | "static";
+export type PackageManagerPreset = "auto" | "bun" | "pnpm" | "npm" | "yarn";
 
 export interface BuildSettingsValues {
   framework: string;
+  packageManager: string;
   rootDirectory: string;
   outputDirectory: string;
   installCommand: string;
@@ -26,6 +28,12 @@ export interface BuildSettingsValues {
 
 type FrameworkOption = {
   value: FrameworkPreset;
+  label: string;
+  description: string;
+};
+
+type PackageManagerOption = {
+  value: PackageManagerPreset;
   label: string;
   description: string;
 };
@@ -53,6 +61,34 @@ const FRAMEWORK_OPTIONS: FrameworkOption[] = [
   },
 ];
 
+const PACKAGE_MANAGER_OPTIONS: PackageManagerOption[] = [
+  {
+    value: "auto",
+    label: "Auto Detect",
+    description: "Keep current compatibility behavior and prefer repo lockfiles.",
+  },
+  {
+    value: "bun",
+    label: "Bun",
+    description: "Use Bun commands and install Bun in the build container.",
+  },
+  {
+    value: "pnpm",
+    label: "pnpm",
+    description: "Use pnpm with Corepack enabled in the build container.",
+  },
+  {
+    value: "npm",
+    label: "npm",
+    description: "Use npm / package-lock based installs.",
+  },
+  {
+    value: "yarn",
+    label: "Yarn",
+    description: "Use Yarn with Corepack enabled in the build container.",
+  },
+];
+
 export function normalizeFrameworkPreset(
   framework?: string | null,
 ): FrameworkPreset {
@@ -69,17 +105,76 @@ export function normalizeFrameworkPreset(
   }
 }
 
+export function normalizePackageManagerPreset(
+  packageManager?: string | null,
+): PackageManagerPreset {
+  switch ((packageManager ?? "").trim().toLowerCase()) {
+    case "bun":
+      return "bun";
+    case "pnpm":
+      return "pnpm";
+    case "npm":
+      return "npm";
+    case "yarn":
+      return "yarn";
+    case "auto":
+    default:
+      return "auto";
+  }
+}
+
+function defaultInstallCommandForPackageManager(
+  packageManager: PackageManagerPreset,
+): string {
+  switch (packageManager) {
+    case "pnpm":
+      return "pnpm install --frozen-lockfile";
+    case "npm":
+      return "npm ci";
+    case "yarn":
+      return "yarn install --frozen-lockfile";
+    case "auto":
+    case "bun":
+    default:
+      return "bun install --frozen-lockfile";
+  }
+}
+
+function defaultBuildCommandForPackageManager(
+  packageManager: PackageManagerPreset,
+): string {
+  switch (packageManager) {
+    case "pnpm":
+      return "pnpm run build";
+    case "npm":
+      return "npm run build";
+    case "yarn":
+      return "yarn build";
+    case "auto":
+    case "bun":
+    default:
+      return "bun run build";
+  }
+}
+
 export function getFrameworkDefaults(
   framework?: string | null,
+  packageManager?: string | null,
 ): BuildSettingsValues {
   const normalized = normalizeFrameworkPreset(framework);
+  const normalizedPackageManager = normalizePackageManagerPreset(packageManager);
 
   return {
     framework: normalized,
+    packageManager: normalizedPackageManager,
     rootDirectory: "",
     outputDirectory: normalized === "nextjs" ? ".next" : "dist",
-    installCommand: "bun install",
-    buildCommand: "bun run build",
+    installCommand: defaultInstallCommandForPackageManager(
+      normalizedPackageManager,
+    ),
+    buildCommand: defaultBuildCommandForPackageManager(
+      normalizedPackageManager,
+    ),
     nodeVersion: "22",
   };
 }
@@ -88,8 +183,11 @@ export function syncBuildSettingsWithFramework(
   values: BuildSettingsValues,
   nextFramework: string,
 ): BuildSettingsValues {
-  const currentDefaults = getFrameworkDefaults(values.framework);
-  const nextDefaults = getFrameworkDefaults(nextFramework);
+  const currentDefaults = getFrameworkDefaults(
+    values.framework,
+    values.packageManager,
+  );
+  const nextDefaults = getFrameworkDefaults(nextFramework, values.packageManager);
 
   return {
     ...values,
@@ -117,6 +215,58 @@ export function syncBuildSettingsWithFramework(
   };
 }
 
+function isKnownInstallDefault(command: string): boolean {
+  const trimmed = command.trim();
+  return PACKAGE_MANAGER_OPTIONS.some(
+    (option) => trimmed === defaultInstallCommandForPackageManager(option.value),
+  );
+}
+
+function isKnownBuildDefault(command: string): boolean {
+  const trimmed = command.trim();
+  return PACKAGE_MANAGER_OPTIONS.some(
+    (option) => trimmed === defaultBuildCommandForPackageManager(option.value),
+  );
+}
+
+export function syncBuildSettingsWithPackageManager(
+  values: BuildSettingsValues,
+  nextPackageManager: string,
+): BuildSettingsValues {
+  const currentPackageManager = normalizePackageManagerPreset(
+    values.packageManager,
+  );
+  const normalizedNextPackageManager =
+    normalizePackageManagerPreset(nextPackageManager);
+  const currentDefaults = getFrameworkDefaults(
+    values.framework,
+    currentPackageManager,
+  );
+  const nextDefaults = getFrameworkDefaults(
+    values.framework,
+    normalizedNextPackageManager,
+  );
+  const shouldReplaceInstallCommand =
+    values.installCommand.trim() === "" ||
+    values.installCommand === currentDefaults.installCommand ||
+    (currentPackageManager === "auto" && isKnownInstallDefault(values.installCommand));
+  const shouldReplaceBuildCommand =
+    values.buildCommand.trim() === "" ||
+    values.buildCommand === currentDefaults.buildCommand ||
+    (currentPackageManager === "auto" && isKnownBuildDefault(values.buildCommand));
+
+  return {
+    ...values,
+    packageManager: normalizedNextPackageManager,
+    installCommand: shouldReplaceInstallCommand
+      ? nextDefaults.installCommand
+      : values.installCommand,
+    buildCommand: shouldReplaceBuildCommand
+      ? nextDefaults.buildCommand
+      : values.buildCommand,
+  };
+}
+
 export function formatFrameworkLabel(framework?: string | null): string {
   return (
     FRAMEWORK_OPTIONS.find(
@@ -136,11 +286,18 @@ export function BuildSettingsFields({
   onChange,
   footer,
 }: BuildSettingsFieldsProps) {
-  const defaults = getFrameworkDefaults(value.framework);
+  const defaults = getFrameworkDefaults(value.framework, value.packageManager);
   const selectedFramework = normalizeFrameworkPreset(value.framework);
+  const selectedPackageManager = normalizePackageManagerPreset(
+    value.packageManager,
+  );
   const selectedFrameworkMeta =
     FRAMEWORK_OPTIONS.find((option) => option.value === selectedFramework) ??
     FRAMEWORK_OPTIONS[0]!;
+  const selectedPackageManagerMeta =
+    PACKAGE_MANAGER_OPTIONS.find(
+      (option) => option.value === selectedPackageManager,
+    ) ?? PACKAGE_MANAGER_OPTIONS[0]!;
 
   const patch = (partial: Partial<BuildSettingsValues>) =>
     onChange({ ...value, ...partial });
@@ -155,6 +312,10 @@ export function BuildSettingsFields({
           <p className="text-xs text-muted-foreground">
             {selectedFrameworkMeta.description}
           </p>
+          <p className="text-xs text-muted-foreground">
+            {selectedPackageManagerMeta.label}:{" "}
+            {selectedPackageManagerMeta.description}
+          </p>
         </div>
         <Button
           type="button"
@@ -164,6 +325,7 @@ export function BuildSettingsFields({
             onChange({
               ...value,
               framework: defaults.framework,
+              packageManager: defaults.packageManager,
               outputDirectory: defaults.outputDirectory,
               installCommand: defaults.installCommand,
               buildCommand: defaults.buildCommand,
@@ -211,6 +373,29 @@ export function BuildSettingsFields({
         </div>
 
         <div className="space-y-2">
+          <Label>Package Manager</Label>
+          <Select
+            value={selectedPackageManager}
+            onValueChange={(nextPackageManager) =>
+              onChange(
+                syncBuildSettingsWithPackageManager(value, nextPackageManager),
+              )
+            }
+          >
+            <SelectTrigger>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {PACKAGE_MANAGER_OPTIONS.map((option) => (
+                <SelectItem key={option.value} value={option.value}>
+                  {option.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+
+        <div className="space-y-2">
           <Label>Install Command</Label>
           <Input
             value={value.installCommand}
@@ -226,6 +411,12 @@ export function BuildSettingsFields({
             onChange={(event) => patch({ buildCommand: event.target.value })}
             placeholder={defaults.buildCommand}
           />
+          {selectedPackageManager === "auto" ? (
+            <p className="text-xs text-muted-foreground">
+              Auto detect keeps backward compatibility and may prefer repo
+              lockfiles if these commands are still on defaults.
+            </p>
+          ) : null}
         </div>
 
         <div className="space-y-2">

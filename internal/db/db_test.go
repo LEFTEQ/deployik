@@ -22,7 +22,7 @@ func TestMigrations(t *testing.T) {
 	db := newTestDB(t)
 
 	// Verify tables exist
-	tables := []string{"users", "projects", "deployments", "build_logs", "domains", "env_variables", "refresh_tokens", "audit_logs", "_migrations"}
+	tables := []string{"users", "organizations", "organization_memberships", "projects", "deployments", "build_logs", "domains", "env_variables", "refresh_tokens", "audit_logs", "_migrations"}
 	for _, table := range tables {
 		var count int
 		err := db.QueryRow("SELECT COUNT(*) FROM " + table).Scan(&count)
@@ -86,6 +86,46 @@ func TestUserCRUD(t *testing.T) {
 	}
 }
 
+func TestEnsurePersonalOrganization(t *testing.T) {
+	db := newTestDB(t)
+
+	user := &User{
+		ID:        NewID(),
+		GithubID:  12345,
+		Username:  "testuser",
+		AvatarURL: "https://github.com/testuser.png",
+		Role:      "admin",
+	}
+	if err := db.UpsertUser(user); err != nil {
+		t.Fatalf("UpsertUser: %v", err)
+	}
+
+	organization, err := db.EnsurePersonalOrganization(user)
+	if err != nil {
+		t.Fatalf("EnsurePersonalOrganization: %v", err)
+	}
+	if organization == nil {
+		t.Fatal("organization should not be nil")
+	}
+	if !organization.IsPersonal {
+		t.Fatal("organization should be personal")
+	}
+	if organization.MembershipRole != OrganizationRoleOwner {
+		t.Fatalf("membership_role = %q, want %q", organization.MembershipRole, OrganizationRoleOwner)
+	}
+
+	organizations, err := db.ListOrganizationsForUser(user.ID)
+	if err != nil {
+		t.Fatalf("ListOrganizationsForUser: %v", err)
+	}
+	if len(organizations) != 1 {
+		t.Fatalf("got %d organizations, want 1", len(organizations))
+	}
+	if organizations[0].PersonalOwnerUserID != user.ID {
+		t.Fatalf("personal_owner_user_id = %q, want %q", organizations[0].PersonalOwnerUserID, user.ID)
+	}
+}
+
 func TestProjectCRUD(t *testing.T) {
 	db := newTestDB(t)
 
@@ -100,6 +140,7 @@ func TestProjectCRUD(t *testing.T) {
 		Branch:          "main",
 		UserID:          user.ID,
 		Framework:       "nextjs",
+		PackageManager:  "pnpm",
 		RootDirectory:   "apps/web",
 		OutputDirectory: ".next",
 		BuildCommand:    "bun run build",
@@ -117,7 +158,7 @@ func TestProjectCRUD(t *testing.T) {
 	}
 
 	// List
-	projects, err := db.ListProjects(user.ID)
+	projects, err := db.ListProjects(user.ID, "")
 	if err != nil {
 		t.Fatalf("ListProjects: %v", err)
 	}
@@ -138,6 +179,9 @@ func TestProjectCRUD(t *testing.T) {
 	}
 	if got.OutputDirectory != ".next" {
 		t.Errorf("output_directory = %q, want %q", got.OutputDirectory, ".next")
+	}
+	if got.PackageManager != "pnpm" {
+		t.Errorf("package_manager = %q, want %q", got.PackageManager, "pnpm")
 	}
 
 	gotForUser, err := db.GetProjectForUser(project.ID, user.ID)
@@ -162,9 +206,71 @@ func TestProjectCRUD(t *testing.T) {
 	if err := db.DeleteProject(project.ID); err != nil {
 		t.Fatalf("DeleteProject: %v", err)
 	}
-	projects, _ = db.ListProjects(user.ID)
+	projects, _ = db.ListProjects(user.ID, "")
 	if len(projects) != 0 {
 		t.Error("deleted project still shows in list")
+	}
+}
+
+func TestOrganizationMembersCanAccessSharedProjects(t *testing.T) {
+	db := newTestDB(t)
+
+	owner := &User{ID: NewID(), GithubID: 1, Username: "owner", Role: "admin"}
+	member := &User{ID: NewID(), GithubID: 2, Username: "member", Role: "user"}
+	if err := db.UpsertUser(owner); err != nil {
+		t.Fatalf("UpsertUser(owner): %v", err)
+	}
+	if err := db.UpsertUser(member); err != nil {
+		t.Fatalf("UpsertUser(member): %v", err)
+	}
+
+	organization := &Organization{Name: "FixIt Technologies", MembershipRole: OrganizationRoleOwner}
+	if err := db.CreateOrganization(organization); err != nil {
+		t.Fatalf("CreateOrganization: %v", err)
+	}
+	if err := db.AddOrganizationMember(organization.ID, owner.ID, OrganizationRoleOwner); err != nil {
+		t.Fatalf("AddOrganizationMember(owner): %v", err)
+	}
+	if err := db.AddOrganizationMember(organization.ID, member.ID, OrganizationRoleMember); err != nil {
+		t.Fatalf("AddOrganizationMember(member): %v", err)
+	}
+
+	project := &Project{
+		Name:            "shared-project",
+		GithubRepo:      "my-app",
+		GithubOwner:     "owner",
+		Branch:          "main",
+		UserID:          owner.ID,
+		OrganizationID:  organization.ID,
+		Framework:       "nextjs",
+		PackageManager:  "auto",
+		OutputDirectory: ".next",
+		BuildCommand:    "bun run build",
+		InstallCommand:  "bun install --frozen-lockfile",
+		NodeVersion:     "22",
+		Status:          "active",
+	}
+	if err := db.CreateProject(project); err != nil {
+		t.Fatalf("CreateProject: %v", err)
+	}
+
+	projects, err := db.ListProjects(member.ID, organization.ID)
+	if err != nil {
+		t.Fatalf("ListProjects(member): %v", err)
+	}
+	if len(projects) != 1 {
+		t.Fatalf("got %d projects, want 1", len(projects))
+	}
+	if projects[0].OrganizationName != "FixIt Technologies" {
+		t.Fatalf("organization_name = %q, want %q", projects[0].OrganizationName, "FixIt Technologies")
+	}
+
+	gotForMember, err := db.GetProjectForUser(project.ID, member.ID)
+	if err != nil {
+		t.Fatalf("GetProjectForUser(member): %v", err)
+	}
+	if gotForMember == nil {
+		t.Fatal("member should have access to shared project")
 	}
 }
 
@@ -175,7 +281,7 @@ func TestDeploymentCRUD(t *testing.T) {
 	db.UpsertUser(user)
 
 	project := &Project{Name: "p1", GithubRepo: "r", GithubOwner: "o", Branch: "main",
-		UserID: user.ID, Framework: "nextjs", RootDirectory: "", OutputDirectory: ".next", BuildCommand: "build", InstallCommand: "install",
+		UserID: user.ID, Framework: "nextjs", PackageManager: "auto", RootDirectory: "", OutputDirectory: ".next", BuildCommand: "build", InstallCommand: "install",
 		NodeVersion: "22", Status: "active"}
 	db.CreateProject(project)
 
@@ -221,6 +327,57 @@ func TestDeploymentCRUD(t *testing.T) {
 	}
 }
 
+func TestOrganizationMembersCanAccessSharedDeployments(t *testing.T) {
+	db := newTestDB(t)
+
+	owner := &User{ID: NewID(), GithubID: 1, Username: "owner", Role: "admin"}
+	member := &User{ID: NewID(), GithubID: 2, Username: "member", Role: "user"}
+	if err := db.UpsertUser(owner); err != nil {
+		t.Fatalf("UpsertUser(owner): %v", err)
+	}
+	if err := db.UpsertUser(member); err != nil {
+		t.Fatalf("UpsertUser(member): %v", err)
+	}
+
+	organization := &Organization{Name: "FixIt Technologies"}
+	if err := db.CreateOrganization(organization); err != nil {
+		t.Fatalf("CreateOrganization: %v", err)
+	}
+	if err := db.AddOrganizationMember(organization.ID, owner.ID, OrganizationRoleOwner); err != nil {
+		t.Fatalf("AddOrganizationMember(owner): %v", err)
+	}
+	if err := db.AddOrganizationMember(organization.ID, member.ID, OrganizationRoleMember); err != nil {
+		t.Fatalf("AddOrganizationMember(member): %v", err)
+	}
+
+	project := &Project{Name: "shared-deploy-project", GithubRepo: "r", GithubOwner: "o", Branch: "main",
+		UserID: owner.ID, OrganizationID: organization.ID, Framework: "nextjs", PackageManager: "auto", RootDirectory: "", OutputDirectory: ".next", BuildCommand: "build", InstallCommand: "install",
+		NodeVersion: "22", Status: "active"}
+	if err := db.CreateProject(project); err != nil {
+		t.Fatalf("CreateProject: %v", err)
+	}
+
+	deploy := &Deployment{
+		ProjectID:   project.ID,
+		Environment: "preview",
+		CommitSHA:   "abc123",
+		Branch:      "main",
+		Status:      "queued",
+		TriggeredBy: owner.ID,
+	}
+	if err := db.CreateDeployment(deploy); err != nil {
+		t.Fatalf("CreateDeployment: %v", err)
+	}
+
+	got, err := db.GetDeploymentForUser(deploy.ID, member.ID)
+	if err != nil {
+		t.Fatalf("GetDeploymentForUser(member): %v", err)
+	}
+	if got == nil {
+		t.Fatal("member should have access to shared deployment")
+	}
+}
+
 func TestEnvVarCRUD(t *testing.T) {
 	db := newTestDB(t)
 
@@ -228,7 +385,7 @@ func TestEnvVarCRUD(t *testing.T) {
 	db.UpsertUser(user)
 
 	project := &Project{Name: "p1", GithubRepo: "r", GithubOwner: "o", Branch: "main",
-		UserID: user.ID, Framework: "nextjs", RootDirectory: "", OutputDirectory: ".next", BuildCommand: "b", InstallCommand: "i",
+		UserID: user.ID, Framework: "nextjs", PackageManager: "auto", RootDirectory: "", OutputDirectory: ".next", BuildCommand: "b", InstallCommand: "i",
 		NodeVersion: "22", Status: "active"}
 	db.CreateProject(project)
 
@@ -273,7 +430,7 @@ func TestProjectVariableResolution(t *testing.T) {
 	db.UpsertUser(user)
 
 	project := &Project{Name: "p1", GithubRepo: "r", GithubOwner: "o", Branch: "main",
-		UserID: user.ID, Framework: "nextjs", BuildCommand: "b", InstallCommand: "i",
+		UserID: user.ID, Framework: "nextjs", PackageManager: "auto", BuildCommand: "b", InstallCommand: "i",
 		NodeVersion: "22", Status: "active"}
 	db.CreateProject(project)
 

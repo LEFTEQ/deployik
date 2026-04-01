@@ -105,6 +105,11 @@ func (h *AuthHandler) GithubCallback(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to save user"})
 		return
 	}
+	if _, err := h.DB.EnsurePersonalOrganization(user); err != nil {
+		log.Printf("Personal organization bootstrap error: %v", err)
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to initialize workspace"})
+		return
+	}
 
 	if err := h.issueSession(w, user, ""); err != nil {
 		log.Printf("Session issuance error: %v", err)

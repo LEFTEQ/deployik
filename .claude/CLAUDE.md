@@ -80,8 +80,11 @@ internal/
       002_project_variable_kinds.sql  Adds kind (env/secret) + shared scope to env_variables
       003_project_build_settings.sql  Adds root_directory, output_directory to projects
       004_auth_sessions_and_audit_logs.sql  Adds refresh_tokens and audit_logs
-    models.go             User, RefreshSession, AuditLog, Project, Deployment, BuildLog, Domain, ProjectVariable, VariableKind
+      005_project_package_manager.sql  Adds package_manager to projects
+      006_organizations.sql    Adds organizations, organization_memberships, and projects.organization_id
+    models.go             User, Organization, OrganizationMembership, RefreshSession, AuditLog, Project, Deployment, BuildLog, Domain, ProjectVariable, VariableKind
     queries_users.go      GetUserByGithubID, GetUserByID, UpsertUser
+    queries_organizations.go  Personal workspace bootstrap, memberships, org listing
     queries_projects.go   ListProjects, GetProject, GetProjectForUser, Create, Update, Delete (soft)
     queries_deployments.go  List, Get, GetForUser, Create, UpdateStatus/Container/Duration, GetLiveDeployment
     queries_envvars.go    ListProjectVariables, ListResolvedEnvVars/Secrets, BulkSet*, Delete*, key conflict checks
@@ -118,29 +121,33 @@ web/src/
     DeploymentDetail.tsx  Build log viewer with real-time WebSocket streaming
   components/
     layout/AppLayout.tsx  Protected shell with sidebar
-    layout/Sidebar.tsx    Navigation sidebar
-    projects/build-settings.tsx  Reusable BuildSettingsFields component
+    layout/Sidebar.tsx    Navigation sidebar + workspace selector
+    projects/build-settings.tsx  Reusable BuildSettingsFields component with framework + package manager presets
     BuildLog.tsx          Log viewer with auto-scroll, stderr highlighting
     ui/                   shadcn/ui components (button, card, dialog, input, etc.)
   hooks/
     useBuildLogs.ts       WebSocket hook for real-time build log streaming
+    use-organizations.ts  React Query + Zustand bridge for accessible organizations and selected workspace
   lib/
     api.ts                ApiClient class wrapping fetch with cookie auth, refresh retry, auto-logout on unrecoverable 401
     utils.ts              cn() utility (clsx + tailwind-merge)
   store/
-    auth.ts               Zustand store persisted to localStorage (tokens, user, isAuthenticated)
+    auth.ts               Zustand store for current user/auth status only (tokens stay in HttpOnly cookies)
+    organization.ts       Persisted selected workspace/org id
   types/
     api.ts                TypeScript interfaces matching Go models
 ```
 
 ## Database Schema
 
-SQLite with 3 migrations. Tables:
+SQLite with 6 migrations. Tables:
 
 | Table | Key Fields | Notes |
 |---|---|---|
 | `users` | id (ULID), github_id (unique), username, github_token (encrypted), role (admin/user) | `ADMIN_GITHUB_USERS` provides explicit admin bootstrap; first user only auto-promotes when no admin list is configured |
-| `projects` | id (ULID), name (unique slug), github_repo, github_owner, branch, user_id (FK), framework, root_directory, output_directory, build_command, install_command, node_version, status | Soft-delete via status='deleted' |
+| `organizations` | id (ULID), name, slug (unique), is_personal, personal_owner_user_id (nullable unique FK) | Every user gets a personal workspace; shared orgs use memberships |
+| `organization_memberships` | organization_id (FK), user_id (FK), role (owner/member) | Grants workspace visibility |
+| `projects` | id (ULID), name (unique slug), github_repo, github_owner, branch, user_id (creator FK), organization_id (nullable FK), framework, package_manager, root_directory, output_directory, build_command, install_command, node_version, status | Soft-delete via status='deleted' |
 | `deployments` | id (ULID), project_id (FK), environment (preview/production), status (queued/building/deploying/live/failed/rolled_back/replaced), commit_sha, container_id, build_duration | |
 | `build_logs` | id (auto), deployment_id (FK), line_number, content, stream (stdout/stderr) | |
 | `domains` | id (ULID), project_id (FK), domain (unique), environment, is_auto, dns_verified, ssl_status (pending/active/error) | Auto-domains cannot be deleted |
@@ -159,14 +166,15 @@ SQLite with 3 migrations. Tables:
 
 ### Protected (access cookie or Bearer token required)
 - `GET  /api/auth/me` -- Current user
+- `GET  /api/organizations` -- Organizations/workspaces current user can access
 
 **GitHub:**
 - `GET  /api/github/repos` -- User's GitHub repos
 - `GET  /api/github/branches?owner=&repo=` -- Repo branches
 
 **Projects:**
-- `GET    /api/projects` -- List user's projects
-- `POST   /api/projects` -- Create project (auto-creates preview domain)
+- `GET    /api/projects?organization_id=` -- List accessible projects, optionally filtered to one workspace
+- `POST   /api/projects` -- Create project (auto-creates preview domain; defaults to personal workspace if no `organization_id`)
 - `GET    /api/projects/{id}` -- Get project
 - `PATCH  /api/projects/{id}` -- Update project
 - `DELETE /api/projects/{id}` -- Soft-delete project
@@ -202,7 +210,7 @@ SQLite with 3 migrations. Tables:
 
 - **Router:** chi v5 with middleware chain: Logger -> Recoverer -> RequestID -> RealIP -> CORS
 - **Auth middleware:** Extracts JWT from `Authorization: Bearer` header or the `deployik_access_token` cookie
-- **Authorization:** All project-scoped endpoints call `loadAuthorizedProject()` or `loadAuthorizedDeployment()` from `handlers/access.go`, which delegates to `authz.LoadProject()` / `authz.LoadDeployment()`. Admins see all; regular users see only their own.
+- **Authorization:** All project-scoped endpoints call `loadAuthorizedProject()` or `loadAuthorizedDeployment()` from `handlers/access.go`, which delegates to `authz.LoadProject()` / `authz.LoadDeployment()`. Regular users can access projects if they created them or belong to the owning organization; admins still retain bypass access.
 - **Session model:** The SPA never stores tokens. `AuthCallback.tsx` exchanges `code` + `state`, the server sets `HttpOnly` cookies, `api.ts` uses `credentials: 'include'`, and route guards rehydrate auth via `/api/auth/me`.
 - **Refresh rotation:** Refresh tokens are opaque random strings, stored only as SHA-256 hashes in `refresh_tokens`, revoked on logout, and rotated every time `/api/auth/refresh` succeeds.
 - **Perimeter controls:** `cors.go` blocks origins outside `Config.AllowedOrigins`, `ratelimit.go` applies per-IP limits to auth/mutation/ws routes, and `audit/recorder.go` records security-relevant mutations to `audit_logs`.
@@ -212,6 +220,7 @@ SQLite with 3 migrations. Tables:
 - **Error handling:** Handlers return JSON `{"error": "message"}` with appropriate HTTP status codes. No panics in handlers -- pipeline panics are recovered in the goroutine wrapper.
 - **Project names:** Must match `^[a-z0-9]([a-z0-9-]*[a-z0-9])?$` (used as DNS subdomain).
 - **Soft deletes:** Projects use `status='deleted'` rather than actual row deletion. Domains use hard delete (but auto-domains are protected by `is_auto=0` check).
+- **Workspace model:** Users always get a personal organization via `EnsurePersonalOrganization()`. Shared organizations are represented by `organizations + organization_memberships`, and the frontend persists the currently selected workspace in `store/organization.ts`.
 
 ### Variable System (Env Vars vs Secrets)
 
@@ -238,7 +247,7 @@ The pipeline runs in a background goroutine per deployment:
 4. **Root directory** -- If set, the build WORKDIR shifts to that subdirectory
 5. **Next.js patching** -- Injects `output: 'standalone'` into next.config if not present
 6. **Variable resolution** -- Separate env var and secret resolution, each with shared+scoped merge
-7. **Dockerfile generation** -- Detects package manager from lock files (checks repo root first for monorepos, then app dir). Generates multi-stage Dockerfile. If user provides a Dockerfile, it is used as-is.
+7. **Dockerfile generation** -- Respects the project package-manager setting (`auto`, `bun`, `pnpm`, `npm`, `yarn`). `auto` still detects from lock files first (checks repo root first for monorepos, then app dir). If user provides a Dockerfile, it is used as-is.
 8. **Docker build** -- Streams output line-by-line via WebSocket hub
 9. **Container start** -- Temporary name (`{canonical}-{deploy_id_prefix}`)
 10. **Health check** -- Polls container state; healthy after 5s of running
@@ -254,7 +263,7 @@ Two runtimes:
 - **`nextjs-standalone`** -- Multi-stage: node base -> deps install -> build -> copy standalone + static to minimal runner with `node server.js`
 - **`static`** -- Multi-stage: node base -> deps install -> build -> copy output to runner with `serve -s site -l 3000`
 
-Package manager detection priority: `bun.lockb`/`bun.lock` -> `pnpm-lock.yaml` -> `package-lock.json` -> fallback to npm. Lock file searched in install directory (repo root for monorepos, then app root).
+Package manager detection priority in `auto`: `bun.lockb`/`bun.lock` -> `pnpm-lock.yaml` -> `yarn.lock` -> `package-lock.json` -> command inference -> fallback to bun. Lock file searched in install directory (repo root for monorepos, then app root).
 
 Build-time env vars (`NEXT_PUBLIC_*`) are injected as `ENV` lines in the builder stage with properly quoted values.
 

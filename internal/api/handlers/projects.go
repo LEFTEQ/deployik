@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"regexp"
 	"strings"
@@ -25,11 +26,13 @@ type ProjectHandler struct {
 var slugRegex = regexp.MustCompile(`^[a-z0-9]([a-z0-9-]*[a-z0-9])?$`)
 
 type createProjectRequest struct {
+	OrganizationID  string `json:"organization_id"`
 	Name            string `json:"name"`
 	GithubRepo      string `json:"github_repo"`
 	GithubOwner     string `json:"github_owner"`
 	Branch          string `json:"branch"`
 	Framework       string `json:"framework"`
+	PackageManager  string `json:"package_manager"`
 	RootDirectory   string `json:"root_directory"`
 	OutputDirectory string `json:"output_directory"`
 	BuildCommand    string `json:"build_command"`
@@ -41,6 +44,7 @@ type updateProjectRequest struct {
 	Name            *string `json:"name,omitempty"`
 	Branch          *string `json:"branch,omitempty"`
 	Framework       *string `json:"framework,omitempty"`
+	PackageManager  *string `json:"package_manager,omitempty"`
 	RootDirectory   *string `json:"root_directory,omitempty"`
 	OutputDirectory *string `json:"output_directory,omitempty"`
 	BuildCommand    *string `json:"build_command,omitempty"`
@@ -50,7 +54,20 @@ type updateProjectRequest struct {
 
 func (h *ProjectHandler) List(w http.ResponseWriter, r *http.Request) {
 	claims := auth.GetClaims(r.Context())
-	projects, err := h.DB.ListProjects(claims.UserID)
+	organizationID := strings.TrimSpace(r.URL.Query().Get("organization_id"))
+	if organizationID != "" {
+		organization, err := h.DB.GetOrganizationForUser(organizationID, claims.UserID)
+		if err != nil {
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to load organization"})
+			return
+		}
+		if organization == nil {
+			writeJSON(w, http.StatusNotFound, map[string]string{"error": "organization not found"})
+			return
+		}
+	}
+
+	projects, err := h.DB.ListProjects(claims.UserID, organizationID)
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to list projects"})
 		return
@@ -91,13 +108,25 @@ func (h *ProjectHandler) Create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	organizationID, err := h.resolveCreateOrganizationID(claims.UserID, strings.TrimSpace(req.OrganizationID))
+	if err != nil {
+		status := http.StatusInternalServerError
+		if strings.Contains(err.Error(), "organization not found") {
+			status = http.StatusNotFound
+		}
+		writeJSON(w, status, map[string]string{"error": err.Error()})
+		return
+	}
+
 	project := &db.Project{
+		OrganizationID:  organizationID,
 		Name:            name,
 		GithubRepo:      req.GithubRepo,
 		GithubOwner:     req.GithubOwner,
 		Branch:          strings.TrimSpace(req.Branch),
 		UserID:          claims.UserID,
 		Framework:       req.Framework,
+		PackageManager:  req.PackageManager,
 		RootDirectory:   req.RootDirectory,
 		OutputDirectory: req.OutputDirectory,
 		BuildCommand:    req.BuildCommand,
@@ -140,9 +169,10 @@ func (h *ProjectHandler) Create(w http.ResponseWriter, r *http.Request) {
 		ResourceID:   project.ID,
 		ProjectID:    project.ID,
 		Metadata: map[string]any{
-			"name":         project.Name,
-			"github_owner": project.GithubOwner,
-			"github_repo":  project.GithubRepo,
+			"organization_id": project.OrganizationID,
+			"name":            project.Name,
+			"github_owner":    project.GithubOwner,
+			"github_repo":     project.GithubRepo,
 		},
 	})
 }
@@ -174,6 +204,9 @@ func (h *ProjectHandler) Update(w http.ResponseWriter, r *http.Request) {
 	}
 	if req.Framework != nil {
 		project.Framework = *req.Framework
+	}
+	if req.PackageManager != nil {
+		project.PackageManager = *req.PackageManager
 	}
 	if req.RootDirectory != nil {
 		project.RootDirectory = *req.RootDirectory
@@ -209,12 +242,40 @@ func (h *ProjectHandler) Update(w http.ResponseWriter, r *http.Request) {
 		ResourceID:   project.ID,
 		ProjectID:    project.ID,
 		Metadata: map[string]any{
-			"name":           project.Name,
-			"branch":         project.Branch,
-			"framework":      project.Framework,
-			"root_directory": project.RootDirectory,
+			"name":            project.Name,
+			"branch":          project.Branch,
+			"framework":       project.Framework,
+			"package_manager": project.PackageManager,
+			"root_directory":  project.RootDirectory,
 		},
 	})
+}
+
+func (h *ProjectHandler) resolveCreateOrganizationID(userID, organizationID string) (string, error) {
+	if organizationID != "" {
+		organization, err := h.DB.GetOrganizationForUser(organizationID, userID)
+		if err != nil {
+			return "", err
+		}
+		if organization == nil {
+			return "", fmt.Errorf("organization not found")
+		}
+		return organization.ID, nil
+	}
+
+	user, err := h.DB.GetUserByID(userID)
+	if err != nil {
+		return "", fmt.Errorf("failed to load user: %w", err)
+	}
+	if user == nil {
+		return "", fmt.Errorf("user not found")
+	}
+
+	organization, err := h.DB.EnsurePersonalOrganization(user)
+	if err != nil {
+		return "", fmt.Errorf("failed to prepare personal organization: %w", err)
+	}
+	return organization.ID, nil
 }
 
 func (h *ProjectHandler) Delete(w http.ResponseWriter, r *http.Request) {

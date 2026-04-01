@@ -5,6 +5,7 @@ import { Search, Lock, Globe, GitBranch, ArrowLeft } from "lucide-react";
 import { Link } from "@tanstack/react-router";
 import { toast } from "sonner";
 import { api } from "@/lib/api";
+import { useOrganizations } from "@/hooks/use-organizations";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -37,8 +38,15 @@ export function NewProject() {
   const [selectedRepo, setSelectedRepo] = useState<GitHubRepo | null>(null);
   const [name, setName] = useState("");
   const [branch, setBranch] = useState("");
+  const {
+    organizations,
+    selectedOrganization,
+    selectedOrganizationId,
+    setSelectedOrganizationId,
+    isLoading: organizationsLoading,
+  } = useOrganizations();
   const [buildSettings, setBuildSettings] = useState(() =>
-    getFrameworkDefaults("nextjs"),
+    getFrameworkDefaults("nextjs", "auto"),
   );
 
   const { data: repos, isLoading: reposLoading } = useQuery({
@@ -60,11 +68,13 @@ export function NewProject() {
   const createMutation = useMutation({
     mutationFn: () =>
       api.createProject({
+        organization_id: selectedOrganizationId ?? undefined,
         name,
         github_repo: selectedRepo!.name,
         github_owner: selectedRepo!.owner.login,
         branch: branch || selectedRepo!.default_branch,
         framework: buildSettings.framework,
+        package_manager: buildSettings.packageManager,
         root_directory: buildSettings.rootDirectory,
         output_directory: buildSettings.outputDirectory,
         install_command: buildSettings.installCommand,
@@ -133,7 +143,7 @@ export function NewProject() {
                   setSelectedRepo(repo);
                   setName(repo.name.toLowerCase().replace(/[^a-z0-9-]/g, "-"));
                   setBranch(repo.default_branch);
-                  setBuildSettings(getFrameworkDefaults("nextjs"));
+                  setBuildSettings(getFrameworkDefaults("nextjs", "auto"));
                 }}
               >
                 <CardContent className="flex items-center justify-between p-4">
@@ -198,6 +208,34 @@ export function NewProject() {
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="space-y-2">
+            <Label htmlFor="organization">Workspace</Label>
+            <Select
+              value={selectedOrganizationId ?? undefined}
+              onValueChange={setSelectedOrganizationId}
+            >
+              <SelectTrigger id="organization">
+                <SelectValue
+                  placeholder={
+                    organizationsLoading ? "Loading workspaces..." : "Select workspace"
+                  }
+                />
+              </SelectTrigger>
+              <SelectContent>
+                {organizations.map((organization) => (
+                  <SelectItem key={organization.id} value={organization.id}>
+                    {organization.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <p className="text-xs text-muted-foreground">
+              {selectedOrganization
+                ? `This project will live in ${selectedOrganization.name}.`
+                : "Choose where this project should be visible."}
+            </p>
+          </div>
+
+          <div className="space-y-2">
             <Label htmlFor="name">Project Name</Label>
             <Input
               id="name"
@@ -248,7 +286,12 @@ export function NewProject() {
             </Button>
             <Button
               onClick={() => createMutation.mutate()}
-              disabled={!name || createMutation.isPending}
+              disabled={
+                !name ||
+                !selectedOrganizationId ||
+                createMutation.isPending ||
+                organizationsLoading
+              }
             >
               {createMutation.isPending ? "Creating..." : "Create Project"}
             </Button>

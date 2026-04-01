@@ -84,6 +84,9 @@ func NewRouter(cfg *RouterConfig) *chi.Mux {
 			r.Get("/github/repos", projectHandler.ListGithubRepos)
 			r.Get("/github/branches", projectHandler.ListGithubBranches)
 
+			organizationHandler := &handlers.OrganizationHandler{DB: cfg.DB}
+			r.Get("/organizations", organizationHandler.List)
+
 			// Projects
 			r.Get("/projects", projectHandler.List)
 			r.With(mutationLimiter.Middleware("project_create")).Post("/projects", projectHandler.Create)

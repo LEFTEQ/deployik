@@ -28,11 +28,14 @@ func TestResolveDefaultsNextJSProject(t *testing.T) {
 	if settings.BuildCommand != "bun run build" {
 		t.Fatalf("build_command = %q, want bun run build", settings.BuildCommand)
 	}
-	if settings.InstallCommand != "bun install" {
-		t.Fatalf("install_command = %q, want bun install", settings.InstallCommand)
+	if settings.InstallCommand != "bun install --frozen-lockfile" {
+		t.Fatalf("install_command = %q, want bun install --frozen-lockfile", settings.InstallCommand)
 	}
 	if settings.NodeVersion != "22" {
 		t.Fatalf("node_version = %q, want 22", settings.NodeVersion)
+	}
+	if settings.PackageManager != PackageManagerAuto {
+		t.Fatalf("package_manager = %q, want %q", settings.PackageManager, PackageManagerAuto)
 	}
 }
 
@@ -61,6 +64,30 @@ func TestResolveDefaultsStaticProject(t *testing.T) {
 	}
 	if settings.OutputDirectory != "dist" {
 		t.Fatalf("output_directory = %q, want dist", settings.OutputDirectory)
+	}
+}
+
+func TestResolveDefaultsUsesSelectedPackageManager(t *testing.T) {
+	t.Parallel()
+
+	project := &db.Project{
+		Framework:      "nextjs",
+		PackageManager: "pnpm",
+	}
+
+	settings, err := Resolve(project)
+	if err != nil {
+		t.Fatalf("Resolve: %v", err)
+	}
+
+	if settings.PackageManager != PackageManagerPnpm {
+		t.Fatalf("package_manager = %q, want %q", settings.PackageManager, PackageManagerPnpm)
+	}
+	if settings.InstallCommand != "pnpm install --frozen-lockfile" {
+		t.Fatalf("install_command = %q, want pnpm install --frozen-lockfile", settings.InstallCommand)
+	}
+	if settings.BuildCommand != "pnpm run build" {
+		t.Fatalf("build_command = %q, want pnpm run build", settings.BuildCommand)
 	}
 }
 

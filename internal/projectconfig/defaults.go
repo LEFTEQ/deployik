@@ -16,6 +16,14 @@ const (
 )
 
 const (
+	PackageManagerAuto = "auto"
+	PackageManagerBun  = "bun"
+	PackageManagerPnpm = "pnpm"
+	PackageManagerNpm  = "npm"
+	PackageManagerYarn = "yarn"
+)
+
+const (
 	RuntimeNextJSStandalone = "nextjs-standalone"
 	RuntimeStatic           = "static"
 	defaultNodeVersion      = "22"
@@ -23,6 +31,7 @@ const (
 
 type Settings struct {
 	Framework       string
+	PackageManager  string
 	Runtime         string
 	RootDirectory   string
 	OutputDirectory string
@@ -38,6 +47,7 @@ func ApplyProjectDefaults(project *db.Project) error {
 	}
 
 	project.Framework = settings.Framework
+	project.PackageManager = settings.PackageManager
 	project.RootDirectory = settings.RootDirectory
 	project.OutputDirectory = settings.OutputDirectory
 	project.InstallCommand = settings.InstallCommand
@@ -48,6 +58,7 @@ func ApplyProjectDefaults(project *db.Project) error {
 
 func Resolve(project *db.Project) (Settings, error) {
 	framework := NormalizeFramework(project.Framework)
+	packageManager := NormalizePackageManager(project.PackageManager)
 
 	rootDirectory, err := NormalizeProjectPath(project.RootDirectory, true)
 	if err != nil {
@@ -65,12 +76,12 @@ func Resolve(project *db.Project) (Settings, error) {
 
 	installCommand := strings.TrimSpace(project.InstallCommand)
 	if installCommand == "" {
-		installCommand = DefaultInstallCommand(framework)
+		installCommand = DefaultInstallCommand(packageManager)
 	}
 
 	buildCommand := strings.TrimSpace(project.BuildCommand)
 	if buildCommand == "" {
-		buildCommand = DefaultBuildCommand(framework)
+		buildCommand = DefaultBuildCommand(packageManager)
 	}
 
 	nodeVersion := strings.TrimSpace(project.NodeVersion)
@@ -80,6 +91,7 @@ func Resolve(project *db.Project) (Settings, error) {
 
 	return Settings{
 		Framework:       framework,
+		PackageManager:  packageManager,
 		Runtime:         RuntimeForFramework(framework),
 		RootDirectory:   rootDirectory,
 		OutputDirectory: outputDirectory,
@@ -111,14 +123,48 @@ func RuntimeForFramework(framework string) string {
 	return RuntimeStatic
 }
 
-func DefaultInstallCommand(framework string) string {
-	return "bun install"
+func NormalizePackageManager(value string) string {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "", PackageManagerAuto:
+		return PackageManagerAuto
+	case PackageManagerBun:
+		return PackageManagerBun
+	case PackageManagerPnpm:
+		return PackageManagerPnpm
+	case PackageManagerNpm:
+		return PackageManagerNpm
+	case PackageManagerYarn:
+		return PackageManagerYarn
+	default:
+		return PackageManagerAuto
+	}
 }
 
-func DefaultBuildCommand(framework string) string {
-	switch NormalizeFramework(framework) {
-	case FrameworkNextJS, FrameworkVite, FrameworkAstro, FrameworkStatic:
-		return "bun run build"
+func DefaultInstallCommand(packageManager string) string {
+	switch NormalizePackageManager(packageManager) {
+	case PackageManagerPnpm:
+		return "pnpm install --frozen-lockfile"
+	case PackageManagerNpm:
+		return "npm ci"
+	case PackageManagerYarn:
+		return "yarn install --frozen-lockfile"
+	case PackageManagerAuto, PackageManagerBun:
+		fallthrough
+	default:
+		return "bun install --frozen-lockfile"
+	}
+}
+
+func DefaultBuildCommand(packageManager string) string {
+	switch NormalizePackageManager(packageManager) {
+	case PackageManagerPnpm:
+		return "pnpm run build"
+	case PackageManagerNpm:
+		return "npm run build"
+	case PackageManagerYarn:
+		return "yarn build"
+	case PackageManagerAuto, PackageManagerBun:
+		fallthrough
 	default:
 		return "bun run build"
 	}
@@ -133,6 +179,10 @@ func DefaultOutputDirectory(framework string) string {
 
 func DefaultNodeVersion() string {
 	return defaultNodeVersion
+}
+
+func DefaultPackageManager() string {
+	return PackageManagerAuto
 }
 
 func NormalizeProjectPath(value string, allowEmpty bool) (string, error) {

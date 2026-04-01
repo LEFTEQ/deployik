@@ -61,8 +61,16 @@ func (db *DB) GetDeploymentForUser(id, userID string) (*Deployment, error) {
 		        d.error_message, d.created_at, d.finished_at
 		 FROM deployments d
 		 JOIN projects p ON p.id = d.project_id
-		 WHERE d.id = ? AND p.user_id = ?`,
-		id, userID,
+		 WHERE d.id = ?
+		   AND (
+		     p.user_id = ?
+		     OR EXISTS (
+		       SELECT 1
+		       FROM organization_memberships om
+		       WHERE om.organization_id = p.organization_id AND om.user_id = ?
+		     )
+		   )`,
+		id, userID, userID,
 	).Scan(&d.ID, &d.ProjectID, &d.Environment, &d.CommitSHA, &d.CommitMessage,
 		&d.Branch, &d.Status, &d.ContainerID, &d.ContainerName, &d.ImageTag,
 		&d.BuildDuration, &d.TriggeredBy, &d.ErrorMessage, &d.CreatedAt, &d.FinishedAt)
