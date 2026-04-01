@@ -1,0 +1,140 @@
+package handlers
+
+import (
+	"encoding/json"
+	"log"
+	"net/http"
+
+	"github.com/go-chi/chi/v5"
+
+	"github.com/LEFTEQ/lovinka-deployik/internal/auth"
+	"github.com/LEFTEQ/lovinka-deployik/internal/build"
+	"github.com/LEFTEQ/lovinka-deployik/internal/crypto"
+	"github.com/LEFTEQ/lovinka-deployik/internal/db"
+)
+
+type DeploymentHandler struct {
+	DB        *db.DB
+	Encryptor *crypto.Encryptor
+	Pipeline  *build.Pipeline
+}
+
+type triggerDeployRequest struct {
+	Environment string `json:"environment"`
+	Branch      string `json:"branch"`
+}
+
+// List returns deployments for a project.
+func (h *DeploymentHandler) List(w http.ResponseWriter, r *http.Request) {
+	projectID := chi.URLParam(r, "id")
+
+	deployments, err := h.DB.ListDeployments(projectID, 20)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to list deployments"})
+		return
+	}
+	if deployments == nil {
+		deployments = []db.Deployment{}
+	}
+	writeJSON(w, http.StatusOK, deployments)
+}
+
+// Get returns a single deployment.
+func (h *DeploymentHandler) Get(w http.ResponseWriter, r *http.Request) {
+	did := chi.URLParam(r, "did")
+	deployment, err := h.DB.GetDeployment(did)
+	if err != nil || deployment == nil {
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": "deployment not found"})
+		return
+	}
+	writeJSON(w, http.StatusOK, deployment)
+}
+
+// Trigger starts a new deployment.
+func (h *DeploymentHandler) Trigger(w http.ResponseWriter, r *http.Request) {
+	claims := auth.GetClaims(r.Context())
+	projectID := chi.URLParam(r, "id")
+
+	project, err := h.DB.GetProject(projectID)
+	if err != nil || project == nil {
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": "project not found"})
+		return
+	}
+
+	var req triggerDeployRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request body"})
+		return
+	}
+
+	env := req.Environment
+	if env == "" {
+		env = "preview"
+	}
+	if env != "preview" && env != "production" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "environment must be preview or production"})
+		return
+	}
+
+	branch := req.Branch
+	if branch == "" {
+		branch = project.Branch
+	}
+
+	// Create deployment record
+	deployment := &db.Deployment{
+		ProjectID:   project.ID,
+		Environment: env,
+		Branch:      branch,
+		Status:      "queued",
+		TriggeredBy: claims.UserID,
+	}
+	if err := h.DB.CreateDeployment(deployment); err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to create deployment"})
+		return
+	}
+
+	// Get user's GitHub token
+	user, err := h.DB.GetUserByID(claims.UserID)
+	if err != nil || user == nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "user not found"})
+		return
+	}
+
+	githubToken, err := h.Encryptor.Decrypt(user.GithubToken)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to decrypt token"})
+		return
+	}
+
+	// Run pipeline in background
+	go func() {
+		defer func() {
+			if r := recover(); r != nil {
+				log.Printf("Pipeline panic for deployment %s: %v", deployment.ID, r)
+				h.DB.UpdateDeploymentStatus(deployment.ID, "failed", "internal error")
+			}
+		}()
+
+		h.Pipeline.Deploy(r.Context(), project, deployment, githubToken, func(line string, stream string) {
+			log.Printf("[deploy:%s] %s", deployment.ID[:8], line)
+			// Build log stored by pipeline; WebSocket streaming in Phase 9
+		})
+	}()
+
+	writeJSON(w, http.StatusAccepted, deployment)
+}
+
+// GetLogs returns build logs for a deployment.
+func (h *DeploymentHandler) GetLogs(w http.ResponseWriter, r *http.Request) {
+	did := chi.URLParam(r, "did")
+	logs, err := h.DB.GetBuildLogs(did)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to get logs"})
+		return
+	}
+	if logs == nil {
+		logs = []db.BuildLog{}
+	}
+	writeJSON(w, http.StatusOK, logs)
+}

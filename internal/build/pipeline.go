@@ -1,0 +1,184 @@
+package build
+
+import (
+	"context"
+	"fmt"
+	"log"
+	"os"
+	"strings"
+	"time"
+
+	"github.com/LEFTEQ/lovinka-deployik/internal/crypto"
+	"github.com/LEFTEQ/lovinka-deployik/internal/db"
+)
+
+// Pipeline orchestrates the full deploy flow.
+type Pipeline struct {
+	DB         *db.DB
+	Docker     *DockerClient
+	Encryptor  *crypto.Encryptor
+	Semaphore  *Semaphore
+	BuildDir   string
+	ProxyNetwork string // Docker network name (e.g., "proxy")
+}
+
+// LogCallback is called for each build log line.
+type LogCallback func(line string, stream string)
+
+// Deploy runs the full deployment pipeline for a project.
+func (p *Pipeline) Deploy(ctx context.Context, project *db.Project, deployment *db.Deployment, githubToken string, onLog LogCallback) {
+	startTime := time.Now()
+
+	emit := func(msg string) {
+		if onLog != nil {
+			onLog(msg, "stdout")
+		}
+	}
+	emitErr := func(msg string) {
+		if onLog != nil {
+			onLog(msg, "stderr")
+		}
+	}
+
+	fail := func(err error, msg string) {
+		errMsg := fmt.Sprintf("%s: %v", msg, err)
+		emitErr(errMsg)
+		p.DB.UpdateDeploymentStatus(deployment.ID, "failed", errMsg)
+		p.DB.UpdateDeploymentDuration(deployment.ID, int(time.Since(startTime).Seconds()))
+	}
+
+	// Acquire build slot
+	emit("Waiting for build slot...")
+	p.Semaphore.Acquire()
+	defer p.Semaphore.Release()
+
+	// Step 1: Update status to building
+	p.DB.UpdateDeploymentStatus(deployment.ID, "building", "")
+	emit(fmt.Sprintf("Starting build for %s/%s@%s", project.GithubOwner, project.GithubRepo, project.Branch))
+
+	// Step 2: Clone repository
+	emit("Cloning repository...")
+	buildDir := fmt.Sprintf("%s/%s", p.BuildDir, deployment.ID)
+	os.MkdirAll(buildDir, 0755)
+	defer os.RemoveAll(buildDir) // Always clean up
+
+	repoDir, err := CloneRepo(buildDir, project.GithubOwner, project.GithubRepo, project.Branch, githubToken)
+	if err != nil {
+		fail(err, "Clone failed")
+		return
+	}
+	emit("Repository cloned")
+
+	// Get commit info
+	sha, message, err := GetHeadCommit(repoDir)
+	if err != nil {
+		log.Printf("Warning: could not get commit info: %v", err)
+	} else {
+		p.DB.Exec("UPDATE deployments SET commit_sha = ?, commit_message = ? WHERE id = ?",
+			sha, message, deployment.ID)
+		emit(fmt.Sprintf("Commit: %s %s", sha[:8], message))
+	}
+
+	// Step 3: Get env vars for build-time injection
+	envVars, err := p.DB.ListEnvVars(project.ID, deployment.Environment)
+	if err != nil {
+		log.Printf("Warning: could not load env vars: %v", err)
+	}
+
+	var buildEnvVars []EnvVar
+	var runtimeEnvVars []string
+	for _, ev := range envVars {
+		value, err := p.Encryptor.Decrypt(ev.Value)
+		if err != nil {
+			emitErr(fmt.Sprintf("Warning: could not decrypt env var %s", ev.Key))
+			continue
+		}
+		// NEXT_PUBLIC_* vars need to be available at build time
+		if strings.HasPrefix(ev.Key, "NEXT_PUBLIC_") {
+			buildEnvVars = append(buildEnvVars, EnvVar{Key: ev.Key, Value: value})
+		}
+		runtimeEnvVars = append(runtimeEnvVars, fmt.Sprintf("%s=%s", ev.Key, value))
+	}
+
+	// Step 4: Generate Dockerfile
+	emit("Generating Dockerfile...")
+	_, err = GenerateDockerfile(repoDir, DockerfileData{
+		NodeVersion:    project.NodeVersion,
+		InstallCommand: project.InstallCommand,
+		BuildCommand:   project.BuildCommand,
+		BuildEnvVars:   buildEnvVars,
+	})
+	if err != nil {
+		fail(err, "Dockerfile generation failed")
+		return
+	}
+	emit("Dockerfile ready")
+
+	// Step 5: Docker build
+	containerName := fmt.Sprintf("deployik-%s-%s", project.Name, deployment.Environment)
+	imageTag := fmt.Sprintf("deployik-%s-%s:%s", project.Name, deployment.Environment, deployment.ID[:8])
+
+	emit(fmt.Sprintf("Building image %s...", imageTag))
+	lineNum := 0
+	_, err = p.Docker.BuildImage(ctx, repoDir, imageTag, func(line string) {
+		lineNum++
+		// Store build log
+		p.DB.InsertBuildLog(deployment.ID, lineNum, line, "stdout")
+		if onLog != nil {
+			onLog(line, "stdout")
+		}
+	})
+	if err != nil {
+		fail(err, "Docker build failed")
+		return
+	}
+	emit("Image built successfully")
+
+	// Step 6: Deploy container
+	p.DB.UpdateDeploymentStatus(deployment.ID, "deploying", "")
+	emit("Deploying container...")
+
+	// Check if old container exists
+	oldContainerID, oldExists := p.Docker.ContainerExists(ctx, containerName)
+
+	// Start new container with temporary name
+	tempName := containerName + "-" + deployment.ID[:8]
+	newContainerID, err := p.Docker.RunContainer(ctx, tempName, imageTag, runtimeEnvVars, p.ProxyNetwork)
+	if err != nil {
+		fail(err, "Container start failed")
+		return
+	}
+	emit("Container started, waiting for health check...")
+
+	// Step 7: Health check
+	err = p.Docker.WaitForHealthy(ctx, newContainerID, 60*time.Second)
+	if err != nil {
+		emitErr(fmt.Sprintf("Health check failed: %v", err))
+		p.Docker.StopContainer(ctx, newContainerID)
+		fail(err, "Health check failed")
+		return
+	}
+	emit("Health check passed")
+
+	// Step 8: Swap containers (blue-green)
+	if oldExists {
+		emit("Stopping old container...")
+		p.Docker.StopContainer(ctx, oldContainerID)
+	}
+
+	// Rename new container to the canonical name
+	p.Docker.cli.ContainerRename(ctx, newContainerID, containerName)
+
+	// Step 9: Mark previous live deployment as replaced
+	if liveDeploy, _ := p.DB.GetLiveDeployment(project.ID, deployment.Environment); liveDeploy != nil && liveDeploy.ID != deployment.ID {
+		p.DB.UpdateDeploymentStatus(liveDeploy.ID, "replaced", "")
+	}
+
+	// Step 10: Finalize
+	duration := int(time.Since(startTime).Seconds())
+	p.DB.UpdateDeploymentContainer(deployment.ID, newContainerID, containerName, imageTag)
+	p.DB.UpdateDeploymentDuration(deployment.ID, duration)
+	p.DB.UpdateDeploymentStatus(deployment.ID, "live", "")
+
+	emit(fmt.Sprintf("Deployment live! (%ds)", duration))
+}

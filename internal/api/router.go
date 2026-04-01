@@ -8,6 +8,7 @@ import (
 
 	"github.com/LEFTEQ/lovinka-deployik/internal/api/handlers"
 	"github.com/LEFTEQ/lovinka-deployik/internal/api/middleware"
+	"github.com/LEFTEQ/lovinka-deployik/internal/build"
 	"github.com/LEFTEQ/lovinka-deployik/internal/crypto"
 	"github.com/LEFTEQ/lovinka-deployik/internal/db"
 	"github.com/LEFTEQ/lovinka-deployik/internal/github"
@@ -15,12 +16,13 @@ import (
 
 // RouterConfig holds all dependencies needed by the router.
 type RouterConfig struct {
-	DB          *db.DB
-	JWTSecret   string
-	Encryptor   *crypto.Encryptor
-	OAuthConfig *github.OAuthConfig
+	DB           *db.DB
+	JWTSecret    string
+	Encryptor    *crypto.Encryptor
+	OAuthConfig  *github.OAuthConfig
 	AllowedUsers []string
 	FrontendURL  string
+	Pipeline     *build.Pipeline
 }
 
 func NewRouter(cfg *RouterConfig) *chi.Mux {
@@ -69,6 +71,13 @@ func NewRouter(cfg *RouterConfig) *chi.Mux {
 			r.Get("/projects/{id}", projectHandler.Get)
 			r.Patch("/projects/{id}", projectHandler.Update)
 			r.Delete("/projects/{id}", projectHandler.Delete)
+
+			// Deployments
+			deployHandler := &handlers.DeploymentHandler{DB: cfg.DB, Encryptor: cfg.Encryptor, Pipeline: cfg.Pipeline}
+			r.Get("/projects/{id}/deployments", deployHandler.List)
+			r.Post("/projects/{id}/deployments", deployHandler.Trigger)
+			r.Get("/projects/{id}/deployments/{did}", deployHandler.Get)
+			r.Get("/deployments/{did}/logs", deployHandler.GetLogs)
 		})
 	})
 

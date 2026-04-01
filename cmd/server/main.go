@@ -9,6 +9,7 @@ import (
 	"os"
 
 	"github.com/LEFTEQ/lovinka-deployik/internal/api"
+	"github.com/LEFTEQ/lovinka-deployik/internal/build"
 	"github.com/LEFTEQ/lovinka-deployik/internal/config"
 	"github.com/LEFTEQ/lovinka-deployik/internal/crypto"
 	"github.com/LEFTEQ/lovinka-deployik/internal/db"
@@ -59,6 +60,24 @@ func main() {
 		api.SetStaticFS(webFS)
 	}
 
+	// Initialize Docker client and build pipeline
+	dockerClient, err := build.NewDockerClient()
+	if err != nil {
+		log.Printf("Warning: Docker client not available: %v", err)
+	} else {
+		defer dockerClient.Close()
+	}
+
+	maxBuilds := 1
+	pipeline := &build.Pipeline{
+		DB:           database,
+		Docker:       dockerClient,
+		Encryptor:    encryptor,
+		Semaphore:    build.NewSemaphore(maxBuilds),
+		BuildDir:     cfg.BuildDir,
+		ProxyNetwork: "proxy",
+	}
+
 	// Configure OAuth
 	frontendURL := getEnv("FRONTEND_URL", "http://localhost:5173")
 	oauthConfig := &github.OAuthConfig{
@@ -75,6 +94,7 @@ func main() {
 		OAuthConfig:  oauthConfig,
 		AllowedUsers: cfg.AllowedGithubUsers,
 		FrontendURL:  frontendURL,
+		Pipeline:     pipeline,
 	})
 
 	addr := fmt.Sprintf(":%s", cfg.Port)

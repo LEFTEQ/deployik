@@ -13,6 +13,7 @@ import {
 import { toast } from 'sonner';
 import { api } from '@/lib/api';
 import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
   Card,
@@ -166,21 +167,94 @@ export function ProjectDetail() {
   );
 }
 
-function DeploymentsTab({ projectId: _projectId }: { projectId: string }) {
+function DeploymentsTab({ projectId }: { projectId: string }) {
+  const queryClient = useQueryClient();
+  const { data: deployments, isLoading } = useQuery({
+    queryKey: ['deployments', projectId],
+    queryFn: () => api.listDeployments(projectId),
+  });
+
+  const deployMutation = useMutation({
+    mutationFn: (env: string) =>
+      api.triggerDeployment(projectId, { environment: env }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['deployments', projectId] });
+      toast.success('Deployment triggered');
+    },
+    onError: (err) => toast.error(err.message),
+  });
+
+  const statusColor: Record<string, string> = {
+    queued: 'bg-muted-foreground',
+    building: 'bg-yellow-500',
+    deploying: 'bg-blue-500',
+    live: 'bg-green-500',
+    failed: 'bg-red-500',
+    rolled_back: 'bg-orange-500',
+    replaced: 'bg-muted-foreground',
+  };
+
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle className="text-base">Deployments</CardTitle>
-        <CardDescription>
-          Deployment history will appear here after Phase 5
-        </CardDescription>
-      </CardHeader>
-      <CardContent>
-        <p className="text-sm text-muted-foreground">
-          No deployments yet. Click "Deploy" to trigger your first build.
-        </p>
-      </CardContent>
-    </Card>
+    <div className="space-y-4">
+      <div className="flex gap-2">
+        <Button
+          size="sm"
+          onClick={() => deployMutation.mutate('preview')}
+          disabled={deployMutation.isPending}
+        >
+          <Rocket className="mr-1.5 h-3.5 w-3.5" />
+          Deploy Preview
+        </Button>
+        <Button
+          size="sm"
+          variant="outline"
+          onClick={() => deployMutation.mutate('production')}
+          disabled={deployMutation.isPending}
+        >
+          <Rocket className="mr-1.5 h-3.5 w-3.5" />
+          Deploy Production
+        </Button>
+      </div>
+
+      {isLoading ? (
+        <Card><CardContent className="p-6"><Skeleton className="h-20 w-full" /></CardContent></Card>
+      ) : !deployments?.length ? (
+        <Card>
+          <CardContent className="py-12 text-center">
+            <p className="text-sm text-muted-foreground">
+              No deployments yet. Click deploy to trigger your first build.
+            </p>
+          </CardContent>
+        </Card>
+      ) : (
+        <div className="space-y-2">
+          {deployments.map((d) => (
+            <Card key={d.id} className="transition-colors hover:border-primary/30">
+              <CardContent className="flex items-center justify-between p-4">
+                <div className="flex items-center gap-3">
+                  <div className={`h-2.5 w-2.5 rounded-full ${statusColor[d.status] ?? 'bg-muted-foreground'}`} />
+                  <div>
+                    <p className="text-sm font-medium">
+                      {d.commit_sha ? d.commit_sha.slice(0, 7) : 'pending'}{' '}
+                      <span className="font-normal text-muted-foreground">
+                        {d.commit_message || d.status}
+                      </span>
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      {d.environment} &middot; {d.branch} &middot;{' '}
+                      {d.build_duration > 0 ? `${d.build_duration}s` : d.status}
+                    </p>
+                  </div>
+                </div>
+                <Badge variant={d.status === 'live' ? 'default' : d.status === 'failed' ? 'destructive' : 'secondary'}>
+                  {d.status}
+                </Badge>
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+      )}
+    </div>
   );
 }
 
