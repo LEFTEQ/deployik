@@ -1,24 +1,31 @@
 package handlers
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 	"net/http"
 	"regexp"
 	"strings"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 
 	"github.com/LEFTEQ/lovinka-deployik/internal/audit"
 	"github.com/LEFTEQ/lovinka-deployik/internal/auth"
+	"github.com/LEFTEQ/lovinka-deployik/internal/build"
 	"github.com/LEFTEQ/lovinka-deployik/internal/crypto"
 	"github.com/LEFTEQ/lovinka-deployik/internal/db"
+	"github.com/LEFTEQ/lovinka-deployik/internal/domain"
 	"github.com/LEFTEQ/lovinka-deployik/internal/github"
 	"github.com/LEFTEQ/lovinka-deployik/internal/projectconfig"
 )
 
 type ProjectHandler struct {
 	DB        *db.DB
+	Docker    *build.DockerClient
+	Manager   *domain.Manager
 	Encryptor *crypto.Encryptor
 	Audit     *audit.Recorder
 }
@@ -281,8 +288,21 @@ func (h *ProjectHandler) resolveCreateOrganizationID(userID, organizationID stri
 func (h *ProjectHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 
-	_, _, ok := loadAuthorizedProject(w, r, h.DB, id)
+	project, _, ok := loadAuthorizedProject(w, r, h.DB, id)
 	if !ok {
+		return
+	}
+
+	domains, err := h.DB.ListDomains(id)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to load project domains"})
+		return
+	}
+
+	h.cleanupProjectRuntime(project, domains)
+
+	if err := h.DB.DeleteAllDomainsForProject(id); err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to release project domains"})
 		return
 	}
 
@@ -300,6 +320,48 @@ func (h *ProjectHandler) Delete(w http.ResponseWriter, r *http.Request) {
 		ResourceID:   id,
 		ProjectID:    id,
 	})
+}
+
+func (h *ProjectHandler) cleanupProjectRuntime(project *db.Project, domains []db.Domain) {
+	if project == nil {
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	for _, environment := range []string{"preview", "production"} {
+		if h.Docker == nil {
+			break
+		}
+		containerName := fmt.Sprintf("deployik-%s-%s", project.Name, environment)
+		containerID, exists := h.Docker.ContainerExists(ctx, containerName)
+		if !exists {
+			continue
+		}
+		if err := h.Docker.StopContainer(ctx, containerID); err != nil {
+			log.Printf("Warning: failed to stop deleted project container %s: %v", containerName, err)
+		}
+	}
+
+	if h.Manager == nil || len(domains) == 0 {
+		return
+	}
+
+	reloadNeeded := false
+	for _, domain := range domains {
+		if err := h.Manager.RemoveDomain(domain.DomainName); err != nil {
+			log.Printf("Warning: failed to remove nginx config for deleted project domain %s: %v", domain.DomainName, err)
+			continue
+		}
+		reloadNeeded = true
+	}
+
+	if reloadNeeded {
+		if err := h.Manager.ReloadNginx(); err != nil {
+			log.Printf("Warning: failed to reload nginx after deleting project %s: %v", project.Name, err)
+		}
+	}
 }
 
 // ListGithubRepos lists the authenticated user's GitHub repos.

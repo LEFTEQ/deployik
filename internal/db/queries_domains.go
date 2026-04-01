@@ -88,3 +88,11 @@ func (db *DB) DeleteDomainForProject(projectID, id string) error {
 	}
 	return nil
 }
+
+func (db *DB) DeleteAllDomainsForProject(projectID string) error {
+	_, err := db.Exec(`DELETE FROM domains WHERE project_id = ?`, projectID)
+	if err != nil {
+		return fmt.Errorf("delete all domains for project: %w", err)
+	}
+	return nil
+}

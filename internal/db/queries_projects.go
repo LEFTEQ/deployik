@@ -135,7 +135,15 @@ func (db *DB) UpdateProject(p *Project) error {
 
 func (db *DB) DeleteProject(id string) error {
 	_, err := db.Exec(
-		`UPDATE projects SET status = 'deleted', updated_at = datetime('now') WHERE id = ?`, id,
+		`UPDATE projects
+		 SET name = CASE
+		                WHEN status = 'deleted' THEN name
+		                ELSE name || '--deleted-' || lower(substr(id, 1, 8))
+		            END,
+		     status = 'deleted',
+		     updated_at = datetime('now')
+		 WHERE id = ?`,
+		id,
 	)
 	if err != nil {
 		return fmt.Errorf("delete project: %w", err)

@@ -1,6 +1,7 @@
 package db
 
 import (
+	"strings"
 	"testing"
 	"time"
 )
@@ -209,6 +210,86 @@ func TestProjectCRUD(t *testing.T) {
 	projects, _ = db.ListProjects(user.ID, "")
 	if len(projects) != 0 {
 		t.Error("deleted project still shows in list")
+	}
+
+	deletedProject, err := db.GetProject(project.ID)
+	if err != nil {
+		t.Fatalf("GetProject(deleted): %v", err)
+	}
+	if deletedProject == nil || !strings.HasPrefix(deletedProject.Name, "test-project--deleted-") {
+		t.Fatalf("deleted project name = %q, want deleted suffix", deletedProject.Name)
+	}
+}
+
+func TestDeleteProjectReleasesNameAndDomains(t *testing.T) {
+	db := newTestDB(t)
+
+	user := &User{ID: NewID(), GithubID: 1, Username: "user1", Role: "admin"}
+	if err := db.UpsertUser(user); err != nil {
+		t.Fatalf("UpsertUser: %v", err)
+	}
+
+	project := &Project{
+		Name:           "reusable-project",
+		GithubRepo:     "my-app",
+		GithubOwner:    "user1",
+		Branch:         "main",
+		UserID:         user.ID,
+		Framework:      "nextjs",
+		PackageManager: "auto",
+		BuildCommand:   "bun run build",
+		InstallCommand: "bun install",
+		NodeVersion:    "22",
+		Status:         "active",
+	}
+	if err := db.CreateProject(project); err != nil {
+		t.Fatalf("CreateProject: %v", err)
+	}
+
+	domain := &Domain{
+		ProjectID:   project.ID,
+		DomainName:  "reusable-project.preview.example.com",
+		Environment: "preview",
+		IsAuto:      true,
+		SSLStatus:   "pending",
+	}
+	if err := db.CreateDomain(domain); err != nil {
+		t.Fatalf("CreateDomain: %v", err)
+	}
+
+	if err := db.DeleteAllDomainsForProject(project.ID); err != nil {
+		t.Fatalf("DeleteAllDomainsForProject: %v", err)
+	}
+	if err := db.DeleteProject(project.ID); err != nil {
+		t.Fatalf("DeleteProject: %v", err)
+	}
+
+	recreated := &Project{
+		Name:           "reusable-project",
+		GithubRepo:     "my-app-2",
+		GithubOwner:    "user1",
+		Branch:         "main",
+		UserID:         user.ID,
+		Framework:      "nextjs",
+		PackageManager: "auto",
+		BuildCommand:   "bun run build",
+		InstallCommand: "bun install",
+		NodeVersion:    "22",
+		Status:         "active",
+	}
+	if err := db.CreateProject(recreated); err != nil {
+		t.Fatalf("CreateProject(recreated): %v", err)
+	}
+
+	recreatedDomain := &Domain{
+		ProjectID:   recreated.ID,
+		DomainName:  "reusable-project.preview.example.com",
+		Environment: "preview",
+		IsAuto:      true,
+		SSLStatus:   "pending",
+	}
+	if err := db.CreateDomain(recreatedDomain); err != nil {
+		t.Fatalf("CreateDomain(recreated): %v", err)
 	}
 }
 

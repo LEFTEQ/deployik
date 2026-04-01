@@ -80,7 +80,17 @@ func NewRouter(cfg *RouterConfig) *chi.Mux {
 			r.Get("/auth/me", authHandler.GetMe)
 
 			// GitHub
-			projectHandler := &handlers.ProjectHandler{DB: cfg.DB, Encryptor: cfg.Encryptor, Audit: auditRecorder}
+			var dockerClient *build.DockerClient
+			if cfg.Pipeline != nil {
+				dockerClient = cfg.Pipeline.Docker
+			}
+			projectHandler := &handlers.ProjectHandler{
+				DB:        cfg.DB,
+				Docker:    dockerClient,
+				Manager:   cfg.DomainManager,
+				Encryptor: cfg.Encryptor,
+				Audit:     auditRecorder,
+			}
 			r.Get("/github/repos", projectHandler.ListGithubRepos)
 			r.Get("/github/branches", projectHandler.ListGithubBranches)
 
