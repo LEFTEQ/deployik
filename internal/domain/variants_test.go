@@ -38,14 +38,26 @@ func TestResolveVariantPlanDoesNotAddWWWForSubdomain(t *testing.T) {
 	}
 }
 
-func TestResolveVariantPlanDoesNotAddWWWForPreview(t *testing.T) {
+func TestResolveVariantPlanAddsWWWRedirectForPreview(t *testing.T) {
 	t.Parallel()
 
 	plan := ResolveVariantPlan("acme-web.preview.example.com", "preview")
 	if plan.CanonicalDomain != "acme-web.preview.example.com" {
 		t.Fatalf("canonical domain = %q, want preview host", plan.CanonicalDomain)
 	}
-	if plan.RedirectDomain != "" {
-		t.Fatalf("redirect domain = %q, want empty", plan.RedirectDomain)
+	if plan.RedirectDomain != "www.acme-web.preview.example.com" {
+		t.Fatalf("redirect domain = %q, want preview www host", plan.RedirectDomain)
+	}
+}
+
+func TestResolveVariantPlanStripsWWWForPreviewDomain(t *testing.T) {
+	t.Parallel()
+
+	plan := ResolveVariantPlan("www.acme-web.preview.example.com", "preview")
+	if plan.CanonicalDomain != "acme-web.preview.example.com" {
+		t.Fatalf("canonical domain = %q, want preview host", plan.CanonicalDomain)
+	}
+	if plan.RedirectDomain != "www.acme-web.preview.example.com" {
+		t.Fatalf("redirect domain = %q, want preview www host", plan.RedirectDomain)
 	}
 }

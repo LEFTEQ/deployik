@@ -14,7 +14,7 @@ type VariantPlan struct {
 func ResolveVariantPlan(domainName, environment string) VariantPlan {
 	normalized := normalizeHostname(domainName)
 	plan := VariantPlan{CanonicalDomain: normalized}
-	if normalized == "" || environment != "production" {
+	if normalized == "" {
 		return plan
 	}
 
@@ -27,8 +27,13 @@ func ResolveVariantPlan(domainName, environment string) VariantPlan {
 		return plan
 	}
 
+	if environment == "preview" {
+		plan.RedirectDomain = "www." + normalized
+		return plan
+	}
+
 	root, err := publicsuffix.EffectiveTLDPlusOne(normalized)
-	if err == nil && root == normalized {
+	if environment == "production" && err == nil && root == normalized {
 		plan.RedirectDomain = "www." + normalized
 	}
 

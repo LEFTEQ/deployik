@@ -14,6 +14,11 @@ func ReconcileActiveConfigs(manager *Manager, targets []db.DomainProvisionTarget
 
 	for _, target := range targets {
 		plan := ResolveVariantPlan(target.DomainName, target.Environment)
+		if plan.RedirectDomain != "" {
+			if err := manager.RequestSSLCert(plan.AllDomains()...); err != nil {
+				return fmt.Errorf("ensure ssl for %s: %w", target.DomainName, err)
+			}
+		}
 		if _, err := manager.WriteNginxConfig(ProvisionConfig{
 			ProjectID:      target.ProjectID,
 			ProjectName:    target.ProjectName,

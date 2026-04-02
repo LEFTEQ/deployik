@@ -268,25 +268,36 @@ func (p *Pipeline) ensureEnvironmentDomains(project *db.Project, deployment *db.
 			continue
 		}
 
-		verified, err := p.DomainManager.VerifyDomainDNS(d.DomainName)
-		if err != nil {
-			_ = p.DB.UpdateDomainDNS(d.ID, false)
-			_ = p.DB.UpdateDomainSSL(d.ID, "error", d.SSLExpiresAt)
-			return fmt.Errorf("%s: verify dns: %w", d.DomainName, err)
+		plan := domain.ResolveVariantPlan(d.DomainName, d.Environment)
+		verified := true
+		for _, hostname := range plan.AllDomains() {
+			hostVerified, err := p.DomainManager.VerifyDomainDNS(hostname)
+			if err != nil {
+				_ = p.DB.UpdateDomainDNS(d.ID, false)
+				_ = p.DB.UpdateDomainSSL(d.ID, "error", d.SSLExpiresAt)
+				return fmt.Errorf("%s: verify dns: %w", hostname, err)
+			}
+			if !hostVerified {
+				verified = false
+				break
+			}
 		}
+
 		_ = p.DB.UpdateDomainDNS(d.ID, verified)
 		if !verified {
 			_ = p.DB.UpdateDomainSSL(d.ID, "pending", d.SSLExpiresAt)
 			return fmt.Errorf("%s: %w", d.DomainName, domain.ErrDNSNotVerified)
 		}
 
-		emit(fmt.Sprintf("Provisioning domain %s...", d.DomainName))
+		emit(fmt.Sprintf("Provisioning domain %s...", plan.CanonicalDomain))
 		err = p.DomainManager.ProvisionDomain(domain.ProvisionConfig{
-			ProjectID:     project.ID,
-			ProjectName:   project.Name,
-			Domain:        d.DomainName,
-			Environment:   d.Environment,
-			ContainerName: containerName,
+			ProjectID:      project.ID,
+			ProjectName:    project.Name,
+			Domain:         plan.CanonicalDomain,
+			RedirectDomain: plan.RedirectDomain,
+			SSLDomains:     plan.AllDomains(),
+			Environment:    d.Environment,
+			ContainerName:  containerName,
 		}, false)
 		if err != nil {
 			_ = p.DB.UpdateDomainSSL(d.ID, "error", d.SSLExpiresAt)
