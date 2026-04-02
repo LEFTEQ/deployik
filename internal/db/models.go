@@ -85,6 +85,40 @@ type Project struct {
 	UpdatedAt        time.Time `json:"updated_at"`
 }
 
+type AnalyticsTrackingMode string
+
+const (
+	AnalyticsTrackingModeAIInstall AnalyticsTrackingMode = "ai_install"
+	AnalyticsTrackingModeManual    AnalyticsTrackingMode = "manual"
+	AnalyticsTrackingModeDisabled  AnalyticsTrackingMode = "disabled"
+)
+
+type AnalyticsAudienceStatus string
+
+const (
+	AnalyticsAudienceStatusProvisioning   AnalyticsAudienceStatus = "provisioning"
+	AnalyticsAudienceStatusReadyToInstall AnalyticsAudienceStatus = "ready_to_install"
+	AnalyticsAudienceStatusWaitingForData AnalyticsAudienceStatus = "waiting_for_data"
+	AnalyticsAudienceStatusReceivingData  AnalyticsAudienceStatus = "receiving_data"
+	AnalyticsAudienceStatusStale          AnalyticsAudienceStatus = "stale"
+	AnalyticsAudienceStatusUnavailable    AnalyticsAudienceStatus = "unavailable"
+	AnalyticsAudienceStatusError          AnalyticsAudienceStatus = "error"
+)
+
+type ProjectAnalytics struct {
+	ProjectID        string                  `json:"project_id"`
+	AudienceEnabled  bool                    `json:"audience_enabled"`
+	TrackingMode     AnalyticsTrackingMode   `json:"tracking_mode"`
+	AudienceStatus   AnalyticsAudienceStatus `json:"audience_status"`
+	UmamiWebsiteID   string                  `json:"umami_website_id"`
+	UmamiWebsiteName string                  `json:"umami_website_name"`
+	LastEventAt      sql.NullTime            `json:"last_event_at"`
+	VerifiedAt       sql.NullTime            `json:"verified_at"`
+	LastError        string                  `json:"last_error"`
+	CreatedAt        time.Time               `json:"created_at"`
+	UpdatedAt        time.Time               `json:"updated_at"`
+}
+
 type Deployment struct {
 	ID            string       `json:"id"`
 	ProjectID     string       `json:"project_id"`

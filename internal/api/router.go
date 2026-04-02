@@ -7,6 +7,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	chimw "github.com/go-chi/chi/v5/middleware"
 
+	"github.com/LEFTEQ/lovinka-deployik/internal/analytics"
 	"github.com/LEFTEQ/lovinka-deployik/internal/api/handlers"
 	"github.com/LEFTEQ/lovinka-deployik/internal/api/middleware"
 	"github.com/LEFTEQ/lovinka-deployik/internal/audit"
@@ -32,6 +33,7 @@ type RouterConfig struct {
 	Pipeline       *build.Pipeline
 	DomainManager  *domain.Manager
 	WSHub          *ws.Hub
+	Analytics      *analytics.Service
 }
 
 func NewRouter(cfg *RouterConfig) *chi.Mux {
@@ -90,6 +92,7 @@ func NewRouter(cfg *RouterConfig) *chi.Mux {
 				Manager:   cfg.DomainManager,
 				Encryptor: cfg.Encryptor,
 				Audit:     auditRecorder,
+				Analytics: cfg.Analytics,
 			}
 			r.Get("/github/repos", projectHandler.ListGithubRepos)
 			r.Get("/github/branches", projectHandler.ListGithubBranches)
@@ -109,6 +112,9 @@ func NewRouter(cfg *RouterConfig) *chi.Mux {
 			r.Get("/projects/{id}", projectHandler.Get)
 			r.With(mutationLimiter.Middleware("project_update")).Patch("/projects/{id}", projectHandler.Update)
 			r.With(mutationLimiter.Middleware("project_delete")).Delete("/projects/{id}", projectHandler.Delete)
+			projectAnalyticsHandler := &handlers.ProjectAnalyticsHandler{DB: cfg.DB, Analytics: cfg.Analytics}
+			r.Get("/projects/{id}/analytics", projectAnalyticsHandler.Get)
+			r.With(mutationLimiter.Middleware("project_analytics_verify")).Post("/projects/{id}/analytics/verify", projectAnalyticsHandler.Verify)
 
 			// Deployments
 			deployHandler := &handlers.DeploymentHandler{DB: cfg.DB, Encryptor: cfg.Encryptor, Pipeline: cfg.Pipeline, Audit: auditRecorder}

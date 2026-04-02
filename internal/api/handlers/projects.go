@@ -12,6 +12,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
+	"github.com/LEFTEQ/lovinka-deployik/internal/analytics"
 	"github.com/LEFTEQ/lovinka-deployik/internal/audit"
 	"github.com/LEFTEQ/lovinka-deployik/internal/auth"
 	"github.com/LEFTEQ/lovinka-deployik/internal/build"
@@ -28,6 +29,7 @@ type ProjectHandler struct {
 	Manager   *domain.Manager
 	Encryptor *crypto.Encryptor
 	Audit     *audit.Recorder
+	Analytics *analytics.Service
 }
 
 var slugRegex = regexp.MustCompile(`^[a-z0-9]([a-z0-9-]*[a-z0-9])?$`)
@@ -168,6 +170,8 @@ func (h *ProjectHandler) Create(w http.ResponseWriter, r *http.Request) {
 	}
 	h.DB.CreateDomain(previewDomain)
 
+	h.syncProjectAnalytics(project, []db.Domain{*previewDomain})
+
 	writeJSON(w, http.StatusCreated, project)
 	h.Audit.Record(audit.Entry{
 		UserID:       claims.UserID,
@@ -238,6 +242,12 @@ func (h *ProjectHandler) Update(w http.ResponseWriter, r *http.Request) {
 	if err := h.DB.UpdateProject(project); err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to update project"})
 		return
+	}
+
+	if domains, err := h.DB.ListDomains(project.ID); err != nil {
+		log.Printf("Warning: failed to load domains for analytics sync on project %s: %v", project.ID, err)
+	} else {
+		h.syncProjectAnalytics(project, domains)
 	}
 
 	writeJSON(w, http.StatusOK, project)
@@ -311,6 +321,12 @@ func (h *ProjectHandler) Delete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if h.Analytics != nil {
+		if err := h.Analytics.DeleteProjectAnalytics(context.Background(), id); err != nil {
+			log.Printf("Warning: failed to remove analytics for deleted project %s: %v", id, err)
+		}
+	}
+
 	writeJSON(w, http.StatusOK, map[string]string{"status": "deleted"})
 	claims := auth.GetClaims(r.Context())
 	h.Audit.Record(audit.Entry{
@@ -320,6 +336,19 @@ func (h *ProjectHandler) Delete(w http.ResponseWriter, r *http.Request) {
 		ResourceID:   id,
 		ProjectID:    id,
 	})
+}
+
+func (h *ProjectHandler) syncProjectAnalytics(project *db.Project, domains []db.Domain) {
+	if h.Analytics == nil || project == nil {
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+
+	if err := h.Analytics.EnsureProject(ctx, project, domains); err != nil {
+		log.Printf("Warning: failed to sync analytics for project %s: %v", project.ID, err)
+	}
 }
 
 func (h *ProjectHandler) cleanupProjectRuntime(project *db.Project, domains []db.Domain) {

@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 
+	"github.com/LEFTEQ/lovinka-deployik/internal/analytics"
 	"github.com/LEFTEQ/lovinka-deployik/internal/api"
 	"github.com/LEFTEQ/lovinka-deployik/internal/build"
 	"github.com/LEFTEQ/lovinka-deployik/internal/config"
@@ -81,6 +82,12 @@ func main() {
 		VPSHost:        cfg.VPSHost,
 		SSLEmail:       cfg.SSLEmail,
 	})
+	analyticsService := analytics.NewService(
+		database,
+		analytics.NewUmamiClient(cfg.AnalyticsUmamiURL, cfg.AnalyticsUmamiUsername, cfg.AnalyticsUmamiPassword),
+		cfg.AnalyticsUmamiPublicURL,
+		analytics.NewLokiClient(cfg.AnalyticsLokiURL),
+	)
 
 	maxBuilds := 1
 	pipeline := &build.Pipeline{
@@ -121,6 +128,7 @@ func main() {
 		Pipeline:       pipeline,
 		DomainManager:  domainManager,
 		WSHub:          wsHub,
+		Analytics:      analyticsService,
 	})
 
 	addr := fmt.Sprintf(":%s", cfg.Port)

@@ -12,6 +12,9 @@ import type {
   BuildLog,
   GitHubRepo,
   PlatformInfo,
+  AnalyticsEnvironmentFilter,
+  AnalyticsRangePreset,
+  ProjectAnalyticsPayload,
 } from "@/types/api";
 
 const API_URL = import.meta.env.VITE_API_URL || "/api";
@@ -288,6 +291,40 @@ class ApiClient {
       `/projects/${projectId}/secrets/${key}?environment=${environment}`,
       { method: "DELETE" },
     );
+  }
+
+  async getProjectAnalytics(
+    projectId: string,
+    params: {
+      environment: AnalyticsEnvironmentFilter;
+      range: AnalyticsRangePreset;
+      timezone: string;
+    },
+  ): Promise<ProjectAnalyticsPayload> {
+    const search = new URLSearchParams({
+      environment: params.environment,
+      range: params.range,
+      timezone: params.timezone,
+    });
+    return this.request(`/projects/${projectId}/analytics?${search.toString()}`);
+  }
+
+  async verifyProjectAnalytics(
+    projectId: string,
+    params: {
+      environment: AnalyticsEnvironmentFilter;
+      range: AnalyticsRangePreset;
+      timezone: string;
+    },
+  ): Promise<ProjectAnalyticsPayload> {
+    const search = new URLSearchParams({
+      environment: params.environment,
+      range: params.range,
+      timezone: params.timezone,
+    });
+    return this.request(`/projects/${projectId}/analytics/verify?${search.toString()}`, {
+      method: "POST",
+    });
   }
 
   // Build logs (Phase 9)

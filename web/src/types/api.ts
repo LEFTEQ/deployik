@@ -123,3 +123,109 @@ export interface GitHubRepo {
   language: string | null;
   updated_at: string;
 }
+
+export type AnalyticsEnvironmentFilter = "all" | "preview" | "production";
+export type AnalyticsRangePreset = "1h" | "24h" | "7d" | "30d";
+
+export interface AnalyticsDomainGroups {
+  all: string[];
+  preview: string[];
+  production: string[];
+}
+
+export interface AnalyticsTimePoint {
+  timestamp: string;
+  value: number;
+}
+
+export interface AnalyticsBreakdownItem {
+  name: string;
+  value: number;
+  pageviews?: number;
+  visitors?: number;
+  visits?: number;
+  bounces?: number;
+  total_visit_duration_ms?: number;
+}
+
+export interface AudienceInstallPayload {
+  host_url: string;
+  script_url: string;
+  snippet: string;
+  ai_prompt: string;
+  domains: AnalyticsDomainGroups;
+}
+
+export interface AudienceSummary {
+  visitors: number;
+  pageviews: number;
+  visits: number;
+  bounces: number;
+  bounce_rate: number;
+  avg_visit_duration_ms: number;
+  total_visit_duration_ms: number;
+}
+
+export interface RealtimeSummary {
+  views: number;
+  visitors: number;
+  events: number;
+}
+
+export interface AudienceSeries {
+  pageviews: AnalyticsTimePoint[];
+  visits: AnalyticsTimePoint[];
+}
+
+export interface AudienceAnalyticsPayload {
+  available: boolean;
+  enabled: boolean;
+  tracking_mode: string;
+  status: string;
+  website_id: string;
+  website_name: string;
+  open_url: string;
+  verified_at?: string | null;
+  last_event_at?: string | null;
+  error?: string;
+  install: AudienceInstallPayload;
+  summary: AudienceSummary;
+  realtime?: RealtimeSummary | null;
+  series: AudienceSeries;
+  top_pages: AnalyticsBreakdownItem[];
+  top_referrers: AnalyticsBreakdownItem[];
+  top_countries: AnalyticsBreakdownItem[];
+}
+
+export interface RuntimeSummary {
+  requests: number;
+  api_requests: number;
+  bandwidth_bytes: number;
+  error_rate: number;
+  p95_latency_ms: number;
+}
+
+export interface RuntimeSeries {
+  requests: AnalyticsTimePoint[];
+  api_requests: AnalyticsTimePoint[];
+  bandwidth: AnalyticsTimePoint[];
+  p95_latency_ms: AnalyticsTimePoint[];
+}
+
+export interface RuntimeAnalyticsPayload {
+  available: boolean;
+  error?: string;
+  summary: RuntimeSummary;
+  series: RuntimeSeries;
+  top_paths: AnalyticsBreakdownItem[];
+  status_codes: AnalyticsBreakdownItem[];
+}
+
+export interface ProjectAnalyticsPayload {
+  environment: AnalyticsEnvironmentFilter;
+  range: AnalyticsRangePreset;
+  timezone: string;
+  domains: AnalyticsDomainGroups;
+  audience: AudienceAnalyticsPayload;
+  runtime: RuntimeAnalyticsPayload;
+}

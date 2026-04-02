@@ -23,7 +23,7 @@ func TestMigrations(t *testing.T) {
 	db := newTestDB(t)
 
 	// Verify tables exist
-	tables := []string{"users", "organizations", "organization_memberships", "projects", "deployments", "build_logs", "domains", "env_variables", "refresh_tokens", "audit_logs", "_migrations"}
+	tables := []string{"users", "organizations", "organization_memberships", "projects", "project_analytics", "deployments", "build_logs", "domains", "env_variables", "refresh_tokens", "audit_logs", "_migrations"}
 	for _, table := range tables {
 		var count int
 		err := db.QueryRow("SELECT COUNT(*) FROM " + table).Scan(&count)
@@ -290,6 +290,88 @@ func TestDeleteProjectReleasesNameAndDomains(t *testing.T) {
 	}
 	if err := db.CreateDomain(recreatedDomain); err != nil {
 		t.Fatalf("CreateDomain(recreated): %v", err)
+	}
+}
+
+func TestProjectAnalyticsCRUD(t *testing.T) {
+	db := newTestDB(t)
+
+	user := &User{ID: NewID(), GithubID: 1, Username: "analytics-owner", Role: "admin"}
+	if err := db.UpsertUser(user); err != nil {
+		t.Fatalf("UpsertUser: %v", err)
+	}
+
+	project := &Project{
+		Name:           "analytics-project",
+		GithubRepo:     "repo",
+		GithubOwner:    "owner",
+		Branch:         "main",
+		UserID:         user.ID,
+		Framework:      "nextjs",
+		PackageManager: "pnpm",
+		BuildCommand:   "pnpm run build",
+		InstallCommand: "pnpm install --frozen-lockfile",
+		NodeVersion:    "22",
+		Status:         "active",
+	}
+	if err := db.CreateProject(project); err != nil {
+		t.Fatalf("CreateProject: %v", err)
+	}
+
+	record := &ProjectAnalytics{
+		ProjectID:        project.ID,
+		AudienceEnabled:  true,
+		TrackingMode:     AnalyticsTrackingModeAIInstall,
+		AudienceStatus:   AnalyticsAudienceStatusReceivingData,
+		UmamiWebsiteID:   "website-1",
+		UmamiWebsiteName: "analytics-project",
+		LastError:        "",
+	}
+	if err := db.UpsertProjectAnalytics(record); err != nil {
+		t.Fatalf("UpsertProjectAnalytics: %v", err)
+	}
+
+	stored, err := db.GetProjectAnalytics(project.ID)
+	if err != nil {
+		t.Fatalf("GetProjectAnalytics: %v", err)
+	}
+	if stored == nil {
+		t.Fatal("expected analytics row")
+	}
+	if stored.UmamiWebsiteID != "website-1" {
+		t.Fatalf("UmamiWebsiteID = %q, want %q", stored.UmamiWebsiteID, "website-1")
+	}
+	if stored.TrackingMode != AnalyticsTrackingModeAIInstall {
+		t.Fatalf("TrackingMode = %q, want %q", stored.TrackingMode, AnalyticsTrackingModeAIInstall)
+	}
+
+	record.AudienceStatus = AnalyticsAudienceStatusStale
+	record.LastError = "stale"
+	if err := db.UpsertProjectAnalytics(record); err != nil {
+		t.Fatalf("UpsertProjectAnalytics(update): %v", err)
+	}
+
+	stored, err = db.GetProjectAnalytics(project.ID)
+	if err != nil {
+		t.Fatalf("GetProjectAnalytics(update): %v", err)
+	}
+	if stored.AudienceStatus != AnalyticsAudienceStatusStale {
+		t.Fatalf("AudienceStatus = %q, want %q", stored.AudienceStatus, AnalyticsAudienceStatusStale)
+	}
+	if stored.LastError != "stale" {
+		t.Fatalf("LastError = %q, want %q", stored.LastError, "stale")
+	}
+
+	if err := db.DeleteProjectAnalytics(project.ID); err != nil {
+		t.Fatalf("DeleteProjectAnalytics: %v", err)
+	}
+
+	stored, err = db.GetProjectAnalytics(project.ID)
+	if err != nil {
+		t.Fatalf("GetProjectAnalytics(deleted): %v", err)
+	}
+	if stored != nil {
+		t.Fatal("expected analytics row to be deleted")
 	}
 }
 

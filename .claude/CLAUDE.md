@@ -54,6 +54,13 @@ internal/
   audit/
     recorder.go           Writes sensitive action events into audit_logs
 
+  analytics/
+    service.go            Project-level analytics orchestration (Umami audience + Loki runtime)
+    umami.go              Umami API client: login, website provisioning, stats/pageviews/metrics/active queries
+    loki.go               Loki HTTP client for summary + timeseries queries
+    audience.go           Audience aggregation helpers for multi-host/domain rollups
+    options.go            Analytics range/environment/timezone normalization
+
   authz/
     access.go             CanAccessProject, LoadProject, LoadDeployment (ownership + admin bypass)
 
@@ -82,7 +89,9 @@ internal/
       004_auth_sessions_and_audit_logs.sql  Adds refresh_tokens and audit_logs
       005_project_package_manager.sql  Adds package_manager to projects
       006_organizations.sql    Adds organizations, organization_memberships, and projects.organization_id
+      007_project_analytics.sql Adds project_analytics for linked Umami website + audience analytics status
     models.go             User, Organization, OrganizationMembership, RefreshSession, AuditLog, Project, Deployment, BuildLog, Domain, ProjectVariable, VariableKind
+    queries_project_analytics.go  Get/Upsert/Delete project_analytics rows
     queries_users.go      GetUserByGithubID, GetUserByID, UpsertUser
     queries_organizations.go  Personal workspace bootstrap, memberships, org listing
     queries_projects.go   ListProjects, GetProject, GetProjectForUser, Create, Update, Delete (soft)
@@ -121,9 +130,12 @@ web/src/
     ProjectDetail.tsx     Tabs: deployments, domains, env vars, secrets, settings
     DeploymentDetail.tsx  Build log viewer with real-time WebSocket streaming
   components/
+    analytics/metric-chart.tsx  Reusable Recharts card wrapper for Deployik analytics charts
+    analytics/stat-card.tsx  Reusable stat KPI card for analytics and future dashboards
     layout/AppLayout.tsx  Protected shell with sidebar
     layout/Sidebar.tsx    Navigation sidebar + workspace selector
     projects/build-settings.tsx  Reusable BuildSettingsFields component with framework + package manager presets
+    projects/project-analytics.tsx  Analytics tab UI: filters, install with AI, audience cards, runtime charts
     BuildLog.tsx          Log viewer with auto-scroll, stderr highlighting
     ui/                   shadcn/ui components (button, card, dialog, input, etc.)
   hooks/
@@ -153,6 +165,7 @@ SQLite with 6 migrations. Tables:
 | `build_logs` | id (auto), deployment_id (FK), line_number, content, stream (stdout/stderr) | |
 | `domains` | id (ULID), project_id (FK), domain (unique), environment, is_auto, dns_verified, ssl_status (pending/active/error) | Auto-domains cannot be deleted |
 | `env_variables` | id (ULID), project_id (FK), environment (shared/preview/production), kind (env/secret), key, value (encrypted) | UNIQUE(project_id, environment, key) |
+| `project_analytics` | project_id (PK/FK), audience_enabled, tracking_mode, audience_status, umami_website_id, last_event_at, verified_at | One linked Umami website per project; stores audience analytics health/provisioning state |
 | `refresh_tokens` | id (ULID), user_id (FK), token_hash, expires_at, last_used_at, revoked_at | Opaque refresh tokens are hashed at rest and rotated on use |
 | `audit_logs` | id (auto), user_id (nullable FK), action, resource_type, resource_id, project_id, deployment_id, metadata | Records login/refresh/logout and sensitive mutating actions |
 
@@ -179,6 +192,8 @@ SQLite with 6 migrations. Tables:
 - `GET    /api/projects/{id}` -- Get project
 - `PATCH  /api/projects/{id}` -- Update project
 - `DELETE /api/projects/{id}` -- Soft-delete project
+- `GET    /api/projects/{id}/analytics?environment=&range=&timezone=` -- Combined project analytics payload (Umami audience + Loki runtime)
+- `POST   /api/projects/{id}/analytics/verify?environment=&range=&timezone=` -- Force an analytics refresh / verification cycle
 
 **Deployments:**
 - `GET  /api/projects/{id}/deployments` -- List deployments (limit 20)
@@ -216,6 +231,9 @@ SQLite with 6 migrations. Tables:
 - **Refresh rotation:** Refresh tokens are opaque random strings, stored only as SHA-256 hashes in `refresh_tokens`, revoked on logout, and rotated every time `/api/auth/refresh` succeeds.
 - **Perimeter controls:** `cors.go` blocks origins outside `Config.AllowedOrigins`, `ratelimit.go` applies per-IP limits to auth/mutation/ws routes, and `audit/recorder.go` records security-relevant mutations to `audit_logs`.
 - **Usage telemetry:** Deployik-managed nginx configs now emit per-project JSON access logs at `/var/log/nginx/deployik-<project-id>-<project-name>-<environment>.json`; the monitoring stack can ship these to Loki for request, bandwidth, latency, and API-path analytics without writing raw events into SQLite.
+- **Audience analytics:** Each project maps to one Umami website via `project_analytics`. Provisioning is best-effort on project create/update and lazy on analytics reads, so existing projects gain analytics without a manual migration. Deployik segments preview vs production in the UI by hostname/domain filters instead of using separate Umami websites.
+- **Install with AI:** `projects/project-analytics.tsx` surfaces a generated AI-install prompt and exact manual Umami snippet. The prompt is built from project settings (`framework`, `package_manager`, `root_directory`) plus the linked website ID so users can hand it to any coding AI instead of relying on brittle proxy injection.
+- **Reusable analytics UI:** `components/analytics/stat-card.tsx` and `components/analytics/metric-chart.tsx` are the shared primitives for KPI cards and chart cards. Reuse them for future dashboard work instead of building one-off chart wrappers inside each page.
 - **IDs:** ULIDs generated via `db.NewID()` (time-sortable, no collision risk)
 - **Encryption:** All sensitive values (GitHub tokens, env vars, secrets) encrypted with AES-256-GCM before storage. Key derived from `ENCRYPTION_KEY` env var via SHA-256.
 - **Migrations:** Embedded SQL files in `internal/db/migrations/`, applied in order, tracked in `_migrations` table. Each migration runs in a transaction.

@@ -3,6 +3,7 @@ import { useParams, Link, useNavigate } from "@tanstack/react-router";
 import {
   ArrowLeft,
   ArrowUpRight,
+  BarChart3,
   Building2,
   CheckCircle2,
   CircleDot,
@@ -28,6 +29,7 @@ import {
   BuildSettingsFields,
   formatFrameworkLabel,
 } from "@/components/projects/build-settings";
+import { ProjectAnalyticsTab } from "@/components/projects/project-analytics";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -423,6 +425,10 @@ export function ProjectDetail() {
             <Rocket className="mr-1.5 h-3.5 w-3.5" />
             Deployments
           </TabsTrigger>
+          <TabsTrigger value="analytics">
+            <BarChart3 className="mr-1.5 h-3.5 w-3.5" />
+            Analytics
+          </TabsTrigger>
           <TabsTrigger value="settings">
             <Settings className="mr-1.5 h-3.5 w-3.5" />
             Settings
@@ -448,6 +454,10 @@ export function ProjectDetail() {
             domains={domains}
             isLoading={deploymentsLoading}
           />
+        </TabsContent>
+
+        <TabsContent value="analytics" className="mt-4">
+          <ProjectAnalyticsTab projectId={id} />
         </TabsContent>
 
         <TabsContent value="settings" className="mt-4">
