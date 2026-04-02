@@ -1,5 +1,10 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useParams, Link, useNavigate } from "@tanstack/react-router";
+import {
+  useParams,
+  Link,
+  useNavigate,
+  useSearch,
+} from "@tanstack/react-router";
 import {
   Activity,
   ArrowLeft,
@@ -25,6 +30,7 @@ import {
 import { formatDistanceToNow } from "date-fns";
 import { toast } from "sonner";
 import { api } from "@/lib/api";
+import { ProjectTabValue, normalizeProjectTab } from "@/lib/project-tabs";
 import { cn } from "@/lib/utils";
 import {
   BuildSettingsFields,
@@ -106,13 +112,6 @@ const ACTIVE_DEPLOYMENT_STATUSES = new Set<DeploymentStatus>([
   "building",
   "deploying",
 ]);
-
-type ProjectTabValue =
-  | "overview"
-  | "deployments"
-  | "analytics"
-  | "integration"
-  | "settings";
 
 const ENVIRONMENT_META = {
   preview: {
@@ -274,11 +273,21 @@ function formatCompactNumber(value: number) {
 export function ProjectDetail() {
   const { id } = useParams({ strict: false }) as { id: string };
   const navigate = useNavigate();
+  const search = useSearch({ strict: false }) as { tab?: string };
   const queryClient = useQueryClient();
   const isMobile = useIsMobile();
-  const [activeTab, setActiveTab] = useState<ProjectTabValue>("overview");
   const [releaseSheetOpen, setReleaseSheetOpen] = useState(false);
   const [releaseTagName, setReleaseTagName] = useState(buildReleaseTagName());
+  const activeTab = normalizeProjectTab(search.tab);
+
+  const setActiveTab = (tab: ProjectTabValue) => {
+    navigate({
+      to: "/projects/$id",
+      params: { id },
+      search: { tab },
+      replace: true,
+    });
+  };
 
   const { data: project, isLoading } = useQuery({
     queryKey: ["project", id],
@@ -365,6 +374,7 @@ export function ProjectDetail() {
     navigate({
       to: "/projects/$id/deployments/$did",
       params: { id, did: latestDeployment.id },
+      search: { tab: activeTab },
     });
   };
 
@@ -386,7 +396,9 @@ export function ProjectDetail() {
 
       <Tabs
         value={activeTab}
-        onValueChange={(value) => setActiveTab(value as ProjectTabValue)}
+        onValueChange={(value) =>
+          setActiveTab(normalizeProjectTab(value))
+        }
       >
         <TabsList
           variant="line"
@@ -999,6 +1011,7 @@ function OverviewTab({
                         navigate({
                           to: "/projects/$id/deployments/$did",
                           params: { id: projectId, did: deployment.id },
+                          search: { tab: "overview" },
                         })
                       }
                       className="flex w-full items-center justify-between gap-3 rounded-xl border bg-muted/30 px-4 py-3 text-left transition-colors hover:bg-accent"
@@ -1173,6 +1186,7 @@ function DeploymentsTab({
     navigate({
       to: "/projects/$id/deployments/$did",
       params: { id: projectId, did: deploymentId },
+      search: { tab: "deployments" },
     });
   };
 
@@ -1357,6 +1371,7 @@ function DeploymentsTab({
                           <Link
                             to="/projects/$id/deployments/$did"
                             params={{ id: projectId, did: deployment.id }}
+                            search={{ tab: "deployments" }}
                             onClick={(event) => event.stopPropagation()}
                           >
                             Logs

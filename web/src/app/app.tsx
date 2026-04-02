@@ -18,6 +18,10 @@ import { ProjectDetail } from "@/pages/ProjectDetail";
 import { DeploymentDetail } from "@/pages/DeploymentDetail";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { api } from "@/lib/api";
+import {
+  normalizeDeploymentReturnTab,
+  normalizeProjectTab,
+} from "@/lib/project-tabs";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -86,7 +90,7 @@ const authCallbackRoute = createRoute({
   component: AuthCallback,
 });
 
-// Protected layout route (with sidebar)
+// Protected layout route
 const protectedRoute = createRoute({
   getParentRoute: () => rootRoute,
   id: "protected",
@@ -118,6 +122,10 @@ const newProjectRoute = createRoute({
 const projectDetailRoute = createRoute({
   getParentRoute: () => protectedRoute,
   path: "/projects/$id",
+  validateSearch: (search: Record<string, unknown>) => ({
+    tab:
+      typeof search.tab === "string" ? normalizeProjectTab(search.tab) : undefined,
+  }),
   component: ProjectDetail,
 });
 
@@ -125,6 +133,12 @@ const projectDetailRoute = createRoute({
 const deploymentDetailRoute = createRoute({
   getParentRoute: () => protectedRoute,
   path: "/projects/$id/deployments/$did",
+  validateSearch: (search: Record<string, unknown>) => ({
+    tab:
+      typeof search.tab === "string"
+        ? normalizeDeploymentReturnTab(search.tab)
+        : undefined,
+  }),
   component: DeploymentDetail,
 });
 

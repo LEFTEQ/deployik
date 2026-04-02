@@ -1,8 +1,9 @@
 import { useQuery } from "@tanstack/react-query";
-import { useParams, Link } from "@tanstack/react-router";
+import { useParams, Link, useSearch } from "@tanstack/react-router";
 import { ArrowLeft, Clock, GitBranch, GitCommit } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { api } from "@/lib/api";
+import { normalizeDeploymentReturnTab } from "@/lib/project-tabs";
 import { useBuildLogs } from "@/hooks/useBuildLogs";
 import { BuildLog } from "@/components/BuildLog";
 import { Badge } from "@/components/ui/badge";
@@ -24,6 +25,8 @@ export function DeploymentDetail() {
     id: string;
     did: string;
   };
+  const search = useSearch({ strict: false }) as { tab?: string };
+  const returnTab = normalizeDeploymentReturnTab(search.tab);
 
   const { data: deployment, isLoading } = useQuery({
     queryKey: ["deployment", did],
@@ -97,6 +100,7 @@ export function DeploymentDetail() {
       <Link
         to="/projects/$id"
         params={{ id }}
+        search={{ tab: returnTab }}
         className="mb-4 inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
       >
         <ArrowLeft className="h-4 w-4" />

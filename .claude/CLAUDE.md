@@ -153,6 +153,7 @@ web/src/
     use-organizations.ts  React Query + Zustand bridge for accessible organizations and selected workspace
   lib/
     api.ts                ApiClient class wrapping fetch with cookie auth, refresh retry, auto-logout on unrecoverable 401
+    project-tabs.ts       Shared project tab normalization for URL-driven deep links and deployment-detail return context
     utils.ts              cn() utility (clsx + tailwind-merge)
   store/
     auth.ts               Zustand store for current user/auth status only (tokens stay in HttpOnly cookies)

@@ -84,7 +84,11 @@ export function NewProject() {
     onSuccess: (project) => {
       queryClient.invalidateQueries({ queryKey: ["projects"] });
       toast.success("Project created");
-      navigate({ to: "/projects/$id", params: { id: project.id } });
+      navigate({
+        to: "/projects/$id",
+        params: { id: project.id },
+        search: { tab: "overview" },
+      });
     },
     onError: (err) => toast.error(err.message),
   });

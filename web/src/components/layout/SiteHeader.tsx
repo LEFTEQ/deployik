@@ -34,15 +34,6 @@ import {
 } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
 
-function getPageLabel(matchRoute: ReturnType<typeof useMatchRoute>) {
-  if (matchRoute({ to: "/new" })) return "New Project";
-  if (matchRoute({ to: "/projects/$id/deployments/$did", fuzzy: true })) {
-    return "Deployment";
-  }
-  if (matchRoute({ to: "/projects/$id", fuzzy: true })) return "Project";
-  return "Projects";
-}
-
 export function SiteHeader() {
   const matchRoute = useMatchRoute();
   const { user, clearAuth } = useAuthStore();
@@ -52,7 +43,6 @@ export function SiteHeader() {
     selectedOrganizationId,
     setSelectedOrganizationId,
   } = useOrganizations();
-  const pageLabel = getPageLabel(matchRoute);
   const navItems = [
     {
       to: "/" as const,
@@ -87,14 +77,9 @@ export function SiteHeader() {
             <div className="flex size-9 items-center justify-center rounded-xl bg-primary/12 text-primary">
               <FolderKanban className="size-4" />
             </div>
-            <div className="min-w-0">
-              <p className="font-mono text-[13px] font-semibold tracking-[0.16em]">
-                /deployik
-              </p>
-              <p className="truncate text-xs text-muted-foreground">
-                {pageLabel} · {selectedOrganization?.name ?? "Workspace"}
-              </p>
-            </div>
+            <p className="font-mono text-[13px] font-semibold tracking-[0.16em]">
+              /deployik
+            </p>
           </Link>
         </div>
 
