@@ -124,6 +124,13 @@ type Domain struct {
 	CreatedAt    time.Time    `json:"created_at"`
 }
 
+type DomainProvisionTarget struct {
+	ProjectID   string
+	ProjectName string
+	DomainName  string
+	Environment string
+}
+
 type VariableKind string
 
 const (

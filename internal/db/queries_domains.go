@@ -96,3 +96,27 @@ func (db *DB) DeleteAllDomainsForProject(projectID string) error {
 	}
 	return nil
 }
+
+func (db *DB) ListActiveDomainProvisionTargets() ([]DomainProvisionTarget, error) {
+	rows, err := db.Query(
+		`SELECT p.id, p.name, d.domain, d.environment
+		 FROM domains d
+		 JOIN projects p ON p.id = d.project_id
+		 WHERE p.status = 'active' AND d.ssl_status = 'active'
+		 ORDER BY p.name ASC, d.environment ASC, d.created_at ASC`,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("list active domain provision targets: %w", err)
+	}
+	defer rows.Close()
+
+	var targets []DomainProvisionTarget
+	for rows.Next() {
+		var target DomainProvisionTarget
+		if err := rows.Scan(&target.ProjectID, &target.ProjectName, &target.DomainName, &target.Environment); err != nil {
+			return nil, fmt.Errorf("scan active domain provision target: %w", err)
+		}
+		targets = append(targets, target)
+	}
+	return targets, rows.Err()
+}

@@ -23,6 +23,10 @@ export interface Organization {
   updated_at: string;
 }
 
+export interface PlatformInfo {
+  dns_target_ip: string;
+}
+
 export interface Project {
   id: string;
   name: string;

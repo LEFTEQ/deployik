@@ -30,8 +30,10 @@ type Manager struct {
 }
 
 type ProvisionConfig struct {
+	ProjectID     string
 	ProjectName   string
 	Domain        string
+	Environment   string
 	SSLDomain     string
 	ContainerName string
 }
@@ -132,8 +134,10 @@ func (m *Manager) WriteNginxConfig(cfg ProvisionConfig) (string, error) {
 	}
 
 	return GenerateNginxConfig(m.NginxConfDir, NginxConfig{
+		ProjectID:     cfg.ProjectID,
 		ProjectName:   cfg.ProjectName,
 		Domain:        cfg.Domain,
+		Environment:   cfg.Environment,
 		SSLDomain:     cfg.sslDomain(),
 		ContainerName: cfg.ContainerName,
 	})

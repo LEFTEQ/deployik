@@ -6,6 +6,7 @@ import {
   Building2,
   CheckCircle2,
   CircleDot,
+  Copy,
   ExternalLink,
   GitBranch,
   GitCommit,
@@ -71,6 +72,7 @@ import type {
   Deployment,
   DeploymentStatus,
   Domain,
+  PlatformInfo,
   ProjectVariable,
   VariableScope,
 } from "@/types/api";
@@ -923,6 +925,10 @@ function DomainsTab({
   const [newDomain, setNewDomain] = useState("");
   const [newDomainEnvironment, setNewDomainEnvironment] =
     useState<Domain["environment"]>("production");
+  const { data: platform } = useQuery({
+    queryKey: ["platform"],
+    queryFn: () => api.getPlatformInfo(),
+  });
 
   const addMutation = useMutation({
     mutationFn: () =>
@@ -986,6 +992,12 @@ function DomainsTab({
           </Button>
         </CardContent>
       </Card>
+
+      <DnsSetupGuide
+        domain={newDomain.trim().toLowerCase()}
+        environment={newDomainEnvironment}
+        platform={platform}
+      />
 
       <Card>
         <CardHeader>
@@ -1087,6 +1099,132 @@ function DomainsTab({
       </Card>
     </div>
   );
+}
+
+function DnsSetupGuide({
+  domain,
+  environment,
+  platform,
+}: {
+  domain: string;
+  environment: Domain["environment"];
+  platform: PlatformInfo | undefined;
+}) {
+  const dnsTargetIp = platform?.dns_target_ip?.trim();
+  const sampleDomain =
+    domain || (environment === "preview" ? "staging.example.com" : "example.com");
+  const sampleHost = getDnsHostHint(sampleDomain);
+
+  const copyValue = async (value: string, label: string) => {
+    try {
+      await navigator.clipboard.writeText(value);
+      toast.success(`${label} copied`);
+    } catch {
+      toast.error(`Couldn't copy ${label.toLowerCase()}`);
+    }
+  };
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-base">DNS Setup</CardTitle>
+        <CardDescription>
+          Point the domain at this VPS, then click Verify. Preview domains should
+          usually be subdomains; production is usually the real bought domain.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <div className="grid gap-3 md:grid-cols-2">
+          <div className="rounded-2xl border border-white/8 bg-black/10 p-4">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <p className="text-xs uppercase tracking-[0.22em] text-muted-foreground">
+                  Target IP
+                </p>
+                <p className="mt-2 font-mono text-sm">
+                  {dnsTargetIp || "Unavailable"}
+                </p>
+              </div>
+              {dnsTargetIp ? (
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  onClick={() => copyValue(dnsTargetIp, "Target IP")}
+                >
+                  <Copy className="mr-1.5 h-3.5 w-3.5" />
+                  Copy
+                </Button>
+              ) : null}
+            </div>
+          </div>
+
+          <div className="rounded-2xl border border-white/8 bg-black/10 p-4">
+            <p className="text-xs uppercase tracking-[0.22em] text-muted-foreground">
+              Record to create
+            </p>
+            <div className="mt-2 space-y-1 text-sm">
+              <p>
+                <span className="text-muted-foreground">Domain:</span>{" "}
+                <span className="font-medium">{sampleDomain}</span>
+              </p>
+              <p>
+                <span className="text-muted-foreground">Type:</span>{" "}
+                <span className="font-medium">A</span>
+              </p>
+              <p>
+                <span className="text-muted-foreground">Host / Name:</span>{" "}
+                <span className="font-medium">{sampleHost}</span>
+              </p>
+            </div>
+          </div>
+        </div>
+
+        <div className="grid gap-3 xl:grid-cols-2">
+          <div className="rounded-2xl border border-white/8 bg-black/10 p-4">
+            <p className="text-sm font-medium">GoDaddy</p>
+            <div className="mt-3 space-y-2 text-sm text-muted-foreground">
+              <p>1. Open your domain in GoDaddy and go to DNS.</p>
+              <p>2. Add an A record for the host shown above.</p>
+              <p>3. Set Points to to {dnsTargetIp || "the target VPS IP"}.</p>
+              <p>4. Leave TTL on the default value.</p>
+              <p>5. Remove conflicting A, AAAA, or forwarded records for the same host.</p>
+            </div>
+          </div>
+
+          <div className="rounded-2xl border border-white/8 bg-black/10 p-4">
+            <p className="text-sm font-medium">Vercel DNS / Domain bought on Vercel</p>
+            <div className="mt-3 space-y-2 text-sm text-muted-foreground">
+              <p>1. Open the domain in Vercel and go to DNS Records.</p>
+              <p>2. Add an A record for the host shown above.</p>
+              <p>3. Set the value to {dnsTargetIp || "the target VPS IP"}.</p>
+              <p>4. If you also want `www`, point it at the same IP or CNAME it to the root.</p>
+              <p>5. Remove old Vercel-specific records for the same host if they conflict.</p>
+            </div>
+          </div>
+        </div>
+
+        <div className="rounded-2xl border border-dashed border-white/10 px-4 py-3 text-sm text-muted-foreground">
+          <p>
+            Deployik verifies A-record resolution to the VPS IP. If you use a
+            subdomain, prefer an A record directly to the server. After DNS
+            propagates, click Verify to issue SSL and activate the domain.
+          </p>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+function getDnsHostHint(domain: string) {
+  const labels = domain.split(".").filter(Boolean);
+  if (labels.length <= 2) {
+    return "@";
+  }
+  if (labels.length === 3) {
+    return labels[0];
+  }
+  return `${labels.slice(0, -2).join(".")} (subdomain part)`;
 }
 
 function EnvVarsTab({ projectId }: { projectId: string }) {

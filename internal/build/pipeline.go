@@ -282,8 +282,10 @@ func (p *Pipeline) ensureEnvironmentDomains(project *db.Project, deployment *db.
 
 		emit(fmt.Sprintf("Provisioning domain %s...", d.DomainName))
 		err = p.DomainManager.ProvisionDomain(domain.ProvisionConfig{
+			ProjectID:     project.ID,
 			ProjectName:   project.Name,
 			Domain:        d.DomainName,
+			Environment:   d.Environment,
 			ContainerName: containerName,
 		}, false)
 		if err != nil {

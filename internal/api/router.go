@@ -97,6 +97,12 @@ func NewRouter(cfg *RouterConfig) *chi.Mux {
 			organizationHandler := &handlers.OrganizationHandler{DB: cfg.DB}
 			r.Get("/organizations", organizationHandler.List)
 
+			platformHandler := &handlers.PlatformHandler{}
+			if cfg.DomainManager != nil {
+				platformHandler.DNSTargetIP = cfg.DomainManager.VPSHost
+			}
+			r.Get("/platform", platformHandler.Get)
+
 			// Projects
 			r.Get("/projects", projectHandler.List)
 			r.With(mutationLimiter.Middleware("project_create")).Post("/projects", projectHandler.Create)

@@ -10,12 +10,14 @@ import (
 
 const nginxProjectTemplate = `# Managed by Deployik - do not edit manually
 # Project: {{.ProjectName}}
+# Project ID: {{.ProjectID}}
 # Domain: {{.Domain}}
 
 server {
     listen 80;
     listen [::]:80;
     server_name {{.Domain}};
+    access_log off;
 
     location /.well-known/acme-challenge/ {
         root /var/www/html;
@@ -47,6 +49,7 @@ server {
     add_header Strict-Transport-Security "max-age=31536000" always;
     add_header X-Frame-Options "DENY" always;
     add_header X-Content-Type-Options "nosniff" always;
+    access_log /var/log/nginx/deployik-{{.ProjectID}}-{{.ProjectName}}-{{.Environment}}.json deployik_json;
 
     location / {
         set $upstream {{.ContainerName}}:3000;
@@ -69,8 +72,10 @@ server {
 
 // NginxConfig holds data for generating an nginx config.
 type NginxConfig struct {
+	ProjectID     string
 	ProjectName   string
 	Domain        string
+	Environment   string
 	SSLDomain     string // may differ for wildcard certs
 	ContainerName string
 }

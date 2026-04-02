@@ -85,8 +85,10 @@ func TestWriteNginxConfigUsesExplicitSSLDomain(t *testing.T) {
 	manager := &Manager{NginxConfDir: confDir}
 
 	confPath, err := manager.WriteNginxConfig(ProvisionConfig{
+		ProjectID:     "01KNTESTPROJECT",
 		ProjectName:   "acme-web",
 		Domain:        "acme-web.preview.example.com",
+		Environment:   "preview",
 		SSLDomain:     "preview.example.com",
 		ContainerName: "deployik-acme-web-preview",
 	})
@@ -106,5 +108,8 @@ func TestWriteNginxConfigUsesExplicitSSLDomain(t *testing.T) {
 	got := string(content)
 	if !strings.Contains(got, "/etc/nginx/certs/live/preview.example.com/fullchain.pem") {
 		t.Fatalf("expected config to reference explicit SSL domain, got:\n%s", got)
+	}
+	if !strings.Contains(got, "access_log /var/log/nginx/deployik-01KNTESTPROJECT-acme-web-preview.json deployik_json;") {
+		t.Fatalf("expected config to enable deployik usage logging, got:\n%s", got)
 	}
 }

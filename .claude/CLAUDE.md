@@ -96,6 +96,7 @@ internal/
   domain/
     ssl.go                Manager: ProvisionDomain (DNS verify -> certbot -> nginx -> reload)
     nginx.go              GenerateNginxConfig from Go template, RemoveNginxConfig
+    reconcile.go          Rewrites nginx configs for already-active Deployik domains on startup
     dns.go                VerifyDNS (A-record lookup against VPS IP)
 
   github/
@@ -214,6 +215,7 @@ SQLite with 6 migrations. Tables:
 - **Session model:** The SPA never stores tokens. `AuthCallback.tsx` exchanges `code` + `state`, the server sets `HttpOnly` cookies, `api.ts` uses `credentials: 'include'`, and route guards rehydrate auth via `/api/auth/me`.
 - **Refresh rotation:** Refresh tokens are opaque random strings, stored only as SHA-256 hashes in `refresh_tokens`, revoked on logout, and rotated every time `/api/auth/refresh` succeeds.
 - **Perimeter controls:** `cors.go` blocks origins outside `Config.AllowedOrigins`, `ratelimit.go` applies per-IP limits to auth/mutation/ws routes, and `audit/recorder.go` records security-relevant mutations to `audit_logs`.
+- **Usage telemetry:** Deployik-managed nginx configs now emit per-project JSON access logs at `/var/log/nginx/deployik-<project-id>-<project-name>-<environment>.json`; the monitoring stack can ship these to Loki for request, bandwidth, latency, and API-path analytics without writing raw events into SQLite.
 - **IDs:** ULIDs generated via `db.NewID()` (time-sortable, no collision risk)
 - **Encryption:** All sensitive values (GitHub tokens, env vars, secrets) encrypted with AES-256-GCM before storage. Key derived from `ENCRYPTION_KEY` env var via SHA-256.
 - **Migrations:** Embedded SQL files in `internal/db/migrations/`, applied in order, tracked in `_migrations` table. Each migration runs in a transaction.

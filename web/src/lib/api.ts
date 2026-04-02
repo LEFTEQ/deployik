@@ -11,6 +11,7 @@ import type {
   VariableScope,
   BuildLog,
   GitHubRepo,
+  PlatformInfo,
 } from "@/types/api";
 
 const API_URL = import.meta.env.VITE_API_URL || "/api";
@@ -108,6 +109,10 @@ class ApiClient {
 
   async listOrganizations(): Promise<Organization[]> {
     return this.request("/organizations");
+  }
+
+  async getPlatformInfo(): Promise<PlatformInfo> {
+    return this.request("/platform");
   }
 
   async logout(): Promise<void> {

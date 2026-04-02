@@ -205,8 +205,10 @@ func (h *DomainHandler) Verify(w http.ResponseWriter, r *http.Request) {
 	}
 
 	err = h.Manager.ProvisionDomain(domain.ProvisionConfig{
+		ProjectID:     project.ID,
 		ProjectName:   project.Name,
 		Domain:        target.DomainName,
+		Environment:   target.Environment,
 		ContainerName: "deployik-" + project.Name + "-" + target.Environment,
 	}, false)
 	if err != nil {

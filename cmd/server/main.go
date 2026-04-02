@@ -94,6 +94,12 @@ func main() {
 		Hub:           wsHub,
 	}
 
+	if targets, err := database.ListActiveDomainProvisionTargets(); err != nil {
+		log.Printf("Warning: failed to list active domains for nginx reconcile: %v", err)
+	} else if err := domain.ReconcileActiveConfigs(domainManager, targets); err != nil {
+		log.Printf("Warning: failed to reconcile active domain configs: %v", err)
+	}
+
 	// Configure OAuth
 	oauthConfig := &github.OAuthConfig{
 		ClientID:     cfg.GithubClientID,
