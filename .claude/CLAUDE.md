@@ -127,23 +127,28 @@ web/src/
   pages/
     Login.tsx             GitHub OAuth redirect
     AuthCallback.tsx      Exchanges code/state for cookie session, stores only user state
-    Projects.tsx          Dashboard: project list
+    Projects.tsx          Dashboard: project list with spinner-based loading states
     NewProject.tsx        Two-step: select repo -> configure build settings
-    ProjectDetail.tsx     Overview-first project workspace: command bar, endpoints strip, deployments, analytics, integration, settings
+    ProjectDetail.tsx     Overview-first project workspace using shadcn dashboard patterns: compact command bar, quick endpoint links, deployment history, analytics, integration, settings
     DeploymentDetail.tsx  Build log viewer with real-time WebSocket streaming
   components/
-    analytics/metric-chart.tsx  Reusable Recharts card wrapper for Deployik analytics charts
-    analytics/stat-card.tsx  Reusable stat KPI card for analytics and future dashboards
-    layout/AppLayout.tsx  Protected shell with desktop rail + mobile sheet navigation
-    layout/Sidebar.tsx    Narrow `/deployik` rail navigation + mobile sheet nav
+    analytics/metric-chart.tsx  Reusable shadcn chart-card wrapper built on ui/chart
+    analytics/stat-card.tsx  Reusable shadcn KPI summary card with CardAction/CardFooter layout
+    layout/AppLayout.tsx  Protected shell using shadcn SidebarProvider/SidebarInset
+    layout/Sidebar.tsx    App sidebar built on ui/sidebar with collapsible rail, workspace switcher, and user menu
+    layout/SiteHeader.tsx Compact app header with SidebarTrigger, workspace context, and global actions
     projects/build-settings.tsx  Reusable BuildSettingsFields component with framework + package manager presets
     projects/project-analytics.tsx  Analytics tab UI: filters, audience/runtime metrics, setup empty-state routing into Integration
     projects/project-integration.tsx  Analytics setup stepper: install, verify, track events
     BuildLog.tsx          Log viewer with auto-scroll, stderr highlighting
     ui/                   shadcn/ui components (button, card, dialog, input, etc.)
-    ui/code-panel.tsx     Reusable fixed-height scrollable code/prompt surface with sticky copy action
+    ui/code-panel.tsx     Reusable fixed-height scrollable code/prompt card with copy action
+    ui/spinner.tsx        Shared spinner + centered loading state used instead of skeleton loaders in app pages
+    ui/sidebar.tsx        Official shadcn sidebar shell primitives
+    ui/chart.tsx          Official shadcn chart primitives for Recharts
   hooks/
     useBuildLogs.ts       WebSocket hook for real-time build log streaming
+    use-mobile.ts         Shared mobile breakpoint hook used by shadcn sidebar/drawer
     use-organizations.ts  React Query + Zustand bridge for accessible organizations and selected workspace
   lib/
     api.ts                ApiClient class wrapping fetch with cookie auth, refresh retry, auto-logout on unrecoverable 401

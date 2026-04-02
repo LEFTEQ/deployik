@@ -1,6 +1,13 @@
 import type { ReactNode } from "react";
 
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Card,
+  CardAction,
+  CardDescription,
+  CardFooter,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
 import { cn } from "@/lib/utils";
 
 export function AnalyticsStatCard({
@@ -17,25 +24,26 @@ export function AnalyticsStatCard({
   className?: string;
 }) {
   return (
-    <Card className={cn("border-white/10", className)}>
-      <CardHeader className="flex flex-row items-start justify-between space-y-0 pb-3">
-        <CardTitle className="text-sm font-medium text-muted-foreground">
-          {label}
+    <Card
+      className={cn(
+        "@container/card bg-gradient-to-t from-primary/5 to-card shadow-xs",
+        className,
+      )}
+    >
+      <CardHeader>
+        <CardDescription>{label}</CardDescription>
+        <CardTitle className="text-2xl font-semibold tabular-nums @[250px]/card:text-3xl">
+          {value}
         </CardTitle>
         {icon ? (
-          <div className="text-muted-foreground/80">{icon}</div>
+          <CardAction className="text-muted-foreground">{icon}</CardAction>
         ) : null}
       </CardHeader>
-      <CardContent>
-        <div className="text-2xl font-semibold tracking-tight text-foreground">
-          {value}
-        </div>
+      <CardFooter className="flex-col items-start gap-1.5 text-sm">
         {hint ? (
-          <p className="mt-2 text-xs leading-relaxed text-muted-foreground">
-            {hint}
-          </p>
+          <p className="line-clamp-2 text-muted-foreground">{hint}</p>
         ) : null}
-      </CardContent>
+      </CardFooter>
     </Card>
   );
 }

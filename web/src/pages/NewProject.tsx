@@ -24,7 +24,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
-import { Skeleton } from "@/components/ui/skeleton";
+import { LoadingState, Spinner } from "@/components/ui/spinner";
 import {
   BuildSettingsFields,
   getFrameworkDefaults,
@@ -123,13 +123,11 @@ export function NewProject() {
 
         <div className="mt-4 space-y-2">
           {reposLoading ? (
-            Array.from({ length: 5 }).map((_, i) => (
-              <Card key={i}>
-                <CardContent className="flex items-center gap-3 p-4">
-                  <Skeleton className="h-5 w-48" />
-                </CardContent>
-              </Card>
-            ))
+            <LoadingState
+              title="Loading repositories…"
+              description="Fetching available GitHub repositories for import."
+              className="min-h-[320px]"
+            />
           ) : !filteredRepos?.length ? (
             <p className="py-8 text-center text-sm text-muted-foreground">
               {search ? "No matching repositories" : "No repositories found"}
@@ -216,7 +214,9 @@ export function NewProject() {
               <SelectTrigger id="organization">
                 <SelectValue
                   placeholder={
-                    organizationsLoading ? "Loading workspaces..." : "Select workspace"
+                    organizationsLoading
+                      ? "Loading workspaces..."
+                      : "Select workspace"
                   }
                 />
               </SelectTrigger>
@@ -293,7 +293,10 @@ export function NewProject() {
                 organizationsLoading
               }
             >
-              {createMutation.isPending ? "Creating..." : "Create Project"}
+              {createMutation.isPending ? (
+                <Spinner className="size-3.5" />
+              ) : null}
+              {createMutation.isPending ? "Creating…" : "Create Project"}
             </Button>
           </div>
         </CardContent>

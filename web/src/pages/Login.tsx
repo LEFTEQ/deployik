@@ -1,6 +1,6 @@
-import { Github } from 'lucide-react';
+import { GitBranch } from "lucide-react";
 
-const API_URL = import.meta.env.VITE_API_URL || '/api';
+const API_URL = import.meta.env.VITE_API_URL || "/api";
 
 export function Login() {
   const handleGithubLogin = () => {
@@ -21,7 +21,7 @@ export function Login() {
           onClick={handleGithubLogin}
           className="inline-flex w-full items-center justify-center gap-2 rounded-md bg-primary px-4 py-2.5 text-sm font-medium text-primary-foreground shadow-sm transition-colors hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
         >
-          <Github className="h-5 w-5" />
+          <GitBranch className="h-5 w-5" />
           Sign in with GitHub
         </button>
 

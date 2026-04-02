@@ -7,10 +7,16 @@ import { toast } from "sonner";
 import { AUDIENCE_STATUS_META } from "@/components/projects/project-analytics-meta";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Card,
+  CardAction,
+  CardContent,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
 import { CodePanel } from "@/components/ui/code-panel";
+import { LoadingState, Spinner } from "@/components/ui/spinner";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { api } from "@/lib/api";
 import { cn } from "@/lib/utils";
@@ -88,10 +94,11 @@ export function ProjectIntegrationTab({ projectId }: { projectId: string }) {
 
   if (isLoading) {
     return (
-      <div className="grid gap-4">
-        <Skeleton className="h-48 w-full" />
-        <Skeleton className="h-72 w-full" />
-      </div>
+      <LoadingState
+        title="Loading integration…"
+        description="Preparing the Umami install prompt, snippet, and verification status."
+        className="min-h-[340px]"
+      />
     );
   }
 
@@ -119,9 +126,8 @@ export function ProjectIntegrationTab({ projectId }: { projectId: string }) {
 
   return (
     <div className="space-y-4">
-      <Card className="overflow-hidden border-white/10">
-        <CardContent className="relative px-5 py-5 sm:px-6">
-          <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-primary/40 to-transparent" />
+      <Card className="@container/card overflow-hidden">
+        <CardContent className="px-5 py-5 sm:px-6">
           <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
             <div className="space-y-3">
               <div className="flex flex-wrap items-center gap-2">
@@ -151,7 +157,10 @@ export function ProjectIntegrationTab({ projectId }: { projectId: string }) {
               <Button
                 size="sm"
                 onClick={() =>
-                  copyValue(data.audience.install.ai_prompt, "AI install prompt")
+                  copyValue(
+                    data.audience.install.ai_prompt,
+                    "AI install prompt",
+                  )
                 }
               >
                 <Sparkles className="mr-1.5 h-3.5 w-3.5" />
@@ -173,12 +182,11 @@ export function ProjectIntegrationTab({ projectId }: { projectId: string }) {
                 onClick={() => verifyMutation.mutate()}
                 disabled={verifyMutation.isPending}
               >
-                <RefreshCcw
-                  className={cn(
-                    "mr-1.5 h-3.5 w-3.5",
-                    verifyMutation.isPending && "animate-spin",
-                  )}
-                />
+                {verifyMutation.isPending ? (
+                  <Spinner className="size-3.5" />
+                ) : (
+                  <RefreshCcw className="mr-1.5 h-3.5 w-3.5" />
+                )}
                 Verify
               </Button>
               {data.audience.open_url ? (
@@ -199,7 +207,10 @@ export function ProjectIntegrationTab({ projectId }: { projectId: string }) {
       </Card>
 
       <Tabs value={step} onValueChange={(value) => setStep(value as StepValue)}>
-        <TabsList className="h-auto flex-wrap justify-start gap-1 rounded-2xl border border-white/8 bg-black/10 p-1">
+        <TabsList
+          variant="line"
+          className="h-auto flex-wrap justify-start gap-1"
+        >
           <TabsTrigger value="install">Install</TabsTrigger>
           <TabsTrigger value="verify">Verify</TabsTrigger>
           <TabsTrigger value="events">Track Events</TabsTrigger>
@@ -207,7 +218,7 @@ export function ProjectIntegrationTab({ projectId }: { projectId: string }) {
 
         <TabsContent value="install" className="mt-4">
           <div className="grid gap-4 xl:grid-cols-[minmax(0,0.9fr)_minmax(320px,1.1fr)]">
-            <Card className="border-white/10">
+            <Card>
               <CardHeader>
                 <CardTitle className="text-base">Install Surface</CardTitle>
               </CardHeader>
@@ -224,7 +235,7 @@ export function ProjectIntegrationTab({ projectId }: { projectId: string }) {
                   label="Tracked domains"
                   value={data.audience.install.domains.all.length.toString()}
                 />
-                <div className="rounded-2xl border border-white/8 bg-black/10 p-4 text-sm text-muted-foreground">
+                <div className="rounded-xl border bg-muted/30 p-4 text-sm text-muted-foreground">
                   Use the AI prompt for framework-aware installation. Keep the
                   snippet path small and first-party, and avoid installing the
                   tracker more than once.
@@ -238,7 +249,10 @@ export function ProjectIntegrationTab({ projectId }: { projectId: string }) {
                 description="Paste this into Claude, Codex, or ChatGPT inside the app repository."
                 value={data.audience.install.ai_prompt}
                 onCopy={() =>
-                  copyValue(data.audience.install.ai_prompt, "AI install prompt")
+                  copyValue(
+                    data.audience.install.ai_prompt,
+                    "AI install prompt",
+                  )
                 }
               />
               <CodePanel
@@ -256,9 +270,23 @@ export function ProjectIntegrationTab({ projectId }: { projectId: string }) {
 
         <TabsContent value="verify" className="mt-4">
           <div className="grid gap-4 xl:grid-cols-[minmax(0,0.72fr)_minmax(340px,1fr)]">
-            <Card className="border-white/10">
+            <Card>
               <CardHeader>
                 <CardTitle className="text-base">Verification Status</CardTitle>
+                <CardAction>
+                  <Button
+                    size="sm"
+                    onClick={() => verifyMutation.mutate()}
+                    disabled={verifyMutation.isPending}
+                  >
+                    {verifyMutation.isPending ? (
+                      <Spinner className="size-3.5" />
+                    ) : (
+                      <RefreshCcw className="mr-1.5 h-3.5 w-3.5" />
+                    )}
+                    Verify
+                  </Button>
+                </CardAction>
               </CardHeader>
               <CardContent className="space-y-3">
                 <InfoTile
@@ -275,28 +303,21 @@ export function ProjectIntegrationTab({ projectId }: { projectId: string }) {
                   value={data.audience.verified_at || "Not verified yet"}
                 />
                 {data.audience.error ? (
-                  <div className="rounded-2xl border border-rose-400/25 bg-rose-400/10 px-4 py-3 text-sm text-rose-100">
+                  <div className="rounded-xl border border-rose-400/25 bg-rose-400/10 px-4 py-3 text-sm text-rose-100">
                     {data.audience.error}
                   </div>
                 ) : null}
-                <div className="rounded-2xl border border-primary/20 bg-primary/10 px-4 py-3 text-sm text-slate-100">
+                <div className="rounded-xl border border-primary/20 bg-primary/10 px-4 py-3 text-sm text-slate-100">
                   {meta.description}
                 </div>
-                <Button onClick={() => verifyMutation.mutate()} disabled={verifyMutation.isPending}>
-                  <RefreshCcw
-                    className={cn(
-                      "mr-1.5 h-3.5 w-3.5",
-                      verifyMutation.isPending && "animate-spin",
-                    )}
-                  />
-                  Verify installation
-                </Button>
               </CardContent>
             </Card>
 
-            <Card className="border-white/10">
+            <Card>
               <CardHeader>
-                <CardTitle className="text-base">Recent host coverage</CardTitle>
+                <CardTitle className="text-base">
+                  Recent host coverage
+                </CardTitle>
               </CardHeader>
               <CardContent>
                 <ScrollArea className="h-72">
@@ -305,13 +326,13 @@ export function ProjectIntegrationTab({ projectId }: { projectId: string }) {
                       data.audience.install.domains.all.map((domain) => (
                         <div
                           key={domain}
-                          className="rounded-2xl border border-white/8 bg-black/10 px-3 py-3 text-sm text-foreground"
+                          className="rounded-lg border bg-muted/30 px-3 py-3 text-sm text-foreground"
                         >
                           {domain}
                         </div>
                       ))
                     ) : (
-                      <div className="rounded-2xl border border-dashed border-white/10 px-4 py-12 text-sm text-muted-foreground">
+                      <div className="rounded-xl border border-dashed border-border/70 px-4 py-12 text-sm text-muted-foreground">
                         No verified domains are attached to this project yet.
                       </div>
                     )}
@@ -324,7 +345,7 @@ export function ProjectIntegrationTab({ projectId }: { projectId: string }) {
 
         <TabsContent value="events" className="mt-4">
           <div className="grid gap-4 xl:grid-cols-[minmax(0,0.78fr)_minmax(320px,1fr)]">
-            <Card className="border-white/10">
+            <Card>
               <CardHeader>
                 <CardTitle className="text-base">Track Events</CardTitle>
               </CardHeader>
@@ -335,7 +356,7 @@ export function ProjectIntegrationTab({ projectId }: { projectId: string }) {
                   meaningful product events: conversion starts, completed
                   submissions, purchases, upgrades, and activation milestones.
                 </p>
-                <div className="rounded-2xl border border-white/8 bg-black/10 p-4">
+                <div className="rounded-xl border bg-muted/30 p-4">
                   Recommended event names:
                   <ul className="mt-3 space-y-1 font-mono text-xs text-slate-100">
                     <li>`signup_started`</li>
@@ -371,7 +392,7 @@ function InfoTile({
   valueClassName?: string;
 }) {
   return (
-    <div className="rounded-2xl border border-white/8 bg-black/10 px-4 py-3">
+    <div className="rounded-xl border bg-muted/30 px-4 py-3">
       <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">
         {label}
       </p>

@@ -1,18 +1,26 @@
-import { useState } from "react";
-
 import { Link, useMatchRoute } from "@tanstack/react-router";
 import {
+  Blocks,
   Building2,
-  LayoutDashboard,
+  ChevronsUpDown,
+  FolderKanban,
   LogOut,
-  Menu,
   Plus,
 } from "lucide-react";
 
 import { useAuthStore } from "@/store/auth";
 import { useOrganizationStore } from "@/store/organization";
+import { useOrganizations } from "@/hooks/use-organizations";
+import { api } from "@/lib/api";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import {
   Select,
   SelectContent,
@@ -21,80 +29,154 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import {
-  Sheet,
-  SheetContent,
-  SheetHeader,
-  SheetTitle,
-  SheetTrigger,
-} from "@/components/ui/sheet";
-import { Skeleton } from "@/components/ui/skeleton";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
-import { useOrganizations } from "@/hooks/use-organizations";
-import { api } from "@/lib/api";
-import { cn } from "@/lib/utils";
+  Sidebar,
+  SidebarContent,
+  SidebarFooter,
+  SidebarGroup,
+  SidebarGroupContent,
+  SidebarGroupLabel,
+  SidebarHeader,
+  SidebarMenu,
+  SidebarMenuButton,
+  SidebarMenuItem,
+  SidebarRail,
+  useSidebar,
+} from "@/components/ui/sidebar";
 
 const navItems = [
-  { to: "/" as const, label: "Projects", icon: LayoutDashboard },
-  { to: "/new" as const, label: "New Project", icon: Plus },
+  {
+    to: "/" as const,
+    label: "Projects",
+    icon: FolderKanban,
+    matchFuzzy: true,
+  },
+  {
+    to: "/new" as const,
+    label: "New Project",
+    icon: Plus,
+    matchFuzzy: false,
+  },
 ];
 
-export function Sidebar() {
+export function AppSidebar() {
+  const { organizations, selectedOrganizationId, setSelectedOrganizationId } =
+    useOrganizations();
+
   return (
-    <aside className="hidden h-screen w-24 shrink-0 border-r border-white/6 bg-sidebar-background/85 backdrop-blur-2xl md:block lg:w-28">
-      <SidebarNavigation compact />
-    </aside>
+    <Sidebar collapsible="icon" variant="inset" className="border-r-0">
+      <SidebarHeader className="gap-3">
+        <SidebarMenu>
+          <SidebarMenuItem>
+            <SidebarMenuButton asChild size="lg" tooltip="Deployik">
+              <Link to="/">
+                <div className="flex aspect-square size-8 items-center justify-center rounded-lg bg-primary/12 text-primary">
+                  <Blocks className="size-4" />
+                </div>
+                <div className="grid flex-1 text-left text-sm leading-tight">
+                  <span className="truncate font-mono text-[13px] font-semibold tracking-[0.16em]">
+                    /deployik
+                  </span>
+                  <span className="truncate text-xs text-muted-foreground">
+                    Release Workspace
+                  </span>
+                </div>
+              </Link>
+            </SidebarMenuButton>
+          </SidebarMenuItem>
+        </SidebarMenu>
+
+        <SidebarGroup className="pt-0">
+          <SidebarGroupLabel>Workspace</SidebarGroupLabel>
+          <SidebarGroupContent>
+            <div className="group-data-[collapsible=icon]:hidden">
+              <Select
+                value={selectedOrganizationId ?? undefined}
+                onValueChange={setSelectedOrganizationId}
+              >
+                <SelectTrigger
+                  className="h-9 w-full bg-sidebar-accent/30"
+                  aria-label="Select workspace"
+                >
+                  <SelectValue placeholder="Workspace" />
+                </SelectTrigger>
+                <SelectContent>
+                  {organizations.map((organization) => (
+                    <SelectItem key={organization.id} value={organization.id}>
+                      {organization.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <SidebarMenu className="hidden group-data-[collapsible=icon]:flex">
+              <SidebarMenuItem>
+                <SidebarMenuButton tooltip="Workspace">
+                  <Building2 />
+                  <span>Workspace</span>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+            </SidebarMenu>
+          </SidebarGroupContent>
+        </SidebarGroup>
+      </SidebarHeader>
+
+      <SidebarContent>
+        <SidebarGroup>
+          <SidebarGroupLabel>Navigation</SidebarGroupLabel>
+          <SidebarGroupContent>
+            <SidebarMenu>
+              {navItems.map(({ to, label, icon: Icon, matchFuzzy }) => (
+                <PrimaryNavItem
+                  key={to}
+                  to={to}
+                  label={label}
+                  icon={Icon}
+                  matchFuzzy={matchFuzzy}
+                />
+              ))}
+            </SidebarMenu>
+          </SidebarGroupContent>
+        </SidebarGroup>
+      </SidebarContent>
+
+      <SidebarFooter>
+        <NavUser />
+      </SidebarFooter>
+      <SidebarRail />
+    </Sidebar>
   );
 }
 
-export function MobileSidebarNav() {
-  const [open, setOpen] = useState(false);
-
-  return (
-    <Sheet open={open} onOpenChange={setOpen}>
-      <SheetTrigger asChild>
-        <Button
-          variant="ghost"
-          size="icon"
-          className="md:hidden"
-          aria-label="Open navigation"
-        >
-          <Menu className="h-5 w-5" />
-        </Button>
-      </SheetTrigger>
-      <SheetContent
-        side="left"
-        className="w-80 border-white/10 bg-[#0b1220]/98 px-0 backdrop-blur-2xl"
-      >
-        <SheetHeader className="px-5">
-          <SheetTitle className="font-mono text-sm tracking-[0.18em] text-slate-100">
-            /deployik
-          </SheetTitle>
-        </SheetHeader>
-        <SidebarNavigation onNavigate={() => setOpen(false)} />
-      </SheetContent>
-    </Sheet>
-  );
-}
-
-function SidebarNavigation({
-  compact = false,
-  onNavigate,
+function PrimaryNavItem({
+  to,
+  label,
+  icon: Icon,
+  matchFuzzy,
 }: {
-  compact?: boolean;
-  onNavigate?: () => void;
+  to: "/" | "/new";
+  label: string;
+  icon: typeof FolderKanban;
+  matchFuzzy: boolean;
 }) {
-  const { user, clearAuth } = useAuthStore();
-  const {
-    organizations,
-    selectedOrganizationId,
-    setSelectedOrganizationId,
-    isLoading: organizationsLoading,
-  } = useOrganizations();
   const matchRoute = useMatchRoute();
+  const isActive = Boolean(matchRoute({ to, fuzzy: matchFuzzy }));
+
+  return (
+    <SidebarMenuItem>
+      <SidebarMenuButton asChild isActive={isActive} tooltip={label}>
+        <Link to={to}>
+          <Icon />
+          <span>{label}</span>
+        </Link>
+      </SidebarMenuButton>
+    </SidebarMenuItem>
+  );
+}
+
+function NavUser() {
+  const { user, clearAuth } = useAuthStore();
+  const { isMobile } = useSidebar();
 
   const handleLogout = async () => {
     try {
@@ -103,158 +185,78 @@ function SidebarNavigation({
       useOrganizationStore.getState().clearSelection();
       clearAuth();
     }
+
     window.location.href = "/login";
   };
 
   return (
-    <div
-      className={cn(
-        "flex h-full flex-col",
-        compact ? "px-3 py-4" : "px-4 py-5",
-      )}
-    >
-      <div className={cn("space-y-3", compact ? "items-center" : "")}>
-        <div
-          className={cn(
-            "font-mono text-[12px] tracking-[0.22em] text-slate-100",
-            compact ? "px-1 text-center" : "px-1",
-          )}
-        >
-          /deployik
-        </div>
-
-        <div className="space-y-2">
-          <div
-            className={cn(
-              "flex items-center gap-2 px-1 text-[11px] uppercase tracking-[0.22em] text-muted-foreground",
-              compact && "justify-center",
-            )}
+    <SidebarMenu>
+      <SidebarMenuItem>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <SidebarMenuButton
+              size="lg"
+              className="data-[state=open]:bg-sidebar-accent data-[state=open]:text-sidebar-accent-foreground"
+              tooltip={user?.username ?? "Account"}
+            >
+              <Avatar className="h-8 w-8 rounded-lg">
+                <AvatarImage src={user?.avatar_url} alt={user?.username} />
+                <AvatarFallback className="rounded-lg">
+                  {user?.username?.[0]?.toUpperCase() ?? "D"}
+                </AvatarFallback>
+              </Avatar>
+              <div className="grid flex-1 text-left text-sm leading-tight">
+                <span className="truncate font-medium">{user?.username}</span>
+                <span className="truncate text-xs text-muted-foreground">
+                  {user?.role ?? "member"}
+                </span>
+              </div>
+              <ChevronsUpDown className="ml-auto size-4" />
+            </SidebarMenuButton>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent
+            className="w-(--radix-dropdown-menu-trigger-width) min-w-56 rounded-lg"
+            side={isMobile ? "bottom" : "right"}
+            align="end"
+            sideOffset={4}
           >
-            <Building2 className="h-3.5 w-3.5" />
-            {!compact ? "Workspace" : null}
-          </div>
-
-          {organizationsLoading ? (
-            <Skeleton
-              className={cn(
-                "rounded-2xl",
-                compact ? "h-11 w-full" : "h-11 w-full",
-              )}
-            />
-          ) : organizations.length ? (
-            <Select
-              value={selectedOrganizationId ?? undefined}
-              onValueChange={setSelectedOrganizationId}
-            >
-              <SelectTrigger
-                className={cn(
-                  "rounded-2xl border-white/10 bg-white/5 text-left shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]",
-                  compact
-                    ? "h-11 px-2 text-[11px]"
-                    : "h-11 px-3 text-sm",
-                )}
-              >
-                <SelectValue placeholder="Workspace" />
-              </SelectTrigger>
-              <SelectContent>
-                {organizations.map((organization) => (
-                  <SelectItem key={organization.id} value={organization.id}>
-                    {organization.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          ) : (
-            <p
-              className={cn(
-                "text-xs text-muted-foreground",
-                compact ? "px-1 text-center" : "px-1",
-              )}
-            >
-              No workspaces.
-            </p>
-          )}
-        </div>
-      </div>
-
-      <nav
-        className={cn(
-          "flex-1",
-          compact ? "mt-6 space-y-2" : "mt-8 space-y-1.5",
-        )}
-      >
-        {navItems.map(({ to, label, icon: Icon }) => {
-          const isActive = matchRoute({ to, fuzzy: to !== "/" });
-          const item = (
-            <Link
-              key={to}
-              to={to}
-              onClick={onNavigate}
-              className={cn(
-                "group flex items-center rounded-2xl transition-all",
-                compact
-                  ? "justify-center px-3 py-3"
-                  : "gap-3 px-3.5 py-2.5 text-sm font-medium",
-                isActive
-                  ? "bg-primary/14 text-primary shadow-[inset_0_0_0_1px_rgba(125,153,255,0.18)]"
-                  : "text-muted-foreground hover:bg-accent/80 hover:text-accent-foreground",
-              )}
-            >
-              <Icon className="h-4 w-4" />
-              {!compact ? <span>{label}</span> : null}
-            </Link>
-          );
-
-          if (!compact) return item;
-
-          return (
-            <Tooltip key={to}>
-              <TooltipTrigger asChild>{item}</TooltipTrigger>
-              <TooltipContent side="right" sideOffset={10}>
-                {label}
-              </TooltipContent>
-            </Tooltip>
-          );
-        })}
-      </nav>
-
-      <div
-        className={cn(
-          "rounded-2xl border border-white/6 bg-black/10",
-          compact ? "p-2" : "p-3",
-        )}
-      >
-        <div
-          className={cn(
-            "flex items-center gap-3",
-            compact && "flex-col justify-center gap-2",
-          )}
-        >
-          <Avatar className={cn(compact ? "h-9 w-9" : "h-9 w-9")}>
-            <AvatarImage src={user?.avatar_url} alt={user?.username} />
-            <AvatarFallback>
-              {user?.username?.[0]?.toUpperCase()}
-            </AvatarFallback>
-          </Avatar>
-          {!compact ? (
-            <div className="min-w-0 flex-1">
-              <p className="truncate text-sm font-medium text-foreground">
-                {user?.username}
-              </p>
-              <p className="text-xs text-muted-foreground">{user?.role}</p>
-            </div>
-          ) : null}
-          <Button
-            variant="ghost"
-            size="icon"
-            className="h-8 w-8 shrink-0"
-            onClick={handleLogout}
-            aria-label="Log out"
-          >
-            <LogOut className="h-4 w-4" />
-          </Button>
-        </div>
-      </div>
-    </div>
+            <DropdownMenuLabel className="p-0 font-normal">
+              <div className="flex items-center gap-2 px-2 py-2 text-left text-sm">
+                <Avatar className="h-8 w-8 rounded-lg">
+                  <AvatarImage src={user?.avatar_url} alt={user?.username} />
+                  <AvatarFallback className="rounded-lg">
+                    {user?.username?.[0]?.toUpperCase() ?? "D"}
+                  </AvatarFallback>
+                </Avatar>
+                <div className="grid flex-1 text-left text-sm leading-tight">
+                  <span className="truncate font-medium">{user?.username}</span>
+                  <span className="truncate text-xs text-muted-foreground">
+                    {user?.role ?? "member"}
+                  </span>
+                </div>
+              </div>
+            </DropdownMenuLabel>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem asChild>
+              <Link to="/">
+                <FolderKanban />
+                Projects
+              </Link>
+            </DropdownMenuItem>
+            <DropdownMenuItem asChild>
+              <Link to="/new">
+                <Plus />
+                New Project
+              </Link>
+            </DropdownMenuItem>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem onClick={handleLogout}>
+              <LogOut />
+              Log Out
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+      </SidebarMenuItem>
+    </SidebarMenu>
   );
 }

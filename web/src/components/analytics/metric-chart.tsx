@@ -1,21 +1,21 @@
-import {
-  Area,
-  AreaChart,
-  CartesianGrid,
-  Legend,
-  ResponsiveContainer,
-  Tooltip,
-  XAxis,
-  YAxis,
-} from "recharts";
+import { Area, AreaChart, CartesianGrid, XAxis, YAxis } from "recharts";
 
 import {
   Card,
+  CardAction,
   CardContent,
   CardDescription,
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import {
+  ChartContainer,
+  ChartLegend,
+  ChartLegendContent,
+  ChartTooltip,
+  ChartTooltipContent,
+  type ChartConfig,
+} from "@/components/ui/chart";
 
 export type AnalyticsChartSeries = {
   key: string;
@@ -41,99 +41,115 @@ export function AnalyticsMetricChart({
   series: AnalyticsChartSeries[];
   valueFormatter?: (value: number) => string;
 }) {
+  const config = series.reduce<ChartConfig>((acc, item) => {
+    acc[item.key] = {
+      label: item.label,
+      color: item.color,
+    };
+    return acc;
+  }, {});
+
   return (
-    <Card className="min-w-0 border-white/10">
+    <Card className="@container/card min-w-0">
       <CardHeader>
-        <CardTitle className="text-base">{title}</CardTitle>
-        {description ? <CardDescription>{description}</CardDescription> : null}
+        <div>
+          <CardTitle className="text-base">{title}</CardTitle>
+          {description ? (
+            <CardDescription>{description}</CardDescription>
+          ) : null}
+        </div>
+        <CardAction className="hidden @[720px]/card:flex">
+          <ChartLegend
+            content={<ChartLegendContent />}
+            verticalAlign="top"
+            align="right"
+          />
+        </CardAction>
       </CardHeader>
-      <CardContent>
+      <CardContent className="px-2 pb-2 pt-4 sm:px-6">
         {data.length ? (
-          <div className="h-72 min-w-0">
-            <ResponsiveContainer width="100%" height="100%">
-              <AreaChart data={data}>
-                <defs>
-                  {series.map((item) => (
-                    <linearGradient
-                      key={item.key}
-                      id={`analytics-gradient-${item.key}`}
-                      x1="0"
-                      y1="0"
-                      x2="0"
-                      y2="1"
-                    >
-                      <stop
-                        offset="5%"
-                        stopColor={item.color}
-                        stopOpacity={0.28}
-                      />
-                      <stop
-                        offset="95%"
-                        stopColor={item.color}
-                        stopOpacity={0}
-                      />
-                    </linearGradient>
-                  ))}
-                </defs>
-                <CartesianGrid
-                  vertical={false}
-                  stroke="rgba(255,255,255,0.08)"
-                />
-                <XAxis
-                  dataKey="label"
-                  tickLine={false}
-                  axisLine={false}
-                  tickMargin={10}
-                  minTickGap={24}
-                  stroke="rgba(255,255,255,0.5)"
-                />
-                <YAxis
-                  tickLine={false}
-                  axisLine={false}
-                  tickMargin={10}
-                  stroke="rgba(255,255,255,0.5)"
-                  tickFormatter={(value) =>
-                    valueFormatter
-                      ? valueFormatter(Number(value))
-                      : String(value)
-                  }
-                />
-                <Tooltip
-                  cursor={{ stroke: "rgba(255,255,255,0.16)", strokeWidth: 1 }}
-                  contentStyle={{
-                    borderRadius: 16,
-                    border: "1px solid rgba(255,255,255,0.12)",
-                    background: "rgba(10, 15, 27, 0.95)",
-                    boxShadow: "0 24px 72px rgba(0,0,0,0.35)",
-                  }}
-                  formatter={(value, name) => {
-                    const numericValue = Number(value ?? 0);
-                    return [
-                      valueFormatter
-                        ? valueFormatter(numericValue)
-                        : numericValue.toLocaleString(),
-                      String(name),
-                    ];
-                  }}
-                />
-                <Legend />
+          <ChartContainer
+            config={config}
+            className="aspect-auto h-[280px] w-full"
+          >
+            <AreaChart data={data}>
+              <defs>
                 {series.map((item) => (
-                  <Area
+                  <linearGradient
                     key={item.key}
-                    type="monotone"
-                    dataKey={item.key}
-                    name={item.label}
-                    stroke={item.color}
-                    fill={`url(#analytics-gradient-${item.key})`}
-                    strokeWidth={2.2}
-                    isAnimationActive={false}
-                  />
+                    id={`analytics-gradient-${item.key}`}
+                    x1="0"
+                    y1="0"
+                    x2="0"
+                    y2="1"
+                  >
+                    <stop
+                      offset="5%"
+                      stopColor={`var(--color-${item.key})`}
+                      stopOpacity={0.28}
+                    />
+                    <stop
+                      offset="95%"
+                      stopColor={`var(--color-${item.key})`}
+                      stopOpacity={0}
+                    />
+                  </linearGradient>
                 ))}
-              </AreaChart>
-            </ResponsiveContainer>
-          </div>
+              </defs>
+              <CartesianGrid vertical={false} />
+              <XAxis
+                dataKey="label"
+                tickLine={false}
+                axisLine={false}
+                tickMargin={8}
+                minTickGap={28}
+              />
+              <YAxis
+                tickLine={false}
+                axisLine={false}
+                tickMargin={8}
+                tickFormatter={(value) =>
+                  valueFormatter ? valueFormatter(Number(value)) : String(value)
+                }
+              />
+              <ChartTooltip
+                cursor={false}
+                content={
+                  <ChartTooltipContent
+                    indicator="dot"
+                    formatter={(value, name) => {
+                      const numericValue = Number(value ?? 0);
+                      return [
+                        valueFormatter
+                          ? valueFormatter(numericValue)
+                          : numericValue.toLocaleString(),
+                        String(name),
+                      ];
+                    }}
+                  />
+                }
+              />
+              <ChartLegend
+                className="@[720px]/card:hidden"
+                content={<ChartLegendContent />}
+                verticalAlign="bottom"
+              />
+              {series.map((item) => (
+                <Area
+                  key={item.key}
+                  dataKey={item.key}
+                  name={item.label}
+                  type="natural"
+                  fill={`url(#analytics-gradient-${item.key})`}
+                  stroke={`var(--color-${item.key})`}
+                  strokeWidth={2}
+                  isAnimationActive={false}
+                />
+              ))}
+            </AreaChart>
+          </ChartContainer>
         ) : (
-          <div className="rounded-2xl border border-dashed border-white/10 px-4 py-12 text-sm text-muted-foreground">
+          <div className="rounded-xl border border-dashed border-border/70 px-4 py-12 text-sm text-muted-foreground">
             No chart data for the selected window yet.
           </div>
         )}

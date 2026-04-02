@@ -1,20 +1,20 @@
-import { useQuery } from '@tanstack/react-query';
-import { Link } from '@tanstack/react-router';
-import { Plus, GitBranch, Clock, Circle } from 'lucide-react';
-import { formatDistanceToNow } from 'date-fns';
-import { api } from '@/lib/api';
-import { useOrganizations } from '@/hooks/use-organizations';
-import { Button } from '@/components/ui/button';
+import { useQuery } from "@tanstack/react-query";
+import { Link } from "@tanstack/react-router";
+import { Plus, GitBranch, Clock, Circle } from "lucide-react";
+import { formatDistanceToNow } from "date-fns";
+import { api } from "@/lib/api";
+import { useOrganizations } from "@/hooks/use-organizations";
+import { Button } from "@/components/ui/button";
 import {
   Card,
   CardContent,
   CardDescription,
   CardHeader,
   CardTitle,
-} from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
-import { Skeleton } from '@/components/ui/skeleton';
-import type { Project } from '@/types/api';
+} from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { LoadingState } from "@/components/ui/spinner";
+import type { Project } from "@/types/api";
 
 function ProjectCard({ project }: { project: Project }) {
   return (
@@ -37,7 +37,7 @@ function ProjectCard({ project }: { project: Project }) {
               ) : null}
             </div>
             <Badge
-              variant={project.status === 'active' ? 'default' : 'secondary'}
+              variant={project.status === "active" ? "default" : "secondary"}
             >
               <Circle className="mr-1 h-2 w-2 fill-current" />
               {project.status}
@@ -71,7 +71,7 @@ export function Projects() {
     isLoading: organizationsLoading,
   } = useOrganizations();
   const { data: projects, isLoading } = useQuery({
-    queryKey: ['projects', selectedOrganizationId ?? 'all'],
+    queryKey: ["projects", selectedOrganizationId ?? "all"],
     queryFn: () => api.listProjects(selectedOrganizationId ?? undefined),
     enabled: !organizationsLoading,
   });
@@ -80,14 +80,17 @@ export function Projects() {
     <div className="p-6">
       <div className="mb-6 flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
         <div>
-          <Badge variant="outline" className="mb-3 border-primary/25 bg-primary/10 text-primary">
+          <Badge
+            variant="outline"
+            className="mb-3 border-primary/25 bg-primary/10 text-primary"
+          >
             Deploy faster
           </Badge>
           <h1 className="text-2xl font-bold tracking-tight">Projects</h1>
           <p className="text-sm text-muted-foreground">
             {selectedOrganization
               ? `${selectedOrganization.name} workspace`
-              : 'Manage your deployed applications'}
+              : "Manage your deployed applications"}
           </p>
         </div>
         <Link to="/new">
@@ -99,19 +102,11 @@ export function Projects() {
       </div>
 
       {organizationsLoading || isLoading ? (
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {[1, 2, 3].map((i) => (
-            <Card key={i}>
-              <CardHeader>
-                <Skeleton className="h-5 w-32" />
-                <Skeleton className="mt-1 h-4 w-48" />
-              </CardHeader>
-              <CardContent>
-                <Skeleton className="h-4 w-40" />
-              </CardContent>
-            </Card>
-          ))}
-        </div>
+        <LoadingState
+          title="Loading projects…"
+          description="Fetching your workspaces and deployed projects."
+          className="min-h-[360px]"
+        />
       ) : !organizations.length ? (
         <Card className="flex flex-col items-center justify-center py-16">
           <p className="text-lg font-medium">No workspaces found</p>
@@ -123,7 +118,8 @@ export function Projects() {
         <Card className="flex flex-col items-center justify-center py-16">
           <p className="text-lg font-medium">No projects in this workspace</p>
           <p className="mt-1 text-sm text-muted-foreground">
-            Create a project in {selectedOrganization?.name ?? 'this workspace'} to get started
+            Create a project in {selectedOrganization?.name ?? "this workspace"}{" "}
+            to get started
           </p>
           <Link to="/new" className="mt-4">
             <Button>

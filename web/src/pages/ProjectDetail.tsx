@@ -38,12 +38,13 @@ import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Card,
+  CardAction,
   CardContent,
+  CardFooter,
   CardDescription,
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { Skeleton } from "@/components/ui/skeleton";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -73,6 +74,14 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import {
+  Drawer,
+  DrawerContent,
+  DrawerDescription,
+  DrawerFooter,
+  DrawerHeader,
+  DrawerTitle,
+} from "@/components/ui/drawer";
+import {
   Sheet,
   SheetContent,
   SheetDescription,
@@ -81,6 +90,8 @@ import {
   SheetTitle,
 } from "@/components/ui/sheet";
 import { type ReactNode, useEffect, useState } from "react";
+import { LoadingState } from "@/components/ui/spinner";
+import { useIsMobile } from "@/hooks/use-mobile";
 import type {
   Deployment,
   DeploymentStatus,
@@ -264,6 +275,7 @@ export function ProjectDetail() {
   const { id } = useParams({ strict: false }) as { id: string };
   const navigate = useNavigate();
   const queryClient = useQueryClient();
+  const isMobile = useIsMobile();
   const [activeTab, setActiveTab] = useState<ProjectTabValue>("overview");
   const [releaseSheetOpen, setReleaseSheetOpen] = useState(false);
   const [releaseTagName, setReleaseTagName] = useState(buildReleaseTagName());
@@ -326,9 +338,11 @@ export function ProjectDetail() {
   if (isLoading) {
     return (
       <div className="p-6">
-        <Skeleton className="h-8 w-48" />
-        <Skeleton className="mt-2 h-5 w-64" />
-        <Skeleton className="mt-6 h-64 w-full" />
+        <LoadingState
+          title="Loading project…"
+          description="Fetching project details, deployments, and public endpoints."
+          className="min-h-[420px]"
+        />
       </div>
     );
   }
@@ -356,14 +370,6 @@ export function ProjectDetail() {
 
   return (
     <div className="space-y-5 p-6">
-      <Link
-        to="/"
-        className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
-      >
-        <ArrowLeft className="h-4 w-4" />
-        Back to projects
-      </Link>
-
       <ProjectCommandBar
         project={project}
         latestDeployment={latestDeployment}
@@ -378,8 +384,14 @@ export function ProjectDetail() {
         onOpenLogs={openLatestLogs}
       />
 
-      <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as ProjectTabValue)}>
-        <TabsList className="h-auto w-full justify-start gap-1 overflow-x-auto rounded-2xl border border-white/8 bg-black/10 p-1">
+      <Tabs
+        value={activeTab}
+        onValueChange={(value) => setActiveTab(value as ProjectTabValue)}
+      >
+        <TabsList
+          variant="line"
+          className="h-auto w-full justify-start gap-1 overflow-x-auto"
+        >
           <TabsTrigger value="overview">
             <LayoutGrid className="mr-1.5 h-3.5 w-3.5" />
             Overview
@@ -453,106 +465,171 @@ export function ProjectDetail() {
         </TabsContent>
       </Tabs>
 
-      <Sheet open={releaseSheetOpen} onOpenChange={setReleaseSheetOpen}>
-        <SheetContent
-          side="bottom"
-          className="mx-auto w-full max-w-3xl rounded-t-3xl border-white/10 bg-[#0b1220]/98 px-6 pb-6 pt-5 backdrop-blur-2xl"
-        >
-          <SheetHeader>
-            <SheetTitle>Release to production</SheetTitle>
-            <SheetDescription>
-              Deployik will create a git tag and queue a production deployment
-              from that tagged ref.
-            </SheetDescription>
-          </SheetHeader>
+      {isMobile ? (
+        <Drawer open={releaseSheetOpen} onOpenChange={setReleaseSheetOpen}>
+          <DrawerContent className="border-white/10 bg-[#0b1220]/98">
+            <DrawerHeader>
+              <DrawerTitle>Release to Production</DrawerTitle>
+              <DrawerDescription>
+                Deployik will create a git tag and queue a production deployment
+                from that tagged ref.
+              </DrawerDescription>
+            </DrawerHeader>
+            <ReleasePanelContent
+              project={project}
+              domains={domains}
+              releaseTagName={releaseTagName}
+              onReleaseTagChange={setReleaseTagName}
+            />
+            <DrawerFooter>
+              <Button
+                variant="outline"
+                onClick={() => setReleaseSheetOpen(false)}
+                disabled={deploymentMutation.isPending}
+              >
+                Cancel
+              </Button>
+              <Button
+                onClick={() =>
+                  deploymentMutation.mutate({
+                    environment: "production",
+                    create_tag: true,
+                    tag_name: releaseTagName.trim(),
+                  })
+                }
+                disabled={
+                  !releaseTagName.trim() || deploymentMutation.isPending
+                }
+              >
+                <GlobeLock className="mr-1.5 h-3.5 w-3.5" />
+                {deploymentMutation.isPending ? "Queueing release…" : "Release"}
+              </Button>
+            </DrawerFooter>
+          </DrawerContent>
+        </Drawer>
+      ) : (
+        <Sheet open={releaseSheetOpen} onOpenChange={setReleaseSheetOpen}>
+          <SheetContent
+            side="bottom"
+            className="mx-auto w-full max-w-3xl rounded-t-3xl border-white/10 bg-[#0b1220]/98 px-6 pb-6 pt-5 backdrop-blur-2xl"
+          >
+            <SheetHeader>
+              <SheetTitle>Release to Production</SheetTitle>
+              <SheetDescription>
+                Deployik will create a git tag and queue a production deployment
+                from that tagged ref.
+              </SheetDescription>
+            </SheetHeader>
+            <ReleasePanelContent
+              project={project}
+              domains={domains}
+              releaseTagName={releaseTagName}
+              onReleaseTagChange={setReleaseTagName}
+            />
+            <SheetFooter className="mt-6">
+              <Button
+                variant="outline"
+                onClick={() => setReleaseSheetOpen(false)}
+                disabled={deploymentMutation.isPending}
+              >
+                Cancel
+              </Button>
+              <Button
+                onClick={() =>
+                  deploymentMutation.mutate({
+                    environment: "production",
+                    create_tag: true,
+                    tag_name: releaseTagName.trim(),
+                  })
+                }
+                disabled={
+                  !releaseTagName.trim() || deploymentMutation.isPending
+                }
+              >
+                <GlobeLock className="mr-1.5 h-3.5 w-3.5" />
+                {deploymentMutation.isPending ? "Queueing release…" : "Release"}
+              </Button>
+            </SheetFooter>
+          </SheetContent>
+        </Sheet>
+      )}
+    </div>
+  );
+}
 
-          <div className="mt-6 grid gap-4 lg:grid-cols-[minmax(0,0.8fr)_minmax(280px,1fr)]">
-            <div className="space-y-4">
-              <div className="rounded-2xl border border-white/8 bg-black/10 p-4">
-                <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
-                  Source branch
-                </p>
-                <p className="mt-2 text-sm font-medium text-foreground">
-                  {project.branch}
-                </p>
-                <p className="mt-2 text-sm text-muted-foreground">
-                  Repository: {project.github_owner}/{project.github_repo}
-                </p>
-              </div>
+function ReleasePanelContent({
+  project,
+  domains,
+  releaseTagName,
+  onReleaseTagChange,
+}: {
+  project: NonNullable<Awaited<ReturnType<typeof api.getProject>>>;
+  domains: Domain[] | undefined;
+  releaseTagName: string;
+  onReleaseTagChange: (value: string) => void;
+}) {
+  return (
+    <div className="mt-6 grid gap-4 px-4 lg:grid-cols-[minmax(0,0.8fr)_minmax(280px,1fr)] lg:px-0">
+      <div className="space-y-4">
+        <div className="rounded-xl border border-white/8 bg-black/10 p-4">
+          <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
+            Source branch
+          </p>
+          <p className="mt-2 text-sm font-medium text-foreground">
+            {project.branch}
+          </p>
+          <p className="mt-2 text-sm text-muted-foreground">
+            Repository: {project.github_owner}/{project.github_repo}
+          </p>
+        </div>
 
-              <div className="rounded-2xl border border-white/8 bg-black/10 p-4">
-                <Label htmlFor="release-tag">Release tag</Label>
-                <Input
-                  id="release-tag"
-                  value={releaseTagName}
-                  onChange={(event) => setReleaseTagName(event.target.value)}
-                  className="mt-3"
-                  placeholder="release-20260402-1455"
-                />
-                <p className="mt-3 text-sm text-muted-foreground">
-                  This tag becomes the production deploy ref so the released
-                  build stays traceable.
-                </p>
-              </div>
-            </div>
+        <div className="rounded-xl border border-white/8 bg-black/10 p-4">
+          <Label htmlFor="release-tag">Release tag</Label>
+          <Input
+            id="release-tag"
+            value={releaseTagName}
+            onChange={(event) => onReleaseTagChange(event.target.value)}
+            className="mt-3"
+            placeholder="release-20260402-1455"
+          />
+          <p className="mt-3 text-sm text-muted-foreground">
+            This tag becomes the production deploy ref so the released build
+            stays traceable.
+          </p>
+        </div>
+      </div>
 
-            <div className="space-y-4">
-              <div className="rounded-2xl border border-white/8 bg-black/10 p-4">
-                <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
-                  Production endpoints
-                </p>
-                <div className="mt-3 space-y-2">
-                  {getReadyEnvironmentDomains(domains, "production").length ? (
-                    getReadyEnvironmentDomains(domains, "production").map(
-                      (domain) => (
-                        <div
-                          key={domain.id}
-                          className="rounded-xl border border-white/8 px-3 py-2 text-sm text-foreground"
-                        >
-                          {domain.domain}
-                        </div>
-                      ),
-                    )
-                  ) : (
-                    <div className="rounded-xl border border-dashed border-white/10 px-3 py-6 text-sm text-muted-foreground">
-                      No verified production domain yet. The release will still
-                      build and deploy, but no public production URL is active.
-                    </div>
-                  )}
-                </div>
+      <div className="space-y-4">
+        <div className="rounded-xl border border-white/8 bg-black/10 p-4">
+          <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
+            Production endpoints
+          </p>
+          <div className="mt-3 space-y-2">
+            {getReadyEnvironmentDomains(domains, "production").length ? (
+              getReadyEnvironmentDomains(domains, "production").map(
+                (domain) => (
+                  <div
+                    key={domain.id}
+                    className="rounded-xl border border-white/8 px-3 py-2 text-sm text-foreground"
+                  >
+                    {domain.domain}
+                  </div>
+                ),
+              )
+            ) : (
+              <div className="rounded-xl border border-dashed border-white/10 px-3 py-6 text-sm text-muted-foreground">
+                No verified production domain yet. The release will still build
+                and deploy, but no public production URL is active.
               </div>
-
-              <div className="rounded-2xl border border-primary/15 bg-primary/10 p-4 text-sm text-slate-100">
-                Release is the intentional production action. Preview remains
-                the fast iteration path.
-              </div>
-            </div>
+            )}
           </div>
+        </div>
 
-          <SheetFooter className="mt-6">
-            <Button
-              variant="outline"
-              onClick={() => setReleaseSheetOpen(false)}
-              disabled={deploymentMutation.isPending}
-            >
-              Cancel
-            </Button>
-            <Button
-              onClick={() =>
-                deploymentMutation.mutate({
-                  environment: "production",
-                  create_tag: true,
-                  tag_name: releaseTagName.trim(),
-                })
-              }
-              disabled={!releaseTagName.trim() || deploymentMutation.isPending}
-            >
-              <GlobeLock className="mr-1.5 h-3.5 w-3.5" />
-              {deploymentMutation.isPending ? "Queueing release..." : "Release"}
-            </Button>
-          </SheetFooter>
-        </SheetContent>
-      </Sheet>
+        <div className="rounded-xl border border-primary/15 bg-primary/10 p-4 text-sm text-slate-100">
+          Release is the intentional production action. Preview remains the fast
+          iteration path.
+        </div>
+      </div>
     </div>
   );
 }
@@ -573,72 +650,84 @@ function ProjectCommandBar({
   onOpenLogs: () => void;
 }) {
   return (
-    <Card className="overflow-hidden border-white/10">
-      <CardContent className="relative px-5 py-4 sm:px-6">
-        <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-primary/40 to-transparent" />
-        <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
-          <div className="min-w-0 space-y-2">
-            <div className="flex flex-wrap items-center gap-2">
-              <Badge
-                variant="outline"
-                className={cn(
-                  "border-white/10 bg-white/5 text-slate-200",
-                  project.status === "active" &&
-                    "border-emerald-400/25 bg-emerald-400/12 text-emerald-100",
-                )}
-              >
-                <CircleDot className="mr-1 size-3 fill-current" />
-                {project.status}
-              </Badge>
-              <Badge
-                variant="outline"
-                className="border-primary/20 bg-primary/10 font-mono text-primary"
-              >
-                {formatFrameworkLabel(project.framework)}
-              </Badge>
-            </div>
-            <div>
-              <h1 className="text-xl font-semibold tracking-tight text-foreground sm:text-2xl">
-                {project.name}
-              </h1>
-              <div className="mt-1 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-muted-foreground">
-                <span>
-                  {project.github_owner}/{project.github_repo}
-                </span>
-                <span className="flex items-center gap-1">
-                  <GitBranch className="h-3.5 w-3.5" />
-                  {project.branch}
-                </span>
-                {project.organization_name ? (
-                  <span className="flex items-center gap-1">
-                    <Building2 className="h-3.5 w-3.5" />
-                    {project.organization_name}
-                  </span>
-                ) : null}
-              </div>
-            </div>
-          </div>
-
-          <div className="flex flex-wrap gap-2 xl:justify-end">
-            <Button onClick={onDeployPreview} disabled={isDeployPending}>
-              <Rocket className="mr-1.5 h-3.5 w-3.5" />
-              Deploy Preview
-            </Button>
-            <Button variant="outline" onClick={onRelease} disabled={isDeployPending}>
-              <GlobeLock className="mr-1.5 h-3.5 w-3.5" />
-              Release
-            </Button>
-            <Button
-              variant="ghost"
-              onClick={onOpenLogs}
-              disabled={!latestDeployment}
+    <Card className="@container/card">
+      <CardHeader>
+        <div className="min-w-0 space-y-3">
+          <Button
+            asChild
+            variant="ghost"
+            size="sm"
+            className="-ml-2 w-fit text-muted-foreground"
+          >
+            <Link to="/">
+              <ArrowLeft className="h-4 w-4" />
+              Back to Projects
+            </Link>
+          </Button>
+          <div className="flex flex-wrap items-center gap-2">
+            <Badge
+              variant="outline"
+              className={cn(
+                "border-white/10 bg-white/5 text-slate-200",
+                project.status === "active" &&
+                  "border-emerald-400/25 bg-emerald-400/12 text-emerald-100",
+              )}
             >
-              <Logs className="mr-1.5 h-3.5 w-3.5" />
-              Open Logs
-            </Button>
+              <CircleDot className="mr-1 size-3 fill-current" />
+              {project.status}
+            </Badge>
+            <Badge
+              variant="outline"
+              className="border-primary/20 bg-primary/10 font-mono text-primary"
+            >
+              {formatFrameworkLabel(project.framework)}
+            </Badge>
+          </div>
+          <div className="min-w-0">
+            <CardTitle className="text-xl tracking-tight sm:text-2xl">
+              {project.name}
+            </CardTitle>
+            <CardDescription className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1">
+              <span className="min-w-0 truncate">
+                {project.github_owner}/{project.github_repo}
+              </span>
+              <span className="flex items-center gap-1">
+                <GitBranch className="h-3.5 w-3.5" />
+                {project.branch}
+              </span>
+              {project.organization_name ? (
+                <span className="flex items-center gap-1">
+                  <Building2 className="h-3.5 w-3.5" />
+                  {project.organization_name}
+                </span>
+              ) : null}
+            </CardDescription>
           </div>
         </div>
-      </CardContent>
+
+        <CardAction className="flex flex-wrap gap-2 @[760px]/card:justify-end">
+          <Button onClick={onDeployPreview} disabled={isDeployPending}>
+            <Rocket className="mr-1.5 h-3.5 w-3.5" />
+            Deploy Preview
+          </Button>
+          <Button
+            variant="outline"
+            onClick={onRelease}
+            disabled={isDeployPending}
+          >
+            <GlobeLock className="mr-1.5 h-3.5 w-3.5" />
+            Release
+          </Button>
+          <Button
+            variant="ghost"
+            onClick={onOpenLogs}
+            disabled={!latestDeployment}
+          >
+            <Logs className="mr-1.5 h-3.5 w-3.5" />
+            Open Logs
+          </Button>
+        </CardAction>
+      </CardHeader>
     </Card>
   );
 }
@@ -686,8 +775,9 @@ function OverviewTab({
         timezone,
       }),
   });
-  const overviewAudienceMeta =
-    AUDIENCE_STATUS_META[analytics?.audience.status ?? ""] ??
+  const overviewAudienceMeta = AUDIENCE_STATUS_META[
+    analytics?.audience.status ?? ""
+  ] ??
     AUDIENCE_STATUS_META.ready_to_install ?? {
       label: "Ready to install",
       badgeClass: "border-primary/25 bg-primary/12 text-primary",
@@ -706,20 +796,22 @@ function OverviewTab({
 
   return (
     <div className="space-y-4">
-      <Card className="border-white/10">
-        <CardHeader className="gap-4">
-          <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-            <div>
-              <CardTitle className="text-base">Live Endpoints</CardTitle>
-              <CardDescription>
-                Fast public links to the current preview and production
-                endpoints.
-              </CardDescription>
-            </div>
-            <div className="rounded-full border border-white/8 bg-black/20 px-3 py-1 text-xs text-muted-foreground">
-              Auto preview: {project.name}.preview.example.com
-            </div>
+      <Card className="@container/card">
+        <CardHeader>
+          <div className="flex flex-wrap items-center gap-2">
+            <CardTitle className="text-base">Live Endpoints</CardTitle>
+            <CardDescription>
+              Quick public links to the current preview and production
+              endpoints.
+            </CardDescription>
           </div>
+          <CardAction>
+            <Badge variant="outline" className="hidden sm:inline-flex">
+              {project.name}.preview.example.com
+            </Badge>
+          </CardAction>
+        </CardHeader>
+        <CardContent>
           <div className="grid gap-3 md:grid-cols-2">
             <LiveEndpointChip
               environment="preview"
@@ -734,10 +826,10 @@ function OverviewTab({
               onCopy={copyUrl}
             />
           </div>
-        </CardHeader>
+        </CardContent>
       </Card>
 
-      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
         <OverviewStatCard
           label="Preview Health"
           value={
@@ -804,61 +896,58 @@ function OverviewTab({
         />
       </div>
 
-      <Card className="overflow-hidden border-white/10">
-        <CardContent className="relative px-5 py-5 sm:px-6">
-          <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-primary/40 to-transparent" />
-          <div className="flex flex-col gap-5 xl:flex-row xl:items-start xl:justify-between">
-            <div className="min-w-0 space-y-3">
-              <div className="flex flex-wrap items-center gap-2">
+      <Card className="@container/card overflow-hidden">
+        <CardHeader>
+          <div className="space-y-2">
+            <div className="flex flex-wrap items-center gap-2">
+              <Badge
+                variant="outline"
+                className={
+                  latestDeployment
+                    ? DEPLOYMENT_STATUS_META[latestDeployment.status].badgeClass
+                    : "border-white/10 bg-white/5 text-slate-200"
+                }
+              >
+                {latestDeployment
+                  ? DEPLOYMENT_STATUS_META[latestDeployment.status].label
+                  : "No deployments yet"}
+              </Badge>
+              {latestDeployment ? (
                 <Badge
                   variant="outline"
                   className={
-                    latestDeployment
-                      ? DEPLOYMENT_STATUS_META[latestDeployment.status].badgeClass
-                      : "border-white/10 bg-white/5 text-slate-200"
+                    ENVIRONMENT_META[latestDeployment.environment].badgeClass
                   }
                 >
-                  {latestDeployment
-                    ? DEPLOYMENT_STATUS_META[latestDeployment.status].label
-                    : "No deployments yet"}
+                  {ENVIRONMENT_META[latestDeployment.environment].label}
                 </Badge>
-                {latestDeployment ? (
-                  <Badge
-                    variant="outline"
-                    className={
-                      ENVIRONMENT_META[latestDeployment.environment].badgeClass
-                    }
-                  >
-                    {ENVIRONMENT_META[latestDeployment.environment].label}
-                  </Badge>
-                ) : null}
-              </div>
-              <div>
-                <h2 className="text-lg font-semibold tracking-tight text-foreground">
-                  Latest Deployment
-                </h2>
-                <p className="mt-2 max-w-2xl text-sm leading-6 text-muted-foreground">
-                  The most recent build is the fastest way to understand the
-                  current state of this project.
-                </p>
-              </div>
-            </div>
-
-            <div className="flex flex-wrap gap-2">
-              <Button variant="outline" onClick={onShowDeployments}>
-                See all deployments
-              </Button>
-              {analytics?.audience.status === "ready_to_install" ? (
-                <Button onClick={onShowIntegration}>Setup Analytics</Button>
               ) : null}
             </div>
+            <CardTitle className="text-base">Latest Deployment</CardTitle>
+            <CardDescription>
+              The newest build is the fastest way to read the current state of
+              this project.
+            </CardDescription>
           </div>
-
+          <CardAction className="flex flex-wrap gap-2">
+            <Button variant="outline" onClick={onShowDeployments}>
+              See All
+            </Button>
+            {analytics?.audience.status === "ready_to_install" ? (
+              <Button onClick={onShowIntegration}>Setup Analytics</Button>
+            ) : null}
+          </CardAction>
+        </CardHeader>
+        <CardContent>
           {isLoading ? (
-            <Skeleton className="mt-6 h-48 w-full" />
+            <LoadingState
+              title="Loading deployments…"
+              description="Preparing the latest deployment and endpoint activity."
+              className="min-h-[280px]"
+            />
           ) : latestDeployment ? (
-            <div className="mt-6 grid gap-4 xl:grid-cols-[minmax(0,1.1fr)_minmax(280px,0.9fr)]">
-              <div className="rounded-3xl border border-white/8 bg-black/20 p-5 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
+            <div className="grid gap-4 xl:grid-cols-[minmax(0,1.1fr)_minmax(280px,0.9fr)]">
+              <div className="rounded-xl border bg-muted/30 p-5">
                 <div className="flex items-start justify-between gap-4">
                   <div className="min-w-0">
                     <div className="flex items-center gap-2 text-sm font-medium text-foreground">
@@ -912,7 +1001,7 @@ function OverviewTab({
                           params: { id: projectId, did: deployment.id },
                         })
                       }
-                      className="flex w-full items-center justify-between gap-3 rounded-2xl border border-white/8 bg-black/10 px-4 py-3 text-left transition-colors hover:bg-white/[0.04]"
+                      className="flex w-full items-center justify-between gap-3 rounded-xl border bg-muted/30 px-4 py-3 text-left transition-colors hover:bg-accent"
                     >
                       <div className="min-w-0">
                         <p className="text-sm font-medium text-foreground">
@@ -936,14 +1025,14 @@ function OverviewTab({
                     </button>
                   ))
                 ) : (
-                  <div className="rounded-2xl border border-dashed border-white/10 px-4 py-8 text-sm text-muted-foreground">
+                  <div className="rounded-xl border border-dashed border-border/70 px-4 py-8 text-sm text-muted-foreground">
                     No previous deployments yet.
                   </div>
                 )}
               </div>
             </div>
           ) : (
-            <div className="mt-6 rounded-3xl border border-dashed border-white/10 px-5 py-12 text-sm text-muted-foreground">
+            <div className="rounded-xl border border-dashed border-border/70 px-5 py-12 text-sm text-muted-foreground">
               No deployments yet. Use the command bar to queue the first preview
               build.
             </div>
@@ -968,7 +1057,7 @@ function LiveEndpointChip({
   const isLive = Boolean(url);
 
   return (
-    <div className="flex items-center justify-between gap-3 rounded-2xl border border-white/8 bg-black/20 px-4 py-3">
+    <div className="flex items-center justify-between gap-3 rounded-xl border bg-muted/30 px-4 py-3">
       <div className="min-w-0">
         <div className="flex items-center gap-2">
           <span
@@ -1001,7 +1090,9 @@ function LiveEndpointChip({
             <Button
               size="sm"
               variant="ghost"
-              onClick={() => onCopy(url, `${ENVIRONMENT_META[environment].label} URL`)}
+              onClick={() =>
+                onCopy(url, `${ENVIRONMENT_META[environment].label} URL`)
+              }
             >
               <Copy className="h-3.5 w-3.5" />
             </Button>
@@ -1031,28 +1122,24 @@ function OverviewStatCard({
   hint: string;
 }) {
   return (
-    <Card className="border-white/10 bg-black/10">
-      <CardContent className="flex items-start justify-between gap-4 px-4 py-4">
-        <div className="min-w-0">
-          <p className="text-[11px] uppercase tracking-[0.2em] text-muted-foreground">
-            {label}
-          </p>
-          <p className="mt-3 text-lg font-semibold tracking-tight text-foreground">
-            {value}
-          </p>
-          <p className="mt-2 text-xs leading-5 text-muted-foreground">{hint}</p>
-        </div>
-        <div className="rounded-2xl border border-white/8 bg-white/5 p-2 text-muted-foreground">
-          {icon}
-        </div>
-      </CardContent>
+    <Card className="@container/card bg-gradient-to-t from-primary/5 to-card shadow-xs">
+      <CardHeader>
+        <CardDescription>{label}</CardDescription>
+        <CardTitle className="text-2xl font-semibold tabular-nums @[250px]/card:text-3xl">
+          {value}
+        </CardTitle>
+        <CardAction className="text-muted-foreground">{icon}</CardAction>
+      </CardHeader>
+      <CardFooter className="flex-col items-start gap-1.5 text-sm">
+        <p className="line-clamp-2 text-muted-foreground">{hint}</p>
+      </CardFooter>
     </Card>
   );
 }
 
 function MiniMeta({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded-2xl border border-white/8 bg-black/10 px-3 py-3">
+    <div className="rounded-xl border bg-background px-3 py-3">
       <p className="text-[11px] uppercase tracking-[0.18em] text-muted-foreground">
         {label}
       </p>
@@ -1091,8 +1178,8 @@ function DeploymentsTab({
 
   return (
     <div className="space-y-4">
-      <Card className="border-white/10">
-        <CardHeader className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+      <Card className="@container/card">
+        <CardHeader>
           <div>
             <CardTitle className="text-base">Deployments</CardTitle>
             <CardDescription>
@@ -1100,25 +1187,33 @@ function DeploymentsTab({
               access to logs and live endpoints.
             </CardDescription>
           </div>
-          <div className="flex flex-wrap gap-2">
-            <Button size="sm" onClick={onDeployPreview} disabled={isActionPending}>
+          <CardAction className="flex flex-wrap gap-2">
+            <Button
+              size="sm"
+              onClick={onDeployPreview}
+              disabled={isActionPending}
+            >
               <Rocket className="mr-1.5 h-3.5 w-3.5" />
               Deploy Preview
             </Button>
-            <Button size="sm" variant="outline" onClick={onRelease} disabled={isActionPending}>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={onRelease}
+              disabled={isActionPending}
+            >
               <GlobeLock className="mr-1.5 h-3.5 w-3.5" />
               Release
             </Button>
-          </div>
+          </CardAction>
         </CardHeader>
       </Card>
 
       {isLoading ? (
-        <Card>
-          <CardContent className="p-6">
-            <Skeleton className="h-20 w-full" />
-          </CardContent>
-        </Card>
+        <LoadingState
+          title="Loading deployments…"
+          description="Fetching recent preview and production build history."
+        />
       ) : !deployments?.length ? (
         <Card>
           <CardContent className="py-12 text-center">
@@ -1128,144 +1223,152 @@ function DeploymentsTab({
           </CardContent>
         </Card>
       ) : (
-        <Card className="overflow-hidden border-white/10">
-          <Table>
-            <TableHeader>
-              <TableRow className="border-white/8 hover:bg-transparent">
-                <TableHead className="pl-6">Environment</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead>Commit</TableHead>
-                <TableHead>Branch</TableHead>
-                <TableHead>Started</TableHead>
-                <TableHead>Duration</TableHead>
-                <TableHead className="text-right">Open</TableHead>
-                <TableHead className="pr-6 text-right">Logs</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {deployments.map((deployment) => {
-                const liveUrl =
-                  deployment.status === "live"
-                    ? getPrimaryEnvironmentUrl(domains, deployment.environment)
-                    : null;
-                const statusMeta = DEPLOYMENT_STATUS_META[deployment.status];
+        <Card className="overflow-hidden">
+          <CardContent className="p-0">
+            <Table>
+              <TableHeader>
+                <TableRow className="border-white/8 hover:bg-transparent">
+                  <TableHead className="pl-6">Environment</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead>Commit</TableHead>
+                  <TableHead>Branch</TableHead>
+                  <TableHead>Started</TableHead>
+                  <TableHead>Duration</TableHead>
+                  <TableHead className="text-right">Open</TableHead>
+                  <TableHead className="pr-6 text-right">Logs</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {deployments.map((deployment) => {
+                  const liveUrl =
+                    deployment.status === "live"
+                      ? getPrimaryEnvironmentUrl(
+                          domains,
+                          deployment.environment,
+                        )
+                      : null;
+                  const statusMeta = DEPLOYMENT_STATUS_META[deployment.status];
 
-                return (
-                  <TableRow
-                    key={deployment.id}
-                    className={cn(
-                      "cursor-pointer border-white/8 transition-colors hover:bg-white/[0.04] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary/40",
-                      deployment.status === "live" && "bg-white/[0.03]",
-                    )}
-                    role="link"
-                    tabIndex={0}
-                    onClick={() => openDeploymentDetails(deployment.id)}
-                    onKeyDown={(event) => {
-                      if (event.key === "Enter" || event.key === " ") {
-                        event.preventDefault();
-                        openDeploymentDetails(deployment.id);
-                      }
-                    }}
-                  >
-                    <TableCell className="pl-6">
-                      <div className="flex items-center gap-3">
-                        <span
-                          className={cn(
-                            "h-2.5 w-2.5 rounded-full",
-                            statusMeta.dotClass,
-                            ACTIVE_DEPLOYMENT_STATUSES.has(deployment.status) &&
-                              "animate-pulse",
-                          )}
-                        />
-                        <div>
-                          <Badge
-                            variant="outline"
-                            className={
-                              ENVIRONMENT_META[deployment.environment]
-                                .badgeClass
+                  return (
+                    <TableRow
+                      key={deployment.id}
+                      className={cn(
+                        "cursor-pointer border-white/8 transition-colors hover:bg-white/[0.04] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary/40",
+                        deployment.status === "live" && "bg-white/[0.03]",
+                      )}
+                      role="link"
+                      tabIndex={0}
+                      onClick={() => openDeploymentDetails(deployment.id)}
+                      onKeyDown={(event) => {
+                        if (event.key === "Enter" || event.key === " ") {
+                          event.preventDefault();
+                          openDeploymentDetails(deployment.id);
+                        }
+                      }}
+                    >
+                      <TableCell className="pl-6">
+                        <div className="flex items-center gap-3">
+                          <span
+                            className={cn(
+                              "h-2.5 w-2.5 rounded-full",
+                              statusMeta.dotClass,
+                              ACTIVE_DEPLOYMENT_STATUSES.has(
+                                deployment.status,
+                              ) && "animate-pulse",
+                            )}
+                          />
+                          <div>
+                            <Badge
+                              variant="outline"
+                              className={
+                                ENVIRONMENT_META[deployment.environment]
+                                  .badgeClass
+                              }
+                            >
+                              {ENVIRONMENT_META[deployment.environment].label}
+                            </Badge>
+                            <p className="mt-1 text-xs text-muted-foreground">
+                              {deployment.id.slice(0, 8)}
+                            </p>
+                          </div>
+                        </div>
+                      </TableCell>
+                      <TableCell>
+                        <Badge
+                          variant="outline"
+                          className={statusMeta.badgeClass}
+                        >
+                          {statusMeta.label}
+                        </Badge>
+                      </TableCell>
+                      <TableCell className="max-w-[340px]">
+                        <div className="space-y-1">
+                          <div className="flex items-center gap-2 text-sm font-medium text-foreground">
+                            <GitCommit className="h-3.5 w-3.5 text-muted-foreground" />
+                            {deployment.commit_sha
+                              ? deployment.commit_sha.slice(0, 7)
+                              : "pending"}
+                          </div>
+                          <p
+                            className="truncate text-xs text-muted-foreground"
+                            title={
+                              deployment.commit_message ||
+                              deployment.error_message
                             }
                           >
-                            {ENVIRONMENT_META[deployment.environment].label}
-                          </Badge>
-                          <p className="mt-1 text-xs text-muted-foreground">
-                            {deployment.id.slice(0, 8)}
+                            {deployment.commit_message ||
+                              deployment.error_message ||
+                              statusMeta.label}
                           </p>
                         </div>
-                      </div>
-                    </TableCell>
-                    <TableCell>
-                      <Badge
-                        variant="outline"
-                        className={statusMeta.badgeClass}
-                      >
-                        {statusMeta.label}
-                      </Badge>
-                    </TableCell>
-                    <TableCell className="max-w-[340px]">
-                      <div className="space-y-1">
-                        <div className="flex items-center gap-2 text-sm font-medium text-foreground">
-                          <GitCommit className="h-3.5 w-3.5 text-muted-foreground" />
-                          {deployment.commit_sha
-                            ? deployment.commit_sha.slice(0, 7)
-                            : "pending"}
-                        </div>
-                        <p
-                          className="truncate text-xs text-muted-foreground"
-                          title={
-                            deployment.commit_message ||
-                            deployment.error_message
-                          }
-                        >
-                          {deployment.commit_message ||
-                            deployment.error_message ||
-                            statusMeta.label}
-                        </p>
-                      </div>
-                    </TableCell>
-                    <TableCell className="text-sm text-muted-foreground">
-                      {deployment.branch}
-                    </TableCell>
-                    <TableCell className="text-sm text-muted-foreground">
-                      {formatRelativeDate(deployment.created_at)}
-                    </TableCell>
-                    <TableCell className="text-sm text-muted-foreground">
-                      {deployment.build_duration > 0
-                        ? `${deployment.build_duration}s`
-                        : "—"}
-                    </TableCell>
-                    <TableCell className="text-right">
-                      {liveUrl ? (
+                      </TableCell>
+                      <TableCell className="text-sm text-muted-foreground">
+                        {deployment.branch}
+                      </TableCell>
+                      <TableCell className="text-sm text-muted-foreground">
+                        {formatRelativeDate(deployment.created_at)}
+                      </TableCell>
+                      <TableCell className="text-sm text-muted-foreground">
+                        {deployment.build_duration > 0
+                          ? `${deployment.build_duration}s`
+                          : "—"}
+                      </TableCell>
+                      <TableCell className="text-right">
+                        {liveUrl ? (
+                          <Button asChild size="sm" variant="ghost">
+                            <a
+                              href={liveUrl}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              onClick={(event) => event.stopPropagation()}
+                            >
+                              <ExternalLink className="mr-1.5 h-3.5 w-3.5" />
+                              Open
+                            </a>
+                          </Button>
+                        ) : (
+                          <span className="text-xs text-muted-foreground">
+                            —
+                          </span>
+                        )}
+                      </TableCell>
+                      <TableCell className="pr-6 text-right">
                         <Button asChild size="sm" variant="ghost">
-                          <a
-                            href={liveUrl}
-                            target="_blank"
-                            rel="noopener noreferrer"
+                          <Link
+                            to="/projects/$id/deployments/$did"
+                            params={{ id: projectId, did: deployment.id }}
                             onClick={(event) => event.stopPropagation()}
                           >
-                            <ExternalLink className="mr-1.5 h-3.5 w-3.5" />
-                            Open
-                          </a>
+                            Logs
+                          </Link>
                         </Button>
-                      ) : (
-                        <span className="text-xs text-muted-foreground">—</span>
-                      )}
-                    </TableCell>
-                    <TableCell className="pr-6 text-right">
-                      <Button asChild size="sm" variant="ghost">
-                        <Link
-                          to="/projects/$id/deployments/$did"
-                          params={{ id: projectId, did: deployment.id }}
-                          onClick={(event) => event.stopPropagation()}
-                        >
-                          Logs
-                        </Link>
-                      </Button>
-                    </TableCell>
-                  </TableRow>
-                );
-              })}
-            </TableBody>
-          </Table>
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
+              </TableBody>
+            </Table>
+          </CardContent>
         </Card>
       )}
     </div>
@@ -1319,7 +1422,10 @@ function SettingsTab({
   return (
     <div className="space-y-6">
       <Tabs defaultValue="build">
-        <TabsList className="h-auto w-full justify-start gap-1 overflow-x-auto rounded-2xl border border-white/8 bg-black/10 p-1">
+        <TabsList
+          variant="line"
+          className="h-auto w-full justify-start gap-1 overflow-x-auto"
+        >
           <TabsTrigger value="build">Build</TabsTrigger>
           <TabsTrigger value="domains">Domains</TabsTrigger>
           <TabsTrigger value="env">Env Vars</TabsTrigger>
@@ -1339,7 +1445,10 @@ function SettingsTab({
             <CardContent className="space-y-4">
               <div className="space-y-2">
                 <Label>Workspace</Label>
-                <Input value={project.organization_name || "Personal"} disabled />
+                <Input
+                  value={project.organization_name || "Personal"}
+                  disabled
+                />
               </div>
               <div className="space-y-2">
                 <Label>Branch</Label>
@@ -1513,9 +1622,13 @@ function DomainsTab({
         </CardHeader>
         <CardContent className="space-y-3">
           {isLoading ? (
-            <Skeleton className="h-32 w-full" />
+            <LoadingState
+              title="Loading domains…"
+              description="Fetching custom domains, verification, and SSL state."
+              className="min-h-[220px]"
+            />
           ) : !domains?.length ? (
-            <div className="rounded-2xl border border-dashed border-white/8 px-4 py-6 text-sm text-muted-foreground">
+            <div className="rounded-xl border border-dashed border-border/70 px-4 py-6 text-sm text-muted-foreground">
               No domains yet.
             </div>
           ) : (
@@ -1528,7 +1641,7 @@ function DomainsTab({
               return (
                 <div
                   key={domain.id}
-                  className="flex flex-col gap-4 rounded-2xl border border-white/8 bg-black/10 p-4 md:flex-row md:items-center md:justify-between"
+                  className="flex flex-col gap-4 rounded-xl border bg-muted/30 p-4 md:flex-row md:items-center md:justify-between"
                 >
                   <div className="space-y-2">
                     <div className="flex flex-wrap items-center gap-2">
@@ -1642,7 +1755,7 @@ function DnsSetupGuide({
       </CardHeader>
       <CardContent className="space-y-4">
         <div className="grid gap-3 md:grid-cols-2">
-          <div className="rounded-2xl border border-white/8 bg-black/10 p-4">
+          <div className="rounded-xl border bg-muted/30 p-4">
             <div className="flex items-center justify-between gap-3">
               <div>
                 <p className="text-xs uppercase tracking-[0.22em] text-muted-foreground">
@@ -1666,7 +1779,7 @@ function DnsSetupGuide({
             </div>
           </div>
 
-          <div className="rounded-2xl border border-white/8 bg-black/10 p-4">
+          <div className="rounded-xl border bg-muted/30 p-4">
             <p className="text-xs uppercase tracking-[0.22em] text-muted-foreground">
               Record to create
             </p>
@@ -1688,7 +1801,7 @@ function DnsSetupGuide({
         </div>
 
         <div className="grid gap-3 xl:grid-cols-2">
-          <div className="rounded-2xl border border-white/8 bg-black/10 p-4">
+          <div className="rounded-xl border bg-muted/30 p-4">
             <p className="text-sm font-medium">GoDaddy</p>
             <div className="mt-3 space-y-2 text-sm text-muted-foreground">
               <p>1. Open your domain in GoDaddy and go to DNS.</p>
@@ -1706,7 +1819,7 @@ function DnsSetupGuide({
             </div>
           </div>
 
-          <div className="rounded-2xl border border-white/8 bg-black/10 p-4">
+          <div className="rounded-xl border bg-muted/30 p-4">
             <p className="text-sm font-medium">
               Vercel DNS / Domain bought on Vercel
             </p>
@@ -1726,7 +1839,7 @@ function DnsSetupGuide({
           </div>
         </div>
 
-        <div className="rounded-2xl border border-dashed border-white/10 px-4 py-3 text-sm text-muted-foreground">
+        <div className="rounded-xl border border-dashed border-border/70 px-4 py-3 text-sm text-muted-foreground">
           <p>
             Deployik verifies A-record resolution to the VPS IP. If you use a
             subdomain, prefer an A record directly to the server. After DNS
@@ -1843,7 +1956,7 @@ function VariableStoreTab({
 
   return (
     <div className="space-y-4">
-      <Card className="border-white/10">
+      <Card>
         <CardHeader>
           <CardTitle className="text-base">{storeTitle}</CardTitle>
           <CardDescription>
@@ -1877,7 +1990,7 @@ function VariableStoreTab({
         </CardContent>
       </Card>
 
-      <Card className="border-white/10">
+      <Card>
         <CardHeader>
           <CardTitle className="text-base">
             Current {storeTitle} ({VARIABLE_SCOPE_META[scope].label})
@@ -1889,7 +2002,11 @@ function VariableStoreTab({
         </CardHeader>
         <CardContent>
           {isLoading ? (
-            <Skeleton className="h-32 w-full" />
+            <LoadingState
+              title={`Loading ${storeTitle.toLowerCase()}…`}
+              description={`Fetching stored ${storeTitle.toLowerCase()} for the selected scope.`}
+              className="min-h-[220px]"
+            />
           ) : existingVars?.length ? (
             <div className="space-y-2 font-mono text-sm">
               {existingVars.map((variable) => {
@@ -1900,7 +2017,7 @@ function VariableStoreTab({
                 return (
                   <div
                     key={variable.id}
-                    className="flex flex-col gap-3 rounded-2xl border border-white/8 bg-black/10 p-3 md:flex-row md:items-center md:justify-between"
+                    className="flex flex-col gap-3 rounded-xl border bg-muted/30 p-3 md:flex-row md:items-center md:justify-between"
                   >
                     <div className="space-y-1">
                       <div className="flex flex-wrap items-center gap-2">
@@ -1941,7 +2058,7 @@ function VariableStoreTab({
         </CardContent>
       </Card>
 
-      <Card className="border-white/10">
+      <Card>
         <CardHeader>
           <CardTitle className="text-base">
             Replace {storeTitle} ({VARIABLE_SCOPE_META[scope].label})

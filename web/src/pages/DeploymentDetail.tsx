@@ -1,22 +1,22 @@
-import { useQuery } from '@tanstack/react-query';
-import { useParams, Link } from '@tanstack/react-router';
-import { ArrowLeft, Clock, GitBranch, GitCommit } from 'lucide-react';
-import { formatDistanceToNow } from 'date-fns';
-import { api } from '@/lib/api';
-import { useBuildLogs } from '@/hooks/useBuildLogs';
-import { BuildLog } from '@/components/BuildLog';
-import { Badge } from '@/components/ui/badge';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Skeleton } from '@/components/ui/skeleton';
+import { useQuery } from "@tanstack/react-query";
+import { useParams, Link } from "@tanstack/react-router";
+import { ArrowLeft, Clock, GitBranch, GitCommit } from "lucide-react";
+import { formatDistanceToNow } from "date-fns";
+import { api } from "@/lib/api";
+import { useBuildLogs } from "@/hooks/useBuildLogs";
+import { BuildLog } from "@/components/BuildLog";
+import { Badge } from "@/components/ui/badge";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { LoadingState } from "@/components/ui/spinner";
 
 const statusColor: Record<string, string> = {
-  queued: 'bg-muted-foreground',
-  building: 'bg-yellow-500',
-  deploying: 'bg-blue-500',
-  live: 'bg-green-500',
-  failed: 'bg-red-500',
-  rolled_back: 'bg-orange-500',
-  replaced: 'bg-muted-foreground',
+  queued: "bg-muted-foreground",
+  building: "bg-yellow-500",
+  deploying: "bg-blue-500",
+  live: "bg-green-500",
+  failed: "bg-red-500",
+  rolled_back: "bg-orange-500",
+  replaced: "bg-muted-foreground",
 };
 
 export function DeploymentDetail() {
@@ -26,27 +26,31 @@ export function DeploymentDetail() {
   };
 
   const { data: deployment, isLoading } = useQuery({
-    queryKey: ['deployment', did],
+    queryKey: ["deployment", did],
     queryFn: () => api.getDeployment(id, did),
     refetchInterval: (query) => {
       const status = query.state.data?.status;
       // Auto-refresh while deployment is in progress
-      if (status === 'queued' || status === 'building' || status === 'deploying')
+      if (
+        status === "queued" ||
+        status === "building" ||
+        status === "deploying"
+      )
         return 3000;
       return false;
     },
   });
 
   const { data: historicalLogs } = useQuery({
-    queryKey: ['build-logs', did],
+    queryKey: ["build-logs", did],
     queryFn: () => api.getBuildLogs(did),
     enabled: !!deployment,
   });
 
   const isActive =
-    deployment?.status === 'queued' ||
-    deployment?.status === 'building' ||
-    deployment?.status === 'deploying';
+    deployment?.status === "queued" ||
+    deployment?.status === "building" ||
+    deployment?.status === "deploying";
 
   const { logs: streamLogs, isConnected } = useBuildLogs(isActive ? did : null);
 
@@ -55,7 +59,7 @@ export function DeploymentDetail() {
     const historical = (historicalLogs ?? []).map((l) => ({
       line_number: l.line_number,
       content: l.content,
-      stream: l.stream as 'stdout' | 'stderr',
+      stream: l.stream as "stdout" | "stderr",
     }));
     const seen = new Set(historical.map((l) => l.line_number));
     const merged = [...historical];
@@ -71,8 +75,11 @@ export function DeploymentDetail() {
   if (isLoading) {
     return (
       <div className="p-6">
-        <Skeleton className="h-8 w-48" />
-        <Skeleton className="mt-4 h-96 w-full" />
+        <LoadingState
+          title="Loading deployment…"
+          description="Fetching deployment metadata and build logs."
+          className="min-h-[420px]"
+        />
       </div>
     );
   }
@@ -101,18 +108,18 @@ export function DeploymentDetail() {
         <div>
           <div className="flex items-center gap-3">
             <div
-              className={`h-3 w-3 rounded-full ${statusColor[deployment.status] ?? 'bg-muted-foreground'} ${isActive ? 'animate-pulse' : ''}`}
+              className={`h-3 w-3 rounded-full ${statusColor[deployment.status] ?? "bg-muted-foreground"} ${isActive ? "animate-pulse" : ""}`}
             />
             <h1 className="text-xl font-bold tracking-tight">
               Deployment {deployment.id.slice(0, 8)}
             </h1>
             <Badge
               variant={
-                deployment.status === 'live'
-                  ? 'default'
-                  : deployment.status === 'failed'
-                    ? 'destructive'
-                    : 'secondary'
+                deployment.status === "live"
+                  ? "default"
+                  : deployment.status === "failed"
+                    ? "destructive"
+                    : "secondary"
               }
             >
               {deployment.status}
@@ -122,8 +129,7 @@ export function DeploymentDetail() {
             {deployment.commit_sha && (
               <span className="flex items-center gap-1">
                 <GitCommit className="h-3.5 w-3.5" />
-                {deployment.commit_sha.slice(0, 7)}{' '}
-                {deployment.commit_message}
+                {deployment.commit_sha.slice(0, 7)} {deployment.commit_message}
               </span>
             )}
             <span className="flex items-center gap-1">

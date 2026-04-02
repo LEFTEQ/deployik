@@ -22,12 +22,14 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   Card,
+  CardAction,
   CardContent,
   CardDescription,
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { Skeleton } from "@/components/ui/skeleton";
+import { LoadingState, Spinner } from "@/components/ui/spinner";
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { api } from "@/lib/api";
 import type {
   AnalyticsBreakdownItem,
@@ -143,8 +145,9 @@ export function ProjectAnalyticsTab({
     description:
       "The website exists. Add the tracker to start collecting audience data.",
   };
-  const audienceStatusMeta =
-    AUDIENCE_STATUS_META[data?.audience.status ?? ""] ??
+  const audienceStatusMeta = AUDIENCE_STATUS_META[
+    data?.audience.status ?? ""
+  ] ??
     AUDIENCE_STATUS_META.receiving_data ?? {
       label: "Receiving data",
       badgeClass: "border-emerald-400/25 bg-emerald-400/12 text-emerald-100",
@@ -153,8 +156,8 @@ export function ProjectAnalyticsTab({
 
   return (
     <div className="space-y-4">
-      <Card className="border-white/10">
-        <CardHeader className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+      <Card className="@container/card">
+        <CardHeader>
           <div>
             <CardTitle className="text-base">Analytics</CardTitle>
             <CardDescription>
@@ -162,8 +165,40 @@ export function ProjectAnalyticsTab({
               the edge proxy and Loki.
             </CardDescription>
           </div>
-          <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center sm:justify-end">
-            <div className="flex flex-wrap gap-2">
+          <CardAction className="flex flex-col gap-2">
+            <ToggleGroup
+              type="single"
+              value={environment}
+              onValueChange={(value) =>
+                value
+                  ? setEnvironment(value as AnalyticsEnvironmentFilter)
+                  : null
+              }
+              variant="outline"
+              className="hidden @[720px]/card:flex"
+            >
+              {ENVIRONMENT_OPTIONS.map((value) => (
+                <ToggleGroupItem key={value} value={value}>
+                  {formatEnvironmentLabel(value)}
+                </ToggleGroupItem>
+              ))}
+            </ToggleGroup>
+            <ToggleGroup
+              type="single"
+              value={range}
+              onValueChange={(value) =>
+                value ? setRange(value as AnalyticsRangePreset) : null
+              }
+              variant="outline"
+              className="hidden @[720px]/card:flex"
+            >
+              {RANGE_OPTIONS.map((value) => (
+                <ToggleGroupItem key={value} value={value}>
+                  {value}
+                </ToggleGroupItem>
+              ))}
+            </ToggleGroup>
+            <div className="flex flex-wrap gap-2 @[720px]/card:hidden">
               {ENVIRONMENT_OPTIONS.map((value) => (
                 <Button
                   key={value}
@@ -174,8 +209,6 @@ export function ProjectAnalyticsTab({
                   {formatEnvironmentLabel(value)}
                 </Button>
               ))}
-            </div>
-            <div className="flex flex-wrap gap-2">
               {RANGE_OPTIONS.map((value) => (
                 <Button
                   key={value}
@@ -187,16 +220,16 @@ export function ProjectAnalyticsTab({
                 </Button>
               ))}
             </div>
-          </div>
+          </CardAction>
         </CardHeader>
       </Card>
 
       {isLoading ? (
-        <div className="grid gap-4">
-          <Skeleton className="h-56 w-full" />
-          <Skeleton className="h-64 w-full" />
-          <Skeleton className="h-64 w-full" />
-        </div>
+        <LoadingState
+          title="Loading analytics…"
+          description="Pulling audience metrics from Umami and runtime metrics from Loki."
+          className="min-h-[360px]"
+        />
       ) : error ? (
         <Card className="border-rose-400/25">
           <CardHeader>
@@ -226,8 +259,8 @@ export function ProjectAnalyticsTab({
           ) : null}
 
           {data.audience.status === "ready_to_install" ? (
-            <Card className="overflow-hidden border-white/10">
-              <CardHeader className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+            <Card className="@container/card overflow-hidden">
+              <CardHeader>
                 <div className="space-y-2">
                   <div className="flex flex-wrap items-center gap-2">
                     <Badge
@@ -252,22 +285,25 @@ export function ProjectAnalyticsTab({
                     stays focused on metrics once the tracker is installed.
                   </CardDescription>
                 </div>
-                <div className="flex shrink-0 gap-2">
+                <CardAction className="flex shrink-0 gap-2">
                   <Button onClick={onSetupAnalytics}>Setup Analytics</Button>
                   <Button
                     variant="outline"
                     onClick={() => verifyMutation.mutate()}
                     disabled={verifyMutation.isPending}
                   >
+                    {verifyMutation.isPending ? (
+                      <Spinner className="size-3.5" />
+                    ) : null}
                     Verify
                   </Button>
-                </div>
+                </CardAction>
               </CardHeader>
             </Card>
           ) : (
             <>
-              <Card className="border-white/10">
-                <CardHeader className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+              <Card className="@container/card">
+                <CardHeader>
                   <div className="space-y-2">
                     <div className="flex flex-wrap items-center gap-2">
                       <Badge
@@ -291,18 +327,21 @@ export function ProjectAnalyticsTab({
                       comes from the edge proxy and Loki.
                     </CardDescription>
                   </div>
-                  <div className="flex gap-2">
+                  <CardAction className="flex gap-2">
                     <Button
                       variant="outline"
                       onClick={() => verifyMutation.mutate()}
                       disabled={verifyMutation.isPending}
                     >
+                      {verifyMutation.isPending ? (
+                        <Spinner className="size-3.5" />
+                      ) : null}
                       Verify
                     </Button>
                     <Button variant="ghost" onClick={onSetupAnalytics}>
                       Integration
                     </Button>
-                  </div>
+                  </CardAction>
                 </CardHeader>
               </Card>
 
@@ -421,7 +460,9 @@ export function ProjectAnalyticsTab({
                       />
                       <AnalyticsStatCard
                         label="Bandwidth"
-                        value={formatBytes(data.runtime.summary.bandwidth_bytes)}
+                        value={formatBytes(
+                          data.runtime.summary.bandwidth_bytes,
+                        )}
                         hint="Response bytes sent by nginx."
                         icon={<Globe2 className="h-4 w-4" />}
                       />
@@ -496,7 +537,7 @@ export function ProjectAnalyticsTab({
                     </div>
                   </>
                 ) : (
-                  <Card className="border-white/10">
+                  <Card>
                     <CardHeader>
                       <CardTitle className="text-base">
                         Runtime analytics unavailable
@@ -529,7 +570,7 @@ function BreakdownCard({
   formatter: (item: AnalyticsBreakdownItem) => string;
 }) {
   return (
-    <Card className="border-white/10">
+    <Card>
       <CardHeader>
         <CardTitle className="text-base">{title}</CardTitle>
         <CardDescription>{description}</CardDescription>
@@ -540,7 +581,7 @@ function BreakdownCard({
             {items.map((item) => (
               <div
                 key={item.name}
-                className="flex items-center justify-between gap-3 rounded-2xl border border-white/8 bg-black/10 px-3 py-3"
+                className="flex items-center justify-between gap-3 rounded-lg border bg-muted/30 px-3 py-3"
               >
                 <p className="truncate text-sm font-medium text-foreground">
                   {item.name || "Unknown"}
@@ -552,7 +593,7 @@ function BreakdownCard({
             ))}
           </div>
         ) : (
-          <div className="rounded-2xl border border-dashed border-white/10 px-4 py-10 text-sm text-muted-foreground">
+          <div className="rounded-xl border border-dashed border-border/70 px-4 py-10 text-sm text-muted-foreground">
             No analytics rows for this section yet.
           </div>
         )}
