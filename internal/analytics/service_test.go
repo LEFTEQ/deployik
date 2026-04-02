@@ -84,7 +84,7 @@ func TestBuildAIPromptIncludesProjectContext(t *testing.T) {
 		RootDirectory:  "apps/web",
 	}
 
-	prompt := buildAIPrompt(project, "website-123", "https://analytics.example.com", DomainGroups{
+	prompt := buildAIPrompt(project, "website-123", "https://analytics.example.com", "https://cdn.example.com/deployik-analytics/umami/latest.js", DomainGroups{
 		All:        []string{"analytics-demo.preview.example.com", "analytics-demo.com"},
 		Preview:    []string{"analytics-demo.preview.example.com"},
 		Production: []string{"analytics-demo.com"},
@@ -95,7 +95,9 @@ func TestBuildAIPromptIncludesProjectContext(t *testing.T) {
 		"Framework preset: nextjs",
 		"Package manager: pnpm",
 		"Root directory: apps/web",
+		"Tracker script URL: https://cdn.example.com/deployik-analytics/umami/latest.js",
 		`data-website-id="website-123"`,
+		`src="https://cdn.example.com/deployik-analytics/umami/latest.js"`,
 		"analytics-demo.com",
 	} {
 		if !strings.Contains(prompt, expected) {
@@ -234,6 +236,7 @@ func TestGetProjectPayloadProvisioningAndMetrics(t *testing.T) {
 		database,
 		NewUmamiClient(umamiServer.URL, "admin", "password"),
 		"https://analytics.example.com",
+		"https://cdn.example.com/deployik-analytics/umami/latest.js",
 		NewLokiClient(lokiServer.URL),
 	)
 
@@ -257,6 +260,9 @@ func TestGetProjectPayloadProvisioningAndMetrics(t *testing.T) {
 	}
 	if !strings.Contains(payload.Audience.Install.Snippet, `data-website-id="website-1"`) {
 		t.Fatalf("expected snippet to contain website id, got %q", payload.Audience.Install.Snippet)
+	}
+	if !strings.Contains(payload.Audience.Install.Snippet, `src="https://cdn.example.com/deployik-analytics/umami/latest.js"`) {
+		t.Fatalf("expected snippet to contain CDN script URL, got %q", payload.Audience.Install.Snippet)
 	}
 	if !strings.Contains(payload.Audience.Install.AIPrompt, "Framework preset: nextjs") {
 		t.Fatalf("expected framework in AI prompt, got %q", payload.Audience.Install.AIPrompt)

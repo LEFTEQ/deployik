@@ -86,6 +86,7 @@ func main() {
 		database,
 		analytics.NewUmamiClient(cfg.AnalyticsUmamiURL, cfg.AnalyticsUmamiUsername, cfg.AnalyticsUmamiPassword),
 		cfg.AnalyticsUmamiPublicURL,
+		cfg.AnalyticsUmamiScriptURL,
 		analytics.NewLokiClient(cfg.AnalyticsLokiURL),
 	)
 

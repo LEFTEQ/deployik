@@ -6,6 +6,7 @@ import (
 	"log"
 	"os"
 	"os/exec"
+	"strings"
 )
 
 var ErrDNSNotVerified = errors.New("dns record does not point to the configured VPS host")
@@ -30,12 +31,14 @@ type Manager struct {
 }
 
 type ProvisionConfig struct {
-	ProjectID     string
-	ProjectName   string
-	Domain        string
-	Environment   string
-	SSLDomain     string
-	ContainerName string
+	ProjectID      string
+	ProjectName    string
+	Domain         string
+	Environment    string
+	SSLDomain      string
+	SSLDomains     []string
+	RedirectDomain string
+	ContainerName  string
 }
 
 type commandRunner interface {
@@ -70,16 +73,18 @@ func (m *Manager) VerifyDomainDNS(domainName string) (bool, error) {
 
 func (m *Manager) ProvisionDomain(cfg ProvisionConfig, requireDNS bool) error {
 	if requireDNS {
-		verified, err := m.VerifyDomainDNS(cfg.Domain)
-		if err != nil {
-			return err
-		}
-		if !verified {
-			return ErrDNSNotVerified
+		for _, domainName := range cfg.domainsToVerify() {
+			verified, err := m.VerifyDomainDNS(domainName)
+			if err != nil {
+				return err
+			}
+			if !verified {
+				return ErrDNSNotVerified
+			}
 		}
 	}
 
-	if err := m.RequestSSLCert(cfg.sslDomain()); err != nil {
+	if err := m.RequestSSLCert(cfg.requestSSLDomains()...); err != nil {
 		return err
 	}
 
@@ -94,7 +99,7 @@ func (m *Manager) ProvisionDomain(cfg ProvisionConfig, requireDNS bool) error {
 	return nil
 }
 
-func (m *Manager) RequestSSLCert(domainName string) error {
+func (m *Manager) RequestSSLCert(domainNames ...string) error {
 	if m.ProxyCertsDir == "" {
 		return fmt.Errorf("proxy certs directory is not configured")
 	}
@@ -104,6 +109,9 @@ func (m *Manager) RequestSSLCert(domainName string) error {
 	if m.SSLEmail == "" {
 		return fmt.Errorf("ssl email is not configured")
 	}
+	if len(domainNames) == 0 {
+		return fmt.Errorf("at least one domain is required for SSL provisioning")
+	}
 
 	cmd := []string{
 		"run", "--rm",
@@ -111,20 +119,25 @@ func (m *Manager) RequestSSLCert(domainName string) error {
 		"-v", fmt.Sprintf("%s:/var/www/html", m.ProxyHTMLDir),
 		"certbot/certbot", "certonly",
 		"--webroot", "-w", "/var/www/html",
-		"-d", domainName,
 		"--email", m.SSLEmail,
 		"--agree-tos",
 		"--no-eff-email",
 		"--non-interactive",
 		"--keep-until-expiring",
 	}
+	for _, domainName := range domainNames {
+		if domainName == "" {
+			continue
+		}
+		cmd = append(cmd, "-d", domainName)
+	}
 
 	output, err := m.runner.CombinedOutput("docker", cmd...)
 	if err != nil {
-		return fmt.Errorf("certbot failed for %s: %w\nOutput: %s", domainName, err, string(output))
+		return fmt.Errorf("certbot failed for %s: %w\nOutput: %s", strings.Join(domainNames, ", "), err, string(output))
 	}
 
-	log.Printf("SSL cert ensured for %s", domainName)
+	log.Printf("SSL cert ensured for %s", strings.Join(domainNames, ", "))
 	return nil
 }
 
@@ -134,12 +147,13 @@ func (m *Manager) WriteNginxConfig(cfg ProvisionConfig) (string, error) {
 	}
 
 	return GenerateNginxConfig(m.NginxConfDir, NginxConfig{
-		ProjectID:     cfg.ProjectID,
-		ProjectName:   cfg.ProjectName,
-		Domain:        cfg.Domain,
-		Environment:   cfg.Environment,
-		SSLDomain:     cfg.sslDomain(),
-		ContainerName: cfg.ContainerName,
+		ProjectID:      cfg.ProjectID,
+		ProjectName:    cfg.ProjectName,
+		Domain:         cfg.Domain,
+		RedirectDomain: cfg.RedirectDomain,
+		Environment:    cfg.Environment,
+		SSLDomain:      cfg.sslDomain(),
+		ContainerName:  cfg.ContainerName,
 	})
 }
 
@@ -174,4 +188,35 @@ func (cfg ProvisionConfig) sslDomain() string {
 		return cfg.SSLDomain
 	}
 	return cfg.Domain
+}
+
+func (cfg ProvisionConfig) requestSSLDomains() []string {
+	if len(cfg.SSLDomains) > 0 {
+		return uniqueNonEmpty(cfg.SSLDomains...)
+	}
+	if cfg.SSLDomain != "" {
+		return []string{cfg.SSLDomain}
+	}
+	return uniqueNonEmpty(cfg.Domain, cfg.RedirectDomain)
+}
+
+func (cfg ProvisionConfig) domainsToVerify() []string {
+	return uniqueNonEmpty(cfg.Domain, cfg.RedirectDomain)
+}
+
+func uniqueNonEmpty(values ...string) []string {
+	seen := make(map[string]struct{}, len(values))
+	result := make([]string, 0, len(values))
+	for _, value := range values {
+		trimmed := strings.TrimSpace(value)
+		if trimmed == "" {
+			continue
+		}
+		if _, ok := seen[trimmed]; ok {
+			continue
+		}
+		seen[trimmed] = struct{}{}
+		result = append(result, trimmed)
+	}
+	return result
 }

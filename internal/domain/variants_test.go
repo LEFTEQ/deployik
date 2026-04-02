@@ -1,0 +1,51 @@
+package domain
+
+import "testing"
+
+func TestResolveVariantPlanForProductionRootDomain(t *testing.T) {
+	t.Parallel()
+
+	plan := ResolveVariantPlan("Example.com.", "production")
+	if plan.CanonicalDomain != "example.com" {
+		t.Fatalf("canonical domain = %q, want example.com", plan.CanonicalDomain)
+	}
+	if plan.RedirectDomain != "www.example.com" {
+		t.Fatalf("redirect domain = %q, want www.example.com", plan.RedirectDomain)
+	}
+}
+
+func TestResolveVariantPlanStripsWWWForProductionDomain(t *testing.T) {
+	t.Parallel()
+
+	plan := ResolveVariantPlan("www.app.example.com", "production")
+	if plan.CanonicalDomain != "app.example.com" {
+		t.Fatalf("canonical domain = %q, want app.example.com", plan.CanonicalDomain)
+	}
+	if plan.RedirectDomain != "www.app.example.com" {
+		t.Fatalf("redirect domain = %q, want www.app.example.com", plan.RedirectDomain)
+	}
+}
+
+func TestResolveVariantPlanDoesNotAddWWWForSubdomain(t *testing.T) {
+	t.Parallel()
+
+	plan := ResolveVariantPlan("app.example.com", "production")
+	if plan.CanonicalDomain != "app.example.com" {
+		t.Fatalf("canonical domain = %q, want app.example.com", plan.CanonicalDomain)
+	}
+	if plan.RedirectDomain != "" {
+		t.Fatalf("redirect domain = %q, want empty", plan.RedirectDomain)
+	}
+}
+
+func TestResolveVariantPlanDoesNotAddWWWForPreview(t *testing.T) {
+	t.Parallel()
+
+	plan := ResolveVariantPlan("acme-web.preview.example.com", "preview")
+	if plan.CanonicalDomain != "acme-web.preview.example.com" {
+		t.Fatalf("canonical domain = %q, want preview host", plan.CanonicalDomain)
+	}
+	if plan.RedirectDomain != "" {
+		t.Fatalf("redirect domain = %q, want empty", plan.RedirectDomain)
+	}
+}

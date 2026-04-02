@@ -60,6 +60,7 @@ internal/
     loki.go               Loki HTTP client for summary + timeseries queries
     audience.go           Audience aggregation helpers for multi-host/domain rollups
     options.go            Analytics range/environment/timezone normalization
+                          Install payloads support a separate tracker script URL so audience tracking can be served from Lovinka CDN while events still post to Umami
 
   authz/
     access.go             CanAccessProject, LoadProject, LoadDeployment (ownership + admin bypass)
@@ -107,6 +108,7 @@ internal/
     nginx.go              GenerateNginxConfig from Go template, RemoveNginxConfig
     reconcile.go          Rewrites nginx configs for already-active Deployik domains on startup
     dns.go                VerifyDNS (A-record lookup against VPS IP)
+    variants.go           Canonicalizes production custom domains so apex stays primary and optional www alias redirects to it
 
   github/
     oauth.go              OAuthConfig: AuthorizeURL, ExchangeCode; GetUser

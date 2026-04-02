@@ -12,11 +12,14 @@ const nginxProjectTemplate = `# Managed by Deployik - do not edit manually
 # Project: {{.ProjectName}}
 # Project ID: {{.ProjectID}}
 # Domain: {{.Domain}}
+{{- if .RedirectDomain }}
+# Redirect: {{.RedirectDomain}} -> {{.Domain}}
+{{- end }}
 
 server {
     listen 80;
     listen [::]:80;
-    server_name {{.Domain}};
+    server_name {{.Domain}}{{if .RedirectDomain}} {{.RedirectDomain}}{{end}};
     access_log off;
 
     location /.well-known/acme-challenge/ {
@@ -29,9 +32,33 @@ server {
     }
 
     location / {
-        return 301 https://$host$request_uri;
+        return 301 https://{{.Domain}}$request_uri;
     }
 }
+
+{{- if .RedirectDomain }}
+server {
+    listen 443 ssl;
+    listen [::]:443 ssl;
+    http2 on;
+    server_name {{.RedirectDomain}};
+
+    ssl_certificate /etc/nginx/certs/live/{{.SSLDomain}}/fullchain.pem;
+    ssl_certificate_key /etc/nginx/certs/live/{{.SSLDomain}}/privkey.pem;
+
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_session_cache shared:SSL:10m;
+    ssl_session_timeout 1d;
+
+    add_header Strict-Transport-Security "max-age=31536000" always;
+    add_header X-Frame-Options "DENY" always;
+    add_header X-Content-Type-Options "nosniff" always;
+
+    location / {
+        return 301 https://{{.Domain}}$request_uri;
+    }
+}
+{{- end }}
 
 server {
     listen 443 ssl;
@@ -72,12 +99,13 @@ server {
 
 // NginxConfig holds data for generating an nginx config.
 type NginxConfig struct {
-	ProjectID     string
-	ProjectName   string
-	Domain        string
-	Environment   string
-	SSLDomain     string // may differ for wildcard certs
-	ContainerName string
+	ProjectID      string
+	ProjectName    string
+	Domain         string
+	RedirectDomain string
+	Environment    string
+	SSLDomain      string // may differ for wildcard certs
+	ContainerName  string
 }
 
 // GenerateNginxConfig creates an nginx config file for a domain.

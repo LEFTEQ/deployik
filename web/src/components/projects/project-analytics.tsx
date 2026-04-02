@@ -508,8 +508,12 @@ function AudienceInstallCard({
                 value={data.audience.website_id || "Not provisioned yet"}
               />
               <InfoTile
-                label="Umami Host"
+                label="Collection Host"
                 value={data.audience.install.host_url || "Unavailable"}
+              />
+              <InfoTile
+                label="Tracker Script"
+                value={data.audience.install.script_url || "Unavailable"}
               />
               <InfoTile
                 label="Last Event"

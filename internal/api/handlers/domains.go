@@ -2,8 +2,10 @@ package handlers
 
 import (
 	"encoding/json"
+	"fmt"
 	"log"
 	"net/http"
+	"strings"
 
 	"github.com/go-chi/chi/v5"
 
@@ -64,16 +66,24 @@ func (h *DomainHandler) Add(w http.ResponseWriter, r *http.Request) {
 		env = "production"
 	}
 
-	// Check if domain already exists
-	existing, _ := h.DB.GetDomainByName(req.Domain)
-	if existing != nil {
-		writeJSON(w, http.StatusConflict, map[string]string{"error": "domain already in use"})
+	plan := domain.ResolveVariantPlan(req.Domain, env)
+	if plan.CanonicalDomain == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "domain is required"})
 		return
+	}
+
+	// Check if any managed hostname is already claimed.
+	for _, hostname := range plan.AllDomains() {
+		existing, _ := h.DB.GetDomainByName(hostname)
+		if existing != nil {
+			writeJSON(w, http.StatusConflict, map[string]string{"error": "domain already in use"})
+			return
+		}
 	}
 
 	d := &db.Domain{
 		ProjectID:   projectID,
-		DomainName:  req.Domain,
+		DomainName:  plan.CanonicalDomain,
 		Environment: env,
 		IsAuto:      false,
 		SSLStatus:   "pending",
@@ -175,18 +185,34 @@ func (h *DomainHandler) Verify(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Verify DNS
-	verified, err := h.Manager.VerifyDomainDNS(target.DomainName)
-	if err != nil {
-		log.Printf("DNS verification error for %s: %v", target.DomainName, err)
+	plan := domain.ResolveVariantPlan(target.DomainName, target.Environment)
+	var missing []string
+	for _, hostname := range plan.AllDomains() {
+		verified, err := h.Manager.VerifyDomainDNS(hostname)
+		if err != nil {
+			log.Printf("DNS verification error for %s: %v", hostname, err)
+		}
+		if !verified {
+			missing = append(missing, hostname)
+		}
 	}
 
+	verified := len(missing) == 0
 	h.DB.UpdateDomainDNS(domainID, verified)
 
 	if !verified {
 		h.DB.UpdateDomainSSL(domainID, "pending", target.SSLExpiresAt)
+		message := "DNS A record does not point to " + h.Manager.VPSHost
+		if len(missing) > 0 {
+			message = fmt.Sprintf(
+				"Point %s to %s before verifying SSL",
+				strings.Join(missing, ", "),
+				h.Manager.VPSHost,
+			)
+		}
 		writeJSON(w, http.StatusOK, map[string]interface{}{
 			"dns_verified": false,
-			"message":      "DNS A record does not point to " + h.Manager.VPSHost,
+			"message":      message,
 		})
 		claims := auth.GetClaims(r.Context())
 		h.Audit.Record(audit.Entry{
@@ -204,14 +230,15 @@ func (h *DomainHandler) Verify(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	err = h.Manager.ProvisionDomain(domain.ProvisionConfig{
-		ProjectID:     project.ID,
-		ProjectName:   project.Name,
-		Domain:        target.DomainName,
-		Environment:   target.Environment,
-		ContainerName: "deployik-" + project.Name + "-" + target.Environment,
-	}, false)
-	if err != nil {
+	if err := h.Manager.ProvisionDomain(domain.ProvisionConfig{
+		ProjectID:      project.ID,
+		ProjectName:    project.Name,
+		Domain:         plan.CanonicalDomain,
+		RedirectDomain: plan.RedirectDomain,
+		SSLDomains:     plan.AllDomains(),
+		Environment:    target.Environment,
+		ContainerName:  "deployik-" + project.Name + "-" + target.Environment,
+	}, false); err != nil {
 		log.Printf("SSL cert request failed for %s: %v", target.DomainName, err)
 		h.DB.UpdateDomainSSL(domainID, "error", target.SSLExpiresAt)
 		writeJSON(w, http.StatusOK, map[string]interface{}{

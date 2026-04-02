@@ -17,14 +17,21 @@ type Service struct {
 	DB             *db.DB
 	Umami          *UmamiClient
 	UmamiPublicURL string
+	UmamiScriptURL string
 	Loki           *LokiClient
 }
 
-func NewService(database *db.DB, umami *UmamiClient, umamiPublicURL string, loki *LokiClient) *Service {
+func NewService(database *db.DB, umami *UmamiClient, umamiPublicURL, umamiScriptURL string, loki *LokiClient) *Service {
+	publicURL := strings.TrimRight(strings.TrimSpace(umamiPublicURL), "/")
+	scriptURL := strings.TrimSpace(umamiScriptURL)
+	if scriptURL == "" && publicURL != "" {
+		scriptURL = publicURL + "/script.js"
+	}
 	return &Service{
 		DB:             database,
 		Umami:          umami,
-		UmamiPublicURL: strings.TrimRight(strings.TrimSpace(umamiPublicURL), "/"),
+		UmamiPublicURL: publicURL,
+		UmamiScriptURL: scriptURL,
 		Loki:           loki,
 	}
 }
@@ -177,8 +184,9 @@ func (s *Service) buildAudiencePayload(record *db.ProjectAnalytics, project *db.
 		TopCountries: []BreakdownItem{},
 	}
 	if s.UmamiPublicURL != "" {
-		payload.Install.ScriptURL = s.UmamiPublicURL + "/script.js"
+		payload.Install.HostURL = s.UmamiPublicURL
 	}
+	payload.Install.ScriptURL = s.UmamiScriptURL
 
 	if record == nil {
 		return payload
@@ -206,19 +214,17 @@ func (s *Service) buildAudiencePayload(record *db.ProjectAnalytics, project *db.
 
 func (s *Service) buildInstallPayload(record *db.ProjectAnalytics, project *db.Project, groups DomainGroups) InstallPayload {
 	payload := InstallPayload{
-		HostURL: s.UmamiPublicURL,
-		Domains: groups,
+		HostURL:   s.UmamiPublicURL,
+		ScriptURL: s.UmamiScriptURL,
+		Domains:   groups,
 	}
-	if s.UmamiPublicURL != "" {
-		payload.ScriptURL = strings.TrimRight(s.UmamiPublicURL, "/") + "/script.js"
-	}
-	if record == nil || record.UmamiWebsiteID == "" || s.UmamiPublicURL == "" {
+	if record == nil || record.UmamiWebsiteID == "" || s.UmamiPublicURL == "" || s.UmamiScriptURL == "" {
 		return payload
 	}
 
 	attrs := []string{
 		`defer`,
-		fmt.Sprintf(`src="%s/script.js"`, s.UmamiPublicURL),
+		fmt.Sprintf(`src="%s"`, s.UmamiScriptURL),
 		fmt.Sprintf(`data-website-id="%s"`, record.UmamiWebsiteID),
 		fmt.Sprintf(`data-host-url="%s"`, s.UmamiPublicURL),
 		`data-performance="true"`,
@@ -228,11 +234,11 @@ func (s *Service) buildInstallPayload(record *db.ProjectAnalytics, project *db.P
 	}
 
 	payload.Snippet = "<script\n  " + strings.Join(attrs, "\n  ") + "\n></script>"
-	payload.AIPrompt = buildAIPrompt(project, record.UmamiWebsiteID, s.UmamiPublicURL, groups)
+	payload.AIPrompt = buildAIPrompt(project, record.UmamiWebsiteID, s.UmamiPublicURL, s.UmamiScriptURL, groups)
 	return payload
 }
 
-func buildAIPrompt(project *db.Project, websiteID, hostURL string, groups DomainGroups) string {
+func buildAIPrompt(project *db.Project, websiteID, hostURL, scriptURL string, groups DomainGroups) string {
 	allDomains := joinOrFallback(groups.All, "No Deployik domains configured yet.")
 	previewDomains := joinOrFallback(groups.Preview, "No preview domains configured.")
 	productionDomains := joinOrFallback(groups.Production, "No production domains configured.")
@@ -265,6 +271,7 @@ func buildAIPrompt(project *db.Project, websiteID, hostURL string, groups Domain
 	prompt.WriteString(fmt.Sprintf("- Package manager: %s\n", packageManager))
 	prompt.WriteString(fmt.Sprintf("- Root directory: %s\n", rootDirectory))
 	prompt.WriteString(fmt.Sprintf("- Umami host: %s\n", hostURL))
+	prompt.WriteString(fmt.Sprintf("- Tracker script URL: %s\n", scriptURL))
 	prompt.WriteString(fmt.Sprintf("- Umami website ID: %s\n", websiteID))
 	prompt.WriteString(fmt.Sprintf("- Preview domains: %s\n", previewDomains))
 	prompt.WriteString(fmt.Sprintf("- Production domains: %s\n", productionDomains))
@@ -281,7 +288,7 @@ func buildAIPrompt(project *db.Project, websiteID, hostURL string, groups Domain
 	prompt.WriteString("7. Return the changed files and a short verification checklist.\n\n")
 	prompt.WriteString("Use this exact tracker snippet configuration:\n")
 	prompt.WriteString("```html\n")
-	prompt.WriteString(fmt.Sprintf("<script defer src=\"%s/script.js\" data-website-id=\"%s\" data-host-url=\"%s\"", hostURL, websiteID, hostURL))
+	prompt.WriteString(fmt.Sprintf("<script defer src=\"%s\" data-website-id=\"%s\" data-host-url=\"%s\"", scriptURL, websiteID, hostURL))
 	if len(groups.All) > 0 {
 		prompt.WriteString(fmt.Sprintf(" data-domains=\"%s\"", strings.Join(groups.All, ",")))
 	}

@@ -1197,8 +1197,9 @@ function DnsSetupGuide({
               <p>1. Open your domain in GoDaddy and go to DNS.</p>
               <p>2. Add an A record for the host shown above.</p>
               <p>3. Set Points to to {dnsTargetIp || "the target VPS IP"}.</p>
-              <p>4. Leave TTL on the default value.</p>
-              <p>5. Remove conflicting A, AAAA, or forwarded records for the same host.</p>
+              <p>4. For root domains, also add `www` and point it to the same place.</p>
+              <p>5. Leave TTL on the default value.</p>
+              <p>6. Remove conflicting A, AAAA, or forwarded records for the same host.</p>
             </div>
           </div>
 
@@ -1208,7 +1209,7 @@ function DnsSetupGuide({
               <p>1. Open the domain in Vercel and go to DNS Records.</p>
               <p>2. Add an A record for the host shown above.</p>
               <p>3. Set the value to {dnsTargetIp || "the target VPS IP"}.</p>
-              <p>4. If you also want `www`, point it at the same IP or CNAME it to the root.</p>
+              <p>4. For root domains, also create `www` and point it at the same target or CNAME it to the root.</p>
               <p>5. Remove old Vercel-specific records for the same host if they conflict.</p>
             </div>
           </div>
@@ -1218,7 +1219,9 @@ function DnsSetupGuide({
           <p>
             Deployik verifies A-record resolution to the VPS IP. If you use a
             subdomain, prefer an A record directly to the server. After DNS
-            propagates, click Verify to issue SSL and activate the domain.
+            propagates, click Verify to issue SSL and activate the domain. Root
+            domains are served without `www`; Deployik also issues SSL for the
+            `www` variant and redirects it to the apex host.
           </p>
         </div>
       </CardContent>

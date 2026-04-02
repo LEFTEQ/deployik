@@ -28,6 +28,7 @@ type Config struct {
 	VPSHost                 string
 	AnalyticsUmamiURL       string
 	AnalyticsUmamiPublicURL string
+	AnalyticsUmamiScriptURL string
 	AnalyticsUmamiUsername  string
 	AnalyticsUmamiPassword  string
 	AnalyticsLokiURL        string
@@ -52,6 +53,7 @@ func Load() (*Config, error) {
 		VPSHost:                 getEnv("VPS_HOST", "203.0.113.10"),
 		AnalyticsUmamiURL:       strings.TrimRight(strings.TrimSpace(os.Getenv("ANALYTICS_UMAMI_URL")), "/"),
 		AnalyticsUmamiPublicURL: strings.TrimRight(strings.TrimSpace(os.Getenv("ANALYTICS_UMAMI_PUBLIC_URL")), "/"),
+		AnalyticsUmamiScriptURL: strings.TrimSpace(os.Getenv("ANALYTICS_UMAMI_SCRIPT_URL")),
 		AnalyticsUmamiUsername:  strings.TrimSpace(os.Getenv("ANALYTICS_UMAMI_USERNAME")),
 		AnalyticsUmamiPassword:  os.Getenv("ANALYTICS_UMAMI_PASSWORD"),
 		AnalyticsLokiURL:        strings.TrimRight(strings.TrimSpace(os.Getenv("ANALYTICS_LOKI_URL")), "/"),
@@ -59,6 +61,9 @@ func Load() (*Config, error) {
 
 	if cfg.AnalyticsUmamiPublicURL == "" {
 		cfg.AnalyticsUmamiPublicURL = cfg.AnalyticsUmamiURL
+	}
+	if cfg.AnalyticsUmamiScriptURL == "" && cfg.AnalyticsUmamiPublicURL != "" {
+		cfg.AnalyticsUmamiScriptURL = cfg.AnalyticsUmamiPublicURL + "/script.js"
 	}
 
 	if users := os.Getenv("ALLOWED_GITHUB_USERS"); users != "" {
