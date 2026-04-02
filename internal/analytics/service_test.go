@@ -115,17 +115,17 @@ func TestBuildLokiSelectorUsesFilenameFilter(t *testing.T) {
 		{
 			name:        "all environments",
 			environment: EnvironmentAll,
-			expected:    `{job="deployik-nginx",filename=~".*deployik-01KN5PPX9D28XX9J83C2XQYF2T-.*\.json"}`,
+			expected:    `{job="deployik-nginx",filename=~".*deployik-01KN5PPX9D28XX9J83C2XQYF2T-.*"}`,
 		},
 		{
 			name:        "preview environment",
 			environment: EnvironmentPreview,
-			expected:    `{job="deployik-nginx",filename=~".*deployik-01KN5PPX9D28XX9J83C2XQYF2T-.*-preview\.json"}`,
+			expected:    `{job="deployik-nginx",filename=~".*deployik-01KN5PPX9D28XX9J83C2XQYF2T-.*-preview.*"}`,
 		},
 		{
 			name:        "production environment",
 			environment: EnvironmentProduction,
-			expected:    `{job="deployik-nginx",filename=~".*deployik-01KN5PPX9D28XX9J83C2XQYF2T-.*-production\.json"}`,
+			expected:    `{job="deployik-nginx",filename=~".*deployik-01KN5PPX9D28XX9J83C2XQYF2T-.*-production.*"}`,
 		},
 	}
 

@@ -538,9 +538,7 @@ func (s *Service) queryBreakdown(ctx context.Context, query, label string) ([]Br
 func buildLokiSelector(projectID string, environment EnvironmentFilter) string {
 	filenamePattern := fmt.Sprintf(`.*deployik-%s-.*`, regexp.QuoteMeta(projectID))
 	if environment == EnvironmentPreview || environment == EnvironmentProduction {
-		filenamePattern += fmt.Sprintf(`-%s\.json`, environment)
-	} else {
-		filenamePattern += `\.json`
+		filenamePattern += fmt.Sprintf(`-%s.*`, regexp.QuoteMeta(string(environment)))
 	}
 
 	parts := []string{
