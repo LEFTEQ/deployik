@@ -42,14 +42,14 @@ export function AnalyticsMetricChart({
   valueFormatter?: (value: number) => string;
 }) {
   return (
-    <Card className="border-white/10">
+    <Card className="min-w-0 border-white/10">
       <CardHeader>
         <CardTitle className="text-base">{title}</CardTitle>
         {description ? <CardDescription>{description}</CardDescription> : null}
       </CardHeader>
       <CardContent>
         {data.length ? (
-          <div className="h-72">
+          <div className="h-72 min-w-0">
             <ResponsiveContainer width="100%" height="100%">
               <AreaChart data={data}>
                 <defs>
@@ -62,12 +62,23 @@ export function AnalyticsMetricChart({
                       x2="0"
                       y2="1"
                     >
-                      <stop offset="5%" stopColor={item.color} stopOpacity={0.28} />
-                      <stop offset="95%" stopColor={item.color} stopOpacity={0} />
+                      <stop
+                        offset="5%"
+                        stopColor={item.color}
+                        stopOpacity={0.28}
+                      />
+                      <stop
+                        offset="95%"
+                        stopColor={item.color}
+                        stopOpacity={0}
+                      />
                     </linearGradient>
                   ))}
                 </defs>
-                <CartesianGrid vertical={false} stroke="rgba(255,255,255,0.08)" />
+                <CartesianGrid
+                  vertical={false}
+                  stroke="rgba(255,255,255,0.08)"
+                />
                 <XAxis
                   dataKey="label"
                   tickLine={false}
@@ -82,7 +93,9 @@ export function AnalyticsMetricChart({
                   tickMargin={10}
                   stroke="rgba(255,255,255,0.5)"
                   tickFormatter={(value) =>
-                    valueFormatter ? valueFormatter(Number(value)) : String(value)
+                    valueFormatter
+                      ? valueFormatter(Number(value))
+                      : String(value)
                   }
                 />
                 <Tooltip

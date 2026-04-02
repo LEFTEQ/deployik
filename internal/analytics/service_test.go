@@ -331,6 +331,70 @@ func TestGetProjectPayloadProvisioningAndMetrics(t *testing.T) {
 	}
 }
 
+func TestGetProjectPayloadProductionWithoutDomainsReturnsEmptyAudienceSeries(t *testing.T) {
+	database := newAnalyticsTestDB(t)
+	project, domains := newAnalyticsProject(t, database)
+	domains = domains[:1]
+
+	umamiServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch {
+		case r.URL.Path == "/api/auth/login":
+			json.NewEncoder(w).Encode(map[string]any{"token": "test-token"})
+		case r.URL.Path == "/api/websites" && r.Method == http.MethodPost:
+			json.NewEncoder(w).Encode(map[string]any{
+				"id":     "website-1",
+				"name":   "analytics-demo",
+				"domain": "analytics-demo.preview.example.com",
+			})
+		case r.URL.Path == "/api/websites/website-1" && r.Method == http.MethodPost:
+			json.NewEncoder(w).Encode(map[string]any{
+				"id":     "website-1",
+				"name":   "analytics-demo",
+				"domain": "analytics-demo.preview.example.com",
+			})
+		case r.URL.Path == "/api/websites/website-1/daterange":
+			json.NewEncoder(w).Encode(map[string]any{
+				"startDate": "2026-04-01T00:00:00Z",
+				"endDate":   "2026-04-02T12:00:00Z",
+			})
+		default:
+			t.Fatalf("unexpected Umami request: %s %s", r.Method, r.URL.String())
+		}
+	}))
+	defer umamiServer.Close()
+
+	service := NewService(
+		database,
+		NewUmamiClient(umamiServer.URL, "admin", "password"),
+		"https://analytics.example.com",
+		"https://cdn.example.com/deployik-analytics/umami/latest.js",
+		nil,
+	)
+
+	payload, err := service.GetProjectPayload(context.Background(), project, domains, QueryOptions{
+		Environment: EnvironmentProduction,
+		Range:       Range24Hour,
+		Timezone:    "UTC",
+	})
+	if err != nil {
+		t.Fatalf("GetProjectPayload: %v", err)
+	}
+
+	if payload.Audience.Series.Pageviews == nil {
+		t.Fatal("pageviews series should be an empty slice, not nil")
+	}
+	if payload.Audience.Series.Visits == nil {
+		t.Fatal("visits series should be an empty slice, not nil")
+	}
+	if len(payload.Audience.Series.Pageviews) != 0 {
+		t.Fatalf("pageviews series len = %d, want 0", len(payload.Audience.Series.Pageviews))
+	}
+	if len(payload.Audience.Series.Visits) != 0 {
+		t.Fatalf("visits series len = %d, want 0", len(payload.Audience.Series.Visits))
+	}
+}
+
 type mockVectorRow struct {
 	Metric map[string]string
 	Value  string

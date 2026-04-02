@@ -189,6 +189,12 @@ export function ProjectAnalyticsTab({ projectId }: { projectId: string }) {
         : [],
     [data, range],
   );
+  const selectedDomains =
+    environment === "preview"
+      ? (data?.domains.preview ?? [])
+      : environment === "production"
+        ? (data?.domains.production ?? [])
+        : (data?.domains.all ?? []);
 
   return (
     <div className="space-y-4">
@@ -247,6 +253,23 @@ export function ProjectAnalyticsTab({ projectId }: { projectId: string }) {
         </Card>
       ) : data ? (
         <>
+          {environment !== "all" && selectedDomains.length === 0 ? (
+            <Card className="border-white/10">
+              <CardHeader>
+                <CardTitle className="text-base">
+                  No {formatEnvironmentLabel(environment).toLowerCase()} domains
+                  yet
+                </CardTitle>
+                <CardDescription>
+                  This filter only shows analytics for verified{" "}
+                  {formatEnvironmentLabel(environment).toLowerCase()} domains.
+                  Add a domain for this environment and deploy it to start
+                  seeing data here.
+                </CardDescription>
+              </CardHeader>
+            </Card>
+          ) : null}
+
           <AudienceInstallCard
             data={data}
             isVerifying={verifyMutation.isPending}
@@ -694,13 +717,14 @@ function InfoTile({ label, value }: { label: string; value: string }) {
 }
 
 function mergeSeries(
-  series: { key: string; points: AnalyticsTimePoint[] }[],
+  series: { key: string; points: AnalyticsTimePoint[] | null | undefined }[],
   range: AnalyticsRangePreset,
 ): AnalyticsChartDatum[] {
   const rows = new Map<string, AnalyticsChartDatum>();
 
   for (const entry of series) {
-    for (const point of entry.points) {
+    const points = Array.isArray(entry.points) ? entry.points : [];
+    for (const point of points) {
       const timestamp = point.timestamp;
       const existing = rows.get(timestamp) ?? {
         label: formatPointLabel(timestamp, range),

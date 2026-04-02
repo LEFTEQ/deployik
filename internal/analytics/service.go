@@ -180,6 +180,10 @@ func (s *Service) buildAudiencePayload(record *db.ProjectAnalytics, project *db.
 			HostURL: s.UmamiPublicURL,
 			Domains: groups,
 		},
+		Series: AudienceSeries{
+			Pageviews: []TimePoint{},
+			Visits:    []TimePoint{},
+		},
 		TopPages:     []BreakdownItem{},
 		TopReferrers: []BreakdownItem{},
 		TopCountries: []BreakdownItem{},
