@@ -15,12 +15,14 @@ RUN go mod download
 COPY . .
 COPY --from=frontend-builder /app/web/dist cmd/server/web_dist
 RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o /deployik ./cmd/server/
+RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o /deployik-backup ./cmd/backup/
 
 # Stage 3: Minimal runtime
 FROM alpine:3.20
 RUN apk add --no-cache ca-certificates git docker-cli
 WORKDIR /app
 COPY --from=go-builder /deployik /app/deployik
+COPY --from=go-builder /deployik-backup /app/deployik-backup
 COPY templates/ /app/templates/
 
 EXPOSE 8080

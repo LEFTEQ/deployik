@@ -27,9 +27,12 @@ Self-hosted Vercel alternative for the Lovinka VPS. Deploys Next.js and static w
 
 ```
 cmd/server/main.go        Entry point: loads config, initializes all services, starts HTTP server
+cmd/backup/main.go        Backup helper binary: create/verify consistent SQLite snapshots for infra timers and off-site sync
 cmd/server/web_dist/      Embedded SPA (populated by `make build` or Docker build)
 
 internal/
+  backup/
+    sqlite.go             CreateSQLiteSnapshot() uses VACUUM INTO + integrity_check for live SQLite backups
   api/
     router.go             chi route definitions (public + protected groups)
     spa.go                Serves embedded SPA with client-side routing fallback

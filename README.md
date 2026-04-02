@@ -15,6 +15,7 @@ Self-hosted deployment platform for the [Lovinka](https://example.com) VPS. A li
 - **Monorepo Support** -- Root directory support for apps inside monorepos, automatic lock file detection from repo root or app directory
 - **Dockerfile Override** -- Bring your own Dockerfile; Deployik only generates one when none exists
 - **Single Binary** -- Go backend embeds the React SPA via `go:embed`, ships as one container
+- **Safe SQLite Backups** -- Companion `deployik-backup` binary creates verified live snapshots for systemd/offsite backup jobs
 
 ## Tech Stack
 
@@ -99,6 +100,9 @@ go test ./...
 
 # Frontend typecheck
 cd web && bunx tsc --noEmit
+
+# Create a verified SQLite snapshot locally
+go run ./cmd/backup create --database data/deployik.db --output /tmp/deployik-backup.sqlite3
 ```
 
 ## Configuration
@@ -160,7 +164,10 @@ Deployik is deployed via GitHub Actions on every push to `main`:
 
 ```
 cmd/server/              Go entry point, embeds React SPA via go:embed
+cmd/backup/              CLI helper that creates/verifies consistent SQLite snapshots for backup jobs
 internal/
+  backup/
+    sqlite.go            VACUUM INTO-based live snapshot + integrity_check verification helpers
   api/
     handlers/            REST handlers (auth, projects, deployments, domains, envvars)
     middleware/           JWT auth middleware, CORS
