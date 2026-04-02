@@ -24,5 +24,16 @@ export IMAGE_TAG="${IMAGE_TAG}"
 
 docker compose pull app
 docker compose up -d --no-build app
-docker exec deployik wget -q --spider http://localhost:8080/api/health
+
+for attempt in \$(seq 1 30); do
+  if docker exec deployik wget -q --spider http://localhost:8080/api/health; then
+    exit 0
+  fi
+
+  sleep 2
+done
+
+echo "Deployik did not become healthy in time" >&2
+docker logs --tail 200 deployik >&2 || true
+exit 1
 EOF
