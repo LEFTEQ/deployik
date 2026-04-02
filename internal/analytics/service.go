@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"fmt"
 	"net/url"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -535,12 +536,16 @@ func (s *Service) queryBreakdown(ctx context.Context, query, label string) ([]Br
 }
 
 func buildLokiSelector(projectID string, environment EnvironmentFilter) string {
+	filenamePattern := fmt.Sprintf(`.*deployik-%s-.*`, regexp.QuoteMeta(projectID))
+	if environment == EnvironmentPreview || environment == EnvironmentProduction {
+		filenamePattern += fmt.Sprintf(`-%s\.json`, environment)
+	} else {
+		filenamePattern += `\.json`
+	}
+
 	parts := []string{
 		`job="deployik-nginx"`,
-		fmt.Sprintf(`project_id="%s"`, projectID),
-	}
-	if environment == EnvironmentPreview || environment == EnvironmentProduction {
-		parts = append(parts, fmt.Sprintf(`environment="%s"`, environment))
+		fmt.Sprintf(`filename=~"%s"`, filenamePattern),
 	}
 	return "{" + strings.Join(parts, ",") + "}"
 }

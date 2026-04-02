@@ -62,12 +62,14 @@ const AUDIENCE_STATUS_META: Record<
   ready_to_install: {
     label: "Ready to install",
     badgeClass: "border-primary/25 bg-primary/12 text-primary",
-    description: "The website exists. Add the tracker to start collecting audience data.",
+    description:
+      "The website exists. Add the tracker to start collecting audience data.",
   },
   waiting_for_data: {
     label: "Waiting for data",
     badgeClass: "border-amber-400/25 bg-amber-400/12 text-amber-100",
-    description: "Tracking is configured, but Umami has not seen recent traffic yet.",
+    description:
+      "Tracking is configured, but Umami has not seen recent traffic yet.",
   },
   receiving_data: {
     label: "Receiving data",
@@ -77,7 +79,8 @@ const AUDIENCE_STATUS_META: Record<
   stale: {
     label: "No recent data",
     badgeClass: "border-orange-400/25 bg-orange-400/12 text-orange-100",
-    description: "This project has historical traffic, but nothing recent in the selected window.",
+    description:
+      "This project has historical traffic, but nothing recent in the selected window.",
   },
   unavailable: {
     label: "Unavailable",
@@ -87,7 +90,8 @@ const AUDIENCE_STATUS_META: Record<
   error: {
     label: "Error",
     badgeClass: "border-rose-400/25 bg-rose-400/12 text-rose-100",
-    description: "Deployik could not provision or query the linked analytics website.",
+    description:
+      "Deployik could not provision or query the linked analytics website.",
   },
 };
 
@@ -283,7 +287,9 @@ export function ProjectAnalyticsTab({ projectId }: { projectId: string }) {
               />
               <AnalyticsStatCard
                 label="Avg. Visit"
-                value={formatDuration(data.audience.summary.avg_visit_duration_ms)}
+                value={formatDuration(
+                  data.audience.summary.avg_visit_duration_ms,
+                )}
                 hint="Average visit duration from Umami session totals."
                 icon={<Gauge className="h-4 w-4" />}
               />
@@ -473,6 +479,12 @@ function AudienceInstallCard({
     description:
       "The website exists. Add the tracker to start collecting audience data.",
   };
+  const statusHint =
+    data.audience.status === "ready_to_install"
+      ? "This project existed before audience analytics was wired up. Visitor and pageview stats will appear after you install the Umami tracker in the app. Runtime traffic below is already automatic."
+      : data.audience.status === "waiting_for_data"
+        ? "The tracker is configured, but Umami has not seen recent traffic yet. Runtime traffic below is already automatic."
+        : null;
 
   return (
     <Card className="border-white/10 overflow-hidden">
@@ -536,6 +548,12 @@ function AudienceInstallCard({
             {data.audience.error ? (
               <div className="rounded-2xl border border-rose-400/25 bg-rose-400/10 px-4 py-3 text-sm text-rose-100">
                 {data.audience.error}
+              </div>
+            ) : null}
+
+            {statusHint ? (
+              <div className="rounded-2xl border border-primary/20 bg-primary/10 px-4 py-3 text-sm text-slate-200">
+                {statusHint}
               </div>
             ) : null}
 

@@ -106,6 +106,38 @@ func TestBuildAIPromptIncludesProjectContext(t *testing.T) {
 	}
 }
 
+func TestBuildLokiSelectorUsesFilenameFilter(t *testing.T) {
+	tests := []struct {
+		name        string
+		environment EnvironmentFilter
+		expected    string
+	}{
+		{
+			name:        "all environments",
+			environment: EnvironmentAll,
+			expected:    `{job="deployik-nginx",filename=~".*deployik-01KN5PPX9D28XX9J83C2XQYF2T-.*\.json"}`,
+		},
+		{
+			name:        "preview environment",
+			environment: EnvironmentPreview,
+			expected:    `{job="deployik-nginx",filename=~".*deployik-01KN5PPX9D28XX9J83C2XQYF2T-.*-preview\.json"}`,
+		},
+		{
+			name:        "production environment",
+			environment: EnvironmentProduction,
+			expected:    `{job="deployik-nginx",filename=~".*deployik-01KN5PPX9D28XX9J83C2XQYF2T-.*-production\.json"}`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if selector := buildLokiSelector("01KN5PPX9D28XX9J83C2XQYF2T", tt.environment); selector != tt.expected {
+				t.Fatalf("unexpected selector:\nwant %s\ngot  %s", tt.expected, selector)
+			}
+		})
+	}
+}
+
 func TestGetProjectPayloadProvisioningAndMetrics(t *testing.T) {
 	database := newAnalyticsTestDB(t)
 	project, domains := newAnalyticsProject(t, database)

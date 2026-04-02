@@ -285,49 +285,54 @@ export function ProjectDetail() {
 
   const primaryPreviewUrl = getPrimaryEnvironmentUrl(domains, "preview");
   const primaryProductionUrl = getPrimaryEnvironmentUrl(domains, "production");
+  const projectMeta = [
+    { label: "Framework", value: formatFrameworkLabel(project.framework) },
+    { label: "Runtime", value: `Node.js ${project.node_version}` },
+    { label: "Workspace", value: project.organization_name || "Personal" },
+    { label: "Auto preview", value: `${project.name}.preview.example.com` },
+  ];
 
   return (
-    <div className="space-y-6 p-6">
-      {/* Header */}
+    <div className="space-y-5 p-6">
       <Link
         to="/"
-        className="mb-4 inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
+        className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
       >
         <ArrowLeft className="h-4 w-4" />
         Back to projects
       </Link>
 
-      <div className="grid gap-4 xl:grid-cols-[minmax(0,1.2fr)_minmax(340px,0.8fr)]">
-        <Card className="overflow-hidden border-white/10">
-          <CardContent className="relative px-6 py-6">
-            <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-primary/40 to-transparent" />
-            <div className="mb-5 flex flex-wrap items-center gap-2">
-              <Badge
-                variant="outline"
-                className="border-primary/25 bg-primary/10 text-primary"
-              >
-                Control plane
-              </Badge>
-              <Badge
-                variant="outline"
-                className={cn(
-                  "border-white/10 bg-white/5 text-slate-200",
-                  project.status === "active" &&
-                    "border-emerald-400/25 bg-emerald-400/12 text-emerald-100",
-                )}
-              >
-                <CircleDot className="mr-1 size-3 fill-current" />
-                {project.status}
-              </Badge>
-            </div>
+      <Card className="overflow-hidden border-white/10">
+        <CardContent className="relative px-5 py-5 sm:px-6">
+          <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-primary/40 to-transparent" />
+          <div className="space-y-4">
+            <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+              <div className="min-w-0 space-y-3">
+                <div className="flex flex-wrap items-center gap-2">
+                  <Badge
+                    variant="outline"
+                    className="border-primary/25 bg-primary/10 text-primary"
+                  >
+                    Control plane
+                  </Badge>
+                  <Badge
+                    variant="outline"
+                    className={cn(
+                      "border-white/10 bg-white/5 text-slate-200",
+                      project.status === "active" &&
+                        "border-emerald-400/25 bg-emerald-400/12 text-emerald-100",
+                    )}
+                  >
+                    <CircleDot className="mr-1 size-3 fill-current" />
+                    {project.status}
+                  </Badge>
+                </div>
 
-            <div className="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
-              <div className="space-y-3">
-                <div>
-                  <h1 className="text-3xl font-semibold tracking-tight sm:text-4xl">
+                <div className="space-y-2">
+                  <h1 className="text-2xl font-semibold tracking-tight sm:text-3xl">
                     {project.name}
                   </h1>
-                  <p className="mt-2 flex flex-wrap items-center gap-3 text-sm text-muted-foreground">
+                  <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-sm text-muted-foreground">
                     <span>
                       {project.github_owner}/{project.github_repo}
                     </span>
@@ -341,46 +346,11 @@ export function ProjectDetail() {
                       <GitBranch className="h-3.5 w-3.5" />
                       {project.branch}
                     </span>
-                  </p>
-                </div>
-
-                <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-                  <div className="rounded-2xl border border-white/8 bg-black/10 px-4 py-3">
-                    <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">
-                      Framework
-                    </p>
-                    <p className="mt-2 text-sm font-medium text-foreground">
-                      {formatFrameworkLabel(project.framework)}
-                    </p>
-                  </div>
-                  <div className="rounded-2xl border border-white/8 bg-black/10 px-4 py-3">
-                    <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">
-                      Runtime
-                    </p>
-                    <p className="mt-2 text-sm font-medium text-foreground">
-                      Node.js {project.node_version}
-                    </p>
-                  </div>
-                  <div className="rounded-2xl border border-white/8 bg-black/10 px-4 py-3">
-                    <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">
-                      Workspace
-                    </p>
-                    <p className="mt-2 truncate text-sm font-medium text-foreground">
-                      {project.organization_name || "Personal"}
-                    </p>
-                  </div>
-                  <div className="rounded-2xl border border-white/8 bg-black/10 px-4 py-3">
-                    <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">
-                      Auto preview
-                    </p>
-                    <p className="mt-2 truncate text-sm font-medium text-foreground">
-                      {project.name}.preview.example.com
-                    </p>
                   </div>
                 </div>
               </div>
 
-              <div className="flex flex-wrap gap-2 lg:max-w-[260px] lg:justify-end">
+              <div className="flex shrink-0 flex-wrap gap-2 xl:justify-end">
                 {primaryPreviewUrl ? (
                   <Button asChild size="sm">
                     <a
@@ -407,19 +377,38 @@ export function ProjectDetail() {
                 ) : null}
               </div>
             </div>
-          </CardContent>
-        </Card>
 
-        <QuickLinksCard
-          projectName={project.name}
-          deployments={deployments}
-          domains={domains}
-          isLoading={deploymentsLoading || domainsLoading}
-        />
-      </div>
+            <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-4">
+              {projectMeta.map((item) => (
+                <ProjectMetaPill
+                  key={item.label}
+                  label={item.label}
+                  value={item.value}
+                />
+              ))}
+            </div>
 
-      {/* Tabs */}
-      <Tabs defaultValue="deployments" className="mt-6">
+            <div className="grid gap-3 xl:grid-cols-2">
+              <EnvironmentAccessPanel
+                environment="preview"
+                projectName={project.name}
+                deployments={deployments}
+                domains={domains}
+                isLoading={deploymentsLoading || domainsLoading}
+              />
+              <EnvironmentAccessPanel
+                environment="production"
+                projectName={project.name}
+                deployments={deployments}
+                domains={domains}
+                isLoading={deploymentsLoading || domainsLoading}
+              />
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Tabs defaultValue="deployments">
         <TabsList className="h-auto flex-wrap justify-start gap-1 rounded-2xl border border-white/8 bg-black/10 p-1">
           <TabsTrigger value="deployments">
             <Rocket className="mr-1.5 h-3.5 w-3.5" />
@@ -487,115 +476,104 @@ export function ProjectDetail() {
   );
 }
 
-function QuickLinksCard({
+function ProjectMetaPill({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-2xl border border-white/8 bg-black/10 px-4 py-3">
+      <p className="text-[11px] uppercase tracking-[0.18em] text-muted-foreground">
+        {label}
+      </p>
+      <p className="mt-1 truncate text-sm font-medium text-foreground">
+        {value}
+      </p>
+    </div>
+  );
+}
+
+function EnvironmentAccessPanel({
+  environment,
   projectName,
   deployments,
   domains,
   isLoading,
 }: {
+  environment: Domain["environment"];
   projectName: string;
   deployments: Deployment[] | undefined;
   domains: Domain[] | undefined;
   isLoading: boolean;
 }) {
+  const readyDomains = getReadyEnvironmentDomains(domains, environment);
+  const liveDeployment = getLatestLiveEnvironmentDeployment(
+    deployments,
+    environment,
+  );
+  const latestDeployment = getLatestEnvironmentDeployment(
+    deployments,
+    environment,
+  );
+
+  const summary = liveDeployment
+    ? `Live on ${liveDeployment.commit_sha.slice(0, 7)}`
+    : latestDeployment
+      ? `Latest deployment is ${DEPLOYMENT_STATUS_META[latestDeployment.status].label.toLowerCase()}`
+      : environment === "preview"
+        ? `${projectName}.preview.example.com will appear here after the first healthy deploy.`
+        : "Add and verify a production domain to unlock direct links.";
+
   return (
-    <Card className="border-white/10">
-      <CardHeader>
-        <CardTitle className="text-base">Quick Links</CardTitle>
-        <CardDescription>
-          Jump straight into the current live environments.
-        </CardDescription>
-      </CardHeader>
-      <CardContent className="space-y-3">
-        {isLoading ? (
-          <Skeleton className="h-40 w-full" />
-        ) : (
-          (["preview", "production"] as const).map((environment) => {
-            const readyDomains = getReadyEnvironmentDomains(
-              domains,
-              environment,
-            );
-            const liveDeployment = getLatestLiveEnvironmentDeployment(
-              deployments,
-              environment,
-            );
-            const latestDeployment = getLatestEnvironmentDeployment(
-              deployments,
-              environment,
-            );
-
-            return (
-              <div
-                key={environment}
-                className="rounded-2xl border border-white/8 bg-black/10 p-4"
+    <div className="rounded-2xl border border-white/8 bg-black/10 px-4 py-3">
+      {isLoading ? (
+        <Skeleton className="h-20 w-full" />
+      ) : (
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+          <div className="min-w-0 space-y-2">
+            <div className="flex flex-wrap items-center gap-2">
+              <Badge
+                variant="outline"
+                className={ENVIRONMENT_META[environment].badgeClass}
               >
-                <div className="flex items-start justify-between gap-4">
-                  <div className="space-y-2">
-                    <Badge
-                      variant="outline"
-                      className={ENVIRONMENT_META[environment].badgeClass}
-                    >
-                      {ENVIRONMENT_META[environment].label}
-                    </Badge>
-                    <div>
-                      <p className="text-sm font-medium text-foreground">
-                        {ENVIRONMENT_META[environment].description}
-                      </p>
-                      <p className="mt-1 text-xs text-muted-foreground">
-                        {liveDeployment
-                          ? `Live on ${liveDeployment.commit_sha.slice(0, 7)}`
-                          : latestDeployment
-                            ? `Latest deployment is ${DEPLOYMENT_STATUS_META[latestDeployment.status].label.toLowerCase()}`
-                            : environment === "preview"
-                              ? `${projectName}.preview.example.com will appear here after the first healthy deploy.`
-                              : "Add and verify a production domain to unlock direct links."}
-                      </p>
-                    </div>
-                  </div>
+                {ENVIRONMENT_META[environment].label}
+              </Badge>
+              {liveDeployment ? (
+                <Badge
+                  variant="outline"
+                  className={DEPLOYMENT_STATUS_META.live.badgeClass}
+                >
+                  Live
+                </Badge>
+              ) : null}
+            </div>
+            <p className="text-sm font-medium text-foreground">
+              {ENVIRONMENT_META[environment].description}
+            </p>
+            <p className="text-xs text-muted-foreground">{summary}</p>
+          </div>
 
-                  {liveDeployment ? (
-                    <Badge
-                      variant="outline"
-                      className={DEPLOYMENT_STATUS_META.live.badgeClass}
-                    >
-                      Live
-                    </Badge>
-                  ) : null}
-                </div>
-
-                {readyDomains.length ? (
-                  <div className="mt-4 flex flex-wrap gap-2">
-                    {readyDomains.map((domain) => (
-                      <Button
-                        asChild
-                        key={domain.id}
-                        size="sm"
-                        variant="outline"
-                      >
-                        <a
-                          href={`https://${domain.domain}`}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                        >
-                          <ArrowUpRight className="mr-1.5 h-3.5 w-3.5" />
-                          {domain.is_auto ? "Auto URL" : domain.domain}
-                        </a>
-                      </Button>
-                    ))}
-                  </div>
-                ) : (
-                  <div className="mt-4 rounded-xl border border-dashed border-white/8 px-3 py-2 text-xs text-muted-foreground">
-                    {environment === "preview"
-                      ? "No active preview URL yet."
-                      : "No verified production domain yet."}
-                  </div>
-                )}
-              </div>
-            );
-          })
-        )}
-      </CardContent>
-    </Card>
+          {readyDomains.length ? (
+            <div className="flex flex-wrap gap-2 lg:max-w-[60%] lg:justify-end">
+              {readyDomains.map((domain) => (
+                <Button asChild key={domain.id} size="sm" variant="outline">
+                  <a
+                    href={`https://${domain.domain}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  >
+                    <ArrowUpRight className="mr-1.5 h-3.5 w-3.5" />
+                    {domain.is_auto ? "Auto URL" : domain.domain}
+                  </a>
+                </Button>
+              ))}
+            </div>
+          ) : (
+            <div className="rounded-xl border border-dashed border-white/8 px-3 py-2 text-xs text-muted-foreground">
+              {environment === "preview"
+                ? "No active preview URL yet."
+                : "No verified production domain yet."}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -1122,7 +1100,8 @@ function DnsSetupGuide({
 }) {
   const dnsTargetIp = platform?.dns_target_ip?.trim();
   const sampleDomain =
-    domain || (environment === "preview" ? "staging.example.com" : "example.com");
+    domain ||
+    (environment === "preview" ? "staging.example.com" : "example.com");
   const sampleHost = getDnsHostHint(sampleDomain);
 
   const copyValue = async (value: string, label: string) => {
@@ -1139,8 +1118,9 @@ function DnsSetupGuide({
       <CardHeader>
         <CardTitle className="text-base">DNS Setup</CardTitle>
         <CardDescription>
-          Point the domain at this VPS, then click Verify. Preview domains should
-          usually be subdomains; production is usually the real bought domain.
+          Point the domain at this VPS, then click Verify. Preview domains
+          should usually be subdomains; production is usually the real bought
+          domain.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
@@ -1197,20 +1177,34 @@ function DnsSetupGuide({
               <p>1. Open your domain in GoDaddy and go to DNS.</p>
               <p>2. Add an A record for the host shown above.</p>
               <p>3. Set Points to to {dnsTargetIp || "the target VPS IP"}.</p>
-              <p>4. For root domains, also add `www` and point it to the same place.</p>
+              <p>
+                4. For root domains, also add `www` and point it to the same
+                place.
+              </p>
               <p>5. Leave TTL on the default value.</p>
-              <p>6. Remove conflicting A, AAAA, or forwarded records for the same host.</p>
+              <p>
+                6. Remove conflicting A, AAAA, or forwarded records for the same
+                host.
+              </p>
             </div>
           </div>
 
           <div className="rounded-2xl border border-white/8 bg-black/10 p-4">
-            <p className="text-sm font-medium">Vercel DNS / Domain bought on Vercel</p>
+            <p className="text-sm font-medium">
+              Vercel DNS / Domain bought on Vercel
+            </p>
             <div className="mt-3 space-y-2 text-sm text-muted-foreground">
               <p>1. Open the domain in Vercel and go to DNS Records.</p>
               <p>2. Add an A record for the host shown above.</p>
               <p>3. Set the value to {dnsTargetIp || "the target VPS IP"}.</p>
-              <p>4. For root domains, also create `www` and point it at the same target or CNAME it to the root.</p>
-              <p>5. Remove old Vercel-specific records for the same host if they conflict.</p>
+              <p>
+                4. For root domains, also create `www` and point it at the same
+                target or CNAME it to the root.
+              </p>
+              <p>
+                5. Remove old Vercel-specific records for the same host if they
+                conflict.
+              </p>
             </div>
           </div>
         </div>
