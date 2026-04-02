@@ -134,9 +134,9 @@ web/src/
   components/
     analytics/metric-chart.tsx  Reusable shadcn chart-card wrapper built on ui/chart
     analytics/stat-card.tsx  Reusable shadcn KPI summary card with CardAction/CardFooter layout
-    layout/AppLayout.tsx  Protected shell using shadcn SidebarProvider/SidebarInset
-    layout/Sidebar.tsx    App sidebar built on ui/sidebar with collapsible rail, workspace switcher, and user menu
-    layout/SiteHeader.tsx Compact app header with SidebarTrigger, workspace context, and global actions
+    layout/AppLayout.tsx  Protected top-nav shell with centered content container
+    layout/CommandPalette.tsx  Global Cmd/Ctrl+K spotlight for actions, workspaces, and project search
+    layout/SiteHeader.tsx Compact top navbar with shadcn NavigationMenu, workspace context, and global actions
     projects/build-settings.tsx  Reusable BuildSettingsFields component with framework + package manager presets
     projects/project-analytics.tsx  Analytics tab UI: filters, audience/runtime metrics, setup empty-state routing into Integration
     projects/project-integration.tsx  Analytics setup stepper: install, verify, track events
@@ -144,7 +144,8 @@ web/src/
     ui/                   shadcn/ui components (button, card, dialog, input, etc.)
     ui/code-panel.tsx     Reusable fixed-height scrollable code/prompt card with copy action
     ui/spinner.tsx        Shared spinner + centered loading state used instead of skeleton loaders in app pages
-    ui/sidebar.tsx        Official shadcn sidebar shell primitives
+    ui/navigation-menu.tsx  Official shadcn top-nav primitives for the app shell
+    ui/sidebar.tsx        Official shadcn sidebar primitives kept available for future drawer/secondary navigation use
     ui/chart.tsx          Official shadcn chart primitives for Recharts
   hooks/
     useBuildLogs.ts       WebSocket hook for real-time build log streaming
