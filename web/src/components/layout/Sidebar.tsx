@@ -1,10 +1,18 @@
+import { useState } from "react";
+
 import { Link, useMatchRoute } from "@tanstack/react-router";
-import { Building2, LayoutDashboard, Plus, LogOut } from "lucide-react";
+import {
+  Building2,
+  LayoutDashboard,
+  LogOut,
+  Menu,
+  Plus,
+} from "lucide-react";
+
 import { useAuthStore } from "@/store/auth";
 import { useOrganizationStore } from "@/store/organization";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
-import { Separator } from "@/components/ui/separator";
 import {
   Select,
   SelectContent,
@@ -12,10 +20,22 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import {
+  Sheet,
+  SheetContent,
+  SheetHeader,
+  SheetTitle,
+  SheetTrigger,
+} from "@/components/ui/sheet";
 import { Skeleton } from "@/components/ui/skeleton";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { useOrganizations } from "@/hooks/use-organizations";
-import { cn } from "@/lib/utils";
 import { api } from "@/lib/api";
+import { cn } from "@/lib/utils";
 
 const navItems = [
   { to: "/" as const, label: "Projects", icon: LayoutDashboard },
@@ -23,6 +43,50 @@ const navItems = [
 ];
 
 export function Sidebar() {
+  return (
+    <aside className="hidden h-screen w-24 shrink-0 border-r border-white/6 bg-sidebar-background/85 backdrop-blur-2xl md:block lg:w-28">
+      <SidebarNavigation compact />
+    </aside>
+  );
+}
+
+export function MobileSidebarNav() {
+  const [open, setOpen] = useState(false);
+
+  return (
+    <Sheet open={open} onOpenChange={setOpen}>
+      <SheetTrigger asChild>
+        <Button
+          variant="ghost"
+          size="icon"
+          className="md:hidden"
+          aria-label="Open navigation"
+        >
+          <Menu className="h-5 w-5" />
+        </Button>
+      </SheetTrigger>
+      <SheetContent
+        side="left"
+        className="w-80 border-white/10 bg-[#0b1220]/98 px-0 backdrop-blur-2xl"
+      >
+        <SheetHeader className="px-5">
+          <SheetTitle className="font-mono text-sm tracking-[0.18em] text-slate-100">
+            /deployik
+          </SheetTitle>
+        </SheetHeader>
+        <SidebarNavigation onNavigate={() => setOpen(false)} />
+      </SheetContent>
+    </Sheet>
+  );
+}
+
+function SidebarNavigation({
+  compact = false,
+  onNavigate,
+}: {
+  compact?: boolean;
+  onNavigate?: () => void;
+}) {
   const { user, clearAuth } = useAuthStore();
   const {
     organizations,
@@ -32,37 +96,65 @@ export function Sidebar() {
   } = useOrganizations();
   const matchRoute = useMatchRoute();
 
+  const handleLogout = async () => {
+    try {
+      await api.logout();
+    } finally {
+      useOrganizationStore.getState().clearSelection();
+      clearAuth();
+    }
+    window.location.href = "/login";
+  };
+
   return (
-    <aside className="hidden h-screen w-72 flex-col border-r border-white/6 bg-sidebar-background/80 backdrop-blur-2xl md:flex">
-      {/* Logo */}
-      <div className="flex h-16 items-center gap-3 px-5">
-        <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-[linear-gradient(135deg,rgba(87,123,255,0.95),rgba(56,189,248,0.88))] text-sm font-bold text-primary-foreground shadow-[0_14px_34px_-18px_rgba(59,130,246,0.95)]">
-          D
+    <div
+      className={cn(
+        "flex h-full flex-col",
+        compact ? "px-3 py-4" : "px-4 py-5",
+      )}
+    >
+      <div className={cn("space-y-3", compact ? "items-center" : "")}>
+        <div
+          className={cn(
+            "font-mono text-[12px] tracking-[0.22em] text-slate-100",
+            compact ? "px-1 text-center" : "px-1",
+          )}
+        >
+          /deployik
         </div>
-        <div>
-          <p className="text-lg font-semibold tracking-tight">Deployik</p>
-          <p className="text-xs text-muted-foreground">Dark control plane</p>
-        </div>
-      </div>
 
-      <Separator />
-
-      {/* Nav */}
-      <nav className="flex-1 space-y-1.5 p-3">
-        <div className="mb-4 space-y-2 px-1">
-          <div className="flex items-center gap-2 text-[11px] font-medium uppercase tracking-[0.22em] text-muted-foreground">
+        <div className="space-y-2">
+          <div
+            className={cn(
+              "flex items-center gap-2 px-1 text-[11px] uppercase tracking-[0.22em] text-muted-foreground",
+              compact && "justify-center",
+            )}
+          >
             <Building2 className="h-3.5 w-3.5" />
-            Workspace
+            {!compact ? "Workspace" : null}
           </div>
+
           {organizationsLoading ? (
-            <Skeleton className="h-10 w-full rounded-xl" />
+            <Skeleton
+              className={cn(
+                "rounded-2xl",
+                compact ? "h-11 w-full" : "h-11 w-full",
+              )}
+            />
           ) : organizations.length ? (
             <Select
               value={selectedOrganizationId ?? undefined}
               onValueChange={setSelectedOrganizationId}
             >
-              <SelectTrigger className="h-11 rounded-xl border-white/10 bg-white/5 text-left">
-                <SelectValue placeholder="Select workspace" />
+              <SelectTrigger
+                className={cn(
+                  "rounded-2xl border-white/10 bg-white/5 text-left shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]",
+                  compact
+                    ? "h-11 px-2 text-[11px]"
+                    : "h-11 px-3 text-sm",
+                )}
+              >
+                <SelectValue placeholder="Workspace" />
               </SelectTrigger>
               <SelectContent>
                 {organizations.map((organization) => (
@@ -73,61 +165,96 @@ export function Sidebar() {
               </SelectContent>
             </Select>
           ) : (
-            <p className="text-xs text-muted-foreground">
-              No workspaces available.
+            <p
+              className={cn(
+                "text-xs text-muted-foreground",
+                compact ? "px-1 text-center" : "px-1",
+              )}
+            >
+              No workspaces.
             </p>
           )}
         </div>
+      </div>
 
+      <nav
+        className={cn(
+          "flex-1",
+          compact ? "mt-6 space-y-2" : "mt-8 space-y-1.5",
+        )}
+      >
         {navItems.map(({ to, label, icon: Icon }) => {
           const isActive = matchRoute({ to, fuzzy: to !== "/" });
-          return (
+          const item = (
             <Link
               key={to}
               to={to}
+              onClick={onNavigate}
               className={cn(
-                "flex items-center gap-3 rounded-xl px-3.5 py-2.5 text-sm font-medium transition-all",
+                "group flex items-center rounded-2xl transition-all",
+                compact
+                  ? "justify-center px-3 py-3"
+                  : "gap-3 px-3.5 py-2.5 text-sm font-medium",
                 isActive
                   ? "bg-primary/14 text-primary shadow-[inset_0_0_0_1px_rgba(125,153,255,0.18)]"
                   : "text-muted-foreground hover:bg-accent/80 hover:text-accent-foreground",
               )}
             >
               <Icon className="h-4 w-4" />
-              {label}
+              {!compact ? <span>{label}</span> : null}
             </Link>
+          );
+
+          if (!compact) return item;
+
+          return (
+            <Tooltip key={to}>
+              <TooltipTrigger asChild>{item}</TooltipTrigger>
+              <TooltipContent side="right" sideOffset={10}>
+                {label}
+              </TooltipContent>
+            </Tooltip>
           );
         })}
       </nav>
 
-      <Separator />
-
-      {/* User */}
-      <div className="m-3 flex items-center gap-3 rounded-2xl border border-white/6 bg-black/10 p-3">
-        <Avatar className="h-8 w-8">
-          <AvatarImage src={user?.avatar_url} alt={user?.username} />
-          <AvatarFallback>{user?.username?.[0]?.toUpperCase()}</AvatarFallback>
-        </Avatar>
-        <div className="flex-1 truncate">
-          <p className="truncate text-sm font-medium">{user?.username}</p>
-          <p className="text-xs text-muted-foreground">{user?.role}</p>
-        </div>
-        <Button
-          variant="ghost"
-          size="icon"
-          className="h-8 w-8 shrink-0"
-          onClick={async () => {
-            try {
-              await api.logout();
-            } finally {
-              useOrganizationStore.getState().clearSelection();
-              clearAuth();
-            }
-            window.location.href = "/login";
-          }}
+      <div
+        className={cn(
+          "rounded-2xl border border-white/6 bg-black/10",
+          compact ? "p-2" : "p-3",
+        )}
+      >
+        <div
+          className={cn(
+            "flex items-center gap-3",
+            compact && "flex-col justify-center gap-2",
+          )}
         >
-          <LogOut className="h-4 w-4" />
-        </Button>
+          <Avatar className={cn(compact ? "h-9 w-9" : "h-9 w-9")}>
+            <AvatarImage src={user?.avatar_url} alt={user?.username} />
+            <AvatarFallback>
+              {user?.username?.[0]?.toUpperCase()}
+            </AvatarFallback>
+          </Avatar>
+          {!compact ? (
+            <div className="min-w-0 flex-1">
+              <p className="truncate text-sm font-medium text-foreground">
+                {user?.username}
+              </p>
+              <p className="text-xs text-muted-foreground">{user?.role}</p>
+            </div>
+          ) : null}
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-8 w-8 shrink-0"
+            onClick={handleLogout}
+            aria-label="Log out"
+          >
+            <LogOut className="h-4 w-4" />
+          </Button>
+        </div>
       </div>
-    </aside>
+    </div>
   );
 }

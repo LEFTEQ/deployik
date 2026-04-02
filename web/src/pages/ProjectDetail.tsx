@@ -1,8 +1,8 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useParams, Link, useNavigate } from "@tanstack/react-router";
 import {
+  Activity,
   ArrowLeft,
-  ArrowUpRight,
   BarChart3,
   Building2,
   CheckCircle2,
@@ -13,12 +13,13 @@ import {
   GitCommit,
   Globe2,
   GlobeLock,
+  LayoutGrid,
   Link2,
+  Logs,
   Settings,
   Rocket,
-  Globe,
-  Key,
   LoaderCircle,
+  Sparkles,
   Trash2,
 } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
@@ -29,7 +30,9 @@ import {
   BuildSettingsFields,
   formatFrameworkLabel,
 } from "@/components/projects/build-settings";
+import { AUDIENCE_STATUS_META } from "@/components/projects/project-analytics-meta";
 import { ProjectAnalyticsTab } from "@/components/projects/project-analytics";
+import { ProjectIntegrationTab } from "@/components/projects/project-integration";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -69,7 +72,15 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
-import { useEffect, useState } from "react";
+import {
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetFooter,
+  SheetHeader,
+  SheetTitle,
+} from "@/components/ui/sheet";
+import { type ReactNode, useEffect, useState } from "react";
 import type {
   Deployment,
   DeploymentStatus,
@@ -84,6 +95,13 @@ const ACTIVE_DEPLOYMENT_STATUSES = new Set<DeploymentStatus>([
   "building",
   "deploying",
 ]);
+
+type ProjectTabValue =
+  | "overview"
+  | "deployments"
+  | "analytics"
+  | "integration"
+  | "settings";
 
 const ENVIRONMENT_META = {
   preview: {
@@ -224,10 +242,31 @@ function formatRelativeDate(value: string) {
   return formatDistanceToNow(new Date(value), { addSuffix: true });
 }
 
+function buildReleaseTagName() {
+  const now = new Date();
+  const pad = (value: number) => value.toString().padStart(2, "0");
+
+  return [
+    "release",
+    `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}`,
+    `${pad(now.getHours())}${pad(now.getMinutes())}`,
+  ].join("-");
+}
+
+function formatCompactNumber(value: number) {
+  return new Intl.NumberFormat("en", {
+    notation: "compact",
+    maximumFractionDigits: 1,
+  }).format(value);
+}
+
 export function ProjectDetail() {
   const { id } = useParams({ strict: false }) as { id: string };
   const navigate = useNavigate();
   const queryClient = useQueryClient();
+  const [activeTab, setActiveTab] = useState<ProjectTabValue>("overview");
+  const [releaseSheetOpen, setReleaseSheetOpen] = useState(false);
+  const [releaseTagName, setReleaseTagName] = useState(buildReleaseTagName());
 
   const { data: project, isLoading } = useQuery({
     queryKey: ["project", id],
@@ -262,6 +301,28 @@ export function ProjectDetail() {
     onError: (err) => toast.error(err.message),
   });
 
+  const deploymentMutation = useMutation({
+    mutationFn: (payload: {
+      environment: "preview" | "production";
+      branch?: string;
+      create_tag?: boolean;
+      tag_name?: string;
+    }) => api.triggerDeployment(id, payload),
+    onSuccess: (_data, variables) => {
+      queryClient.invalidateQueries({ queryKey: ["deployments", id] });
+      toast.success(
+        variables.environment === "production"
+          ? "Release queued"
+          : "Preview deployment queued",
+      );
+      if (variables.environment === "production") {
+        setReleaseSheetOpen(false);
+      }
+      setActiveTab("deployments");
+    },
+    onError: (err) => toast.error(err.message),
+  });
+
   if (isLoading) {
     return (
       <div className="p-6">
@@ -283,14 +344,15 @@ export function ProjectDetail() {
     );
   }
 
-  const primaryPreviewUrl = getPrimaryEnvironmentUrl(domains, "preview");
-  const primaryProductionUrl = getPrimaryEnvironmentUrl(domains, "production");
-  const projectMeta = [
-    { label: "Framework", value: formatFrameworkLabel(project.framework) },
-    { label: "Runtime", value: `Node.js ${project.node_version}` },
-    { label: "Workspace", value: project.organization_name || "Personal" },
-    { label: "Auto preview", value: `${project.name}.preview.example.com` },
-  ];
+  const latestDeployment = deployments?.[0] ?? null;
+
+  const openLatestLogs = () => {
+    if (!latestDeployment) return;
+    navigate({
+      to: "/projects/$id/deployments/$did",
+      params: { id, did: latestDeployment.id },
+    });
+  };
 
   return (
     <div className="space-y-5 p-6">
@@ -302,114 +364,26 @@ export function ProjectDetail() {
         Back to projects
       </Link>
 
-      <Card className="overflow-hidden border-white/10">
-        <CardContent className="relative px-5 py-5 sm:px-6">
-          <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-primary/40 to-transparent" />
-          <div className="space-y-4">
-            <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
-              <div className="min-w-0 space-y-3">
-                <div className="flex flex-wrap items-center gap-2">
-                  <Badge
-                    variant="outline"
-                    className="border-primary/25 bg-primary/10 text-primary"
-                  >
-                    Control plane
-                  </Badge>
-                  <Badge
-                    variant="outline"
-                    className={cn(
-                      "border-white/10 bg-white/5 text-slate-200",
-                      project.status === "active" &&
-                        "border-emerald-400/25 bg-emerald-400/12 text-emerald-100",
-                    )}
-                  >
-                    <CircleDot className="mr-1 size-3 fill-current" />
-                    {project.status}
-                  </Badge>
-                </div>
+      <ProjectCommandBar
+        project={project}
+        latestDeployment={latestDeployment}
+        isDeployPending={deploymentMutation.isPending}
+        onDeployPreview={() =>
+          deploymentMutation.mutate({ environment: "preview" })
+        }
+        onRelease={() => {
+          setReleaseTagName(buildReleaseTagName());
+          setReleaseSheetOpen(true);
+        }}
+        onOpenLogs={openLatestLogs}
+      />
 
-                <div className="space-y-2">
-                  <h1 className="text-2xl font-semibold tracking-tight sm:text-3xl">
-                    {project.name}
-                  </h1>
-                  <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-sm text-muted-foreground">
-                    <span>
-                      {project.github_owner}/{project.github_repo}
-                    </span>
-                    {project.organization_name ? (
-                      <span className="flex items-center gap-1">
-                        <Building2 className="h-3.5 w-3.5" />
-                        {project.organization_name}
-                      </span>
-                    ) : null}
-                    <span className="flex items-center gap-1">
-                      <GitBranch className="h-3.5 w-3.5" />
-                      {project.branch}
-                    </span>
-                  </div>
-                </div>
-              </div>
-
-              <div className="flex shrink-0 flex-wrap gap-2 xl:justify-end">
-                {primaryPreviewUrl ? (
-                  <Button asChild size="sm">
-                    <a
-                      href={primaryPreviewUrl}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                    >
-                      <ExternalLink className="mr-1.5 h-3.5 w-3.5" />
-                      Open preview
-                    </a>
-                  </Button>
-                ) : null}
-                {primaryProductionUrl ? (
-                  <Button asChild size="sm" variant="outline">
-                    <a
-                      href={primaryProductionUrl}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                    >
-                      <Globe2 className="mr-1.5 h-3.5 w-3.5" />
-                      Open production
-                    </a>
-                  </Button>
-                ) : null}
-              </div>
-            </div>
-
-            <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-4">
-              {projectMeta.map((item) => (
-                <ProjectMetaPill
-                  key={item.label}
-                  label={item.label}
-                  value={item.value}
-                />
-              ))}
-            </div>
-
-            <div className="grid gap-3 xl:grid-cols-2">
-              <EnvironmentAccessPanel
-                environment="preview"
-                projectName={project.name}
-                deployments={deployments}
-                domains={domains}
-                isLoading={deploymentsLoading || domainsLoading}
-              />
-              <EnvironmentAccessPanel
-                environment="production"
-                projectName={project.name}
-                deployments={deployments}
-                domains={domains}
-                isLoading={deploymentsLoading || domainsLoading}
-              />
-            </div>
-          </div>
-        </CardContent>
-      </Card>
-
-      <Tabs defaultValue="deployments">
-        <TabsList className="h-auto flex-wrap justify-start gap-1 rounded-2xl border border-white/8 bg-black/10 p-1">
+      <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as ProjectTabValue)}>
+        <TabsList className="h-auto w-full justify-start gap-1 overflow-x-auto rounded-2xl border border-white/8 bg-black/10 p-1">
+          <TabsTrigger value="overview">
+            <LayoutGrid className="mr-1.5 h-3.5 w-3.5" />
+            Overview
+          </TabsTrigger>
           <TabsTrigger value="deployments">
             <Rocket className="mr-1.5 h-3.5 w-3.5" />
             Deployments
@@ -418,23 +392,27 @@ export function ProjectDetail() {
             <BarChart3 className="mr-1.5 h-3.5 w-3.5" />
             Analytics
           </TabsTrigger>
+          <TabsTrigger value="integration">
+            <Sparkles className="mr-1.5 h-3.5 w-3.5" />
+            Integration
+          </TabsTrigger>
           <TabsTrigger value="settings">
             <Settings className="mr-1.5 h-3.5 w-3.5" />
             Settings
           </TabsTrigger>
-          <TabsTrigger value="domains">
-            <Globe className="mr-1.5 h-3.5 w-3.5" />
-            Domains
-          </TabsTrigger>
-          <TabsTrigger value="env">
-            <Key className="mr-1.5 h-3.5 w-3.5" />
-            Env Vars
-          </TabsTrigger>
-          <TabsTrigger value="secrets">
-            <GlobeLock className="mr-1.5 h-3.5 w-3.5" />
-            Secrets
-          </TabsTrigger>
         </TabsList>
+
+        <TabsContent value="overview" className="mt-4">
+          <OverviewTab
+            projectId={id}
+            project={project}
+            deployments={deployments}
+            domains={domains}
+            isLoading={deploymentsLoading || domainsLoading}
+            onShowDeployments={() => setActiveTab("deployments")}
+            onShowIntegration={() => setActiveTab("integration")}
+          />
+        </TabsContent>
 
         <TabsContent value="deployments" className="mt-4">
           <DeploymentsTab
@@ -442,137 +420,645 @@ export function ProjectDetail() {
             deployments={deployments}
             domains={domains}
             isLoading={deploymentsLoading}
+            onDeployPreview={() =>
+              deploymentMutation.mutate({ environment: "preview" })
+            }
+            onRelease={() => {
+              setReleaseTagName(buildReleaseTagName());
+              setReleaseSheetOpen(true);
+            }}
+            isActionPending={deploymentMutation.isPending}
           />
         </TabsContent>
 
         <TabsContent value="analytics" className="mt-4">
-          <ProjectAnalyticsTab projectId={id} />
+          <ProjectAnalyticsTab
+            projectId={id}
+            onSetupAnalytics={() => setActiveTab("integration")}
+          />
+        </TabsContent>
+
+        <TabsContent value="integration" className="mt-4">
+          <ProjectIntegrationTab projectId={id} />
         </TabsContent>
 
         <TabsContent value="settings" className="mt-4">
           <SettingsTab
+            projectId={id}
             project={project}
+            domains={domains}
+            isDomainsLoading={domainsLoading}
             onDelete={() => deleteMutation.mutate()}
           />
         </TabsContent>
-
-        <TabsContent value="domains" className="mt-4">
-          <DomainsTab
-            projectId={id}
-            domains={domains}
-            isLoading={domainsLoading}
-          />
-        </TabsContent>
-
-        <TabsContent value="env" className="mt-4">
-          <EnvVarsTab projectId={id} />
-        </TabsContent>
-
-        <TabsContent value="secrets" className="mt-4">
-          <SecretsTab projectId={id} />
-        </TabsContent>
       </Tabs>
+
+      <Sheet open={releaseSheetOpen} onOpenChange={setReleaseSheetOpen}>
+        <SheetContent
+          side="bottom"
+          className="mx-auto w-full max-w-3xl rounded-t-3xl border-white/10 bg-[#0b1220]/98 px-6 pb-6 pt-5 backdrop-blur-2xl"
+        >
+          <SheetHeader>
+            <SheetTitle>Release to production</SheetTitle>
+            <SheetDescription>
+              Deployik will create a git tag and queue a production deployment
+              from that tagged ref.
+            </SheetDescription>
+          </SheetHeader>
+
+          <div className="mt-6 grid gap-4 lg:grid-cols-[minmax(0,0.8fr)_minmax(280px,1fr)]">
+            <div className="space-y-4">
+              <div className="rounded-2xl border border-white/8 bg-black/10 p-4">
+                <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
+                  Source branch
+                </p>
+                <p className="mt-2 text-sm font-medium text-foreground">
+                  {project.branch}
+                </p>
+                <p className="mt-2 text-sm text-muted-foreground">
+                  Repository: {project.github_owner}/{project.github_repo}
+                </p>
+              </div>
+
+              <div className="rounded-2xl border border-white/8 bg-black/10 p-4">
+                <Label htmlFor="release-tag">Release tag</Label>
+                <Input
+                  id="release-tag"
+                  value={releaseTagName}
+                  onChange={(event) => setReleaseTagName(event.target.value)}
+                  className="mt-3"
+                  placeholder="release-20260402-1455"
+                />
+                <p className="mt-3 text-sm text-muted-foreground">
+                  This tag becomes the production deploy ref so the released
+                  build stays traceable.
+                </p>
+              </div>
+            </div>
+
+            <div className="space-y-4">
+              <div className="rounded-2xl border border-white/8 bg-black/10 p-4">
+                <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
+                  Production endpoints
+                </p>
+                <div className="mt-3 space-y-2">
+                  {getReadyEnvironmentDomains(domains, "production").length ? (
+                    getReadyEnvironmentDomains(domains, "production").map(
+                      (domain) => (
+                        <div
+                          key={domain.id}
+                          className="rounded-xl border border-white/8 px-3 py-2 text-sm text-foreground"
+                        >
+                          {domain.domain}
+                        </div>
+                      ),
+                    )
+                  ) : (
+                    <div className="rounded-xl border border-dashed border-white/10 px-3 py-6 text-sm text-muted-foreground">
+                      No verified production domain yet. The release will still
+                      build and deploy, but no public production URL is active.
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              <div className="rounded-2xl border border-primary/15 bg-primary/10 p-4 text-sm text-slate-100">
+                Release is the intentional production action. Preview remains
+                the fast iteration path.
+              </div>
+            </div>
+          </div>
+
+          <SheetFooter className="mt-6">
+            <Button
+              variant="outline"
+              onClick={() => setReleaseSheetOpen(false)}
+              disabled={deploymentMutation.isPending}
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={() =>
+                deploymentMutation.mutate({
+                  environment: "production",
+                  create_tag: true,
+                  tag_name: releaseTagName.trim(),
+                })
+              }
+              disabled={!releaseTagName.trim() || deploymentMutation.isPending}
+            >
+              <GlobeLock className="mr-1.5 h-3.5 w-3.5" />
+              {deploymentMutation.isPending ? "Queueing release..." : "Release"}
+            </Button>
+          </SheetFooter>
+        </SheetContent>
+      </Sheet>
     </div>
   );
 }
 
-function ProjectMetaPill({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="rounded-2xl border border-white/8 bg-black/10 px-4 py-3">
-      <p className="text-[11px] uppercase tracking-[0.18em] text-muted-foreground">
-        {label}
-      </p>
-      <p className="mt-1 truncate text-sm font-medium text-foreground">
-        {value}
-      </p>
-    </div>
-  );
-}
-
-function EnvironmentAccessPanel({
-  environment,
-  projectName,
-  deployments,
-  domains,
-  isLoading,
+function ProjectCommandBar({
+  project,
+  latestDeployment,
+  isDeployPending,
+  onDeployPreview,
+  onRelease,
+  onOpenLogs,
 }: {
-  environment: Domain["environment"];
-  projectName: string;
-  deployments: Deployment[] | undefined;
-  domains: Domain[] | undefined;
-  isLoading: boolean;
+  project: NonNullable<Awaited<ReturnType<typeof api.getProject>>>;
+  latestDeployment: Deployment | null;
+  isDeployPending: boolean;
+  onDeployPreview: () => void;
+  onRelease: () => void;
+  onOpenLogs: () => void;
 }) {
-  const readyDomains = getReadyEnvironmentDomains(domains, environment);
-  const liveDeployment = getLatestLiveEnvironmentDeployment(
-    deployments,
-    environment,
-  );
-  const latestDeployment = getLatestEnvironmentDeployment(
-    deployments,
-    environment,
-  );
-
-  const summary = liveDeployment
-    ? `Live on ${liveDeployment.commit_sha.slice(0, 7)}`
-    : latestDeployment
-      ? `Latest deployment is ${DEPLOYMENT_STATUS_META[latestDeployment.status].label.toLowerCase()}`
-      : environment === "preview"
-        ? `${projectName}.preview.example.com will appear here after the first healthy deploy.`
-        : "Add and verify a production domain to unlock direct links.";
-
   return (
-    <div className="rounded-2xl border border-white/8 bg-black/10 px-4 py-3">
-      {isLoading ? (
-        <Skeleton className="h-20 w-full" />
-      ) : (
-        <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+    <Card className="overflow-hidden border-white/10">
+      <CardContent className="relative px-5 py-4 sm:px-6">
+        <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-primary/40 to-transparent" />
+        <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
           <div className="min-w-0 space-y-2">
             <div className="flex flex-wrap items-center gap-2">
               <Badge
                 variant="outline"
-                className={ENVIRONMENT_META[environment].badgeClass}
+                className={cn(
+                  "border-white/10 bg-white/5 text-slate-200",
+                  project.status === "active" &&
+                    "border-emerald-400/25 bg-emerald-400/12 text-emerald-100",
+                )}
               >
-                {ENVIRONMENT_META[environment].label}
+                <CircleDot className="mr-1 size-3 fill-current" />
+                {project.status}
               </Badge>
-              {liveDeployment ? (
-                <Badge
-                  variant="outline"
-                  className={DEPLOYMENT_STATUS_META.live.badgeClass}
-                >
-                  Live
-                </Badge>
-              ) : null}
+              <Badge
+                variant="outline"
+                className="border-primary/20 bg-primary/10 font-mono text-primary"
+              >
+                {formatFrameworkLabel(project.framework)}
+              </Badge>
             </div>
-            <p className="text-sm font-medium text-foreground">
-              {ENVIRONMENT_META[environment].description}
-            </p>
-            <p className="text-xs text-muted-foreground">{summary}</p>
+            <div>
+              <h1 className="text-xl font-semibold tracking-tight text-foreground sm:text-2xl">
+                {project.name}
+              </h1>
+              <div className="mt-1 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-muted-foreground">
+                <span>
+                  {project.github_owner}/{project.github_repo}
+                </span>
+                <span className="flex items-center gap-1">
+                  <GitBranch className="h-3.5 w-3.5" />
+                  {project.branch}
+                </span>
+                {project.organization_name ? (
+                  <span className="flex items-center gap-1">
+                    <Building2 className="h-3.5 w-3.5" />
+                    {project.organization_name}
+                  </span>
+                ) : null}
+              </div>
+            </div>
           </div>
 
-          {readyDomains.length ? (
-            <div className="flex flex-wrap gap-2 lg:max-w-[60%] lg:justify-end">
-              {readyDomains.map((domain) => (
-                <Button asChild key={domain.id} size="sm" variant="outline">
-                  <a
-                    href={`https://${domain.domain}`}
-                    target="_blank"
-                    rel="noopener noreferrer"
+          <div className="flex flex-wrap gap-2 xl:justify-end">
+            <Button onClick={onDeployPreview} disabled={isDeployPending}>
+              <Rocket className="mr-1.5 h-3.5 w-3.5" />
+              Deploy Preview
+            </Button>
+            <Button variant="outline" onClick={onRelease} disabled={isDeployPending}>
+              <GlobeLock className="mr-1.5 h-3.5 w-3.5" />
+              Release
+            </Button>
+            <Button
+              variant="ghost"
+              onClick={onOpenLogs}
+              disabled={!latestDeployment}
+            >
+              <Logs className="mr-1.5 h-3.5 w-3.5" />
+              Open Logs
+            </Button>
+          </div>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+function OverviewTab({
+  projectId,
+  project,
+  deployments,
+  domains,
+  isLoading,
+  onShowDeployments,
+  onShowIntegration,
+}: {
+  projectId: string;
+  project: NonNullable<Awaited<ReturnType<typeof api.getProject>>>;
+  deployments: Deployment[] | undefined;
+  domains: Domain[] | undefined;
+  isLoading: boolean;
+  onShowDeployments: () => void;
+  onShowIntegration: () => void;
+}) {
+  const timezone =
+    Intl.DateTimeFormat().resolvedOptions().timeZone?.trim() || "UTC";
+  const navigate = useNavigate();
+  const latestDeployment = deployments?.[0] ?? null;
+  const latestRelease = getLatestLiveEnvironmentDeployment(
+    deployments,
+    "production",
+  );
+  const latestPreview = getLatestEnvironmentDeployment(deployments, "preview");
+  const latestProduction = getLatestEnvironmentDeployment(
+    deployments,
+    "production",
+  );
+  const previewUrl = getPrimaryEnvironmentUrl(domains, "preview");
+  const productionUrl = getPrimaryEnvironmentUrl(domains, "production");
+  const readyDomainCount = (domains ?? []).filter(isDomainReady).length;
+
+  const { data: analytics, isLoading: analyticsLoading } = useQuery({
+    queryKey: ["project-overview-analytics", projectId, timezone],
+    queryFn: () =>
+      api.getProjectAnalytics(projectId, {
+        environment: "all",
+        range: "24h",
+        timezone,
+      }),
+  });
+  const overviewAudienceMeta =
+    AUDIENCE_STATUS_META[analytics?.audience.status ?? ""] ??
+    AUDIENCE_STATUS_META.ready_to_install ?? {
+      label: "Ready to install",
+      badgeClass: "border-primary/25 bg-primary/12 text-primary",
+      description:
+        "The website exists. Add the tracker to start collecting audience data.",
+    };
+
+  const copyUrl = async (value: string, label: string) => {
+    try {
+      await navigator.clipboard.writeText(value);
+      toast.success(`${label} copied`);
+    } catch {
+      toast.error(`Couldn't copy ${label.toLowerCase()}`);
+    }
+  };
+
+  return (
+    <div className="space-y-4">
+      <Card className="border-white/10">
+        <CardHeader className="gap-4">
+          <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+            <div>
+              <CardTitle className="text-base">Live Endpoints</CardTitle>
+              <CardDescription>
+                Fast public links to the current preview and production
+                endpoints.
+              </CardDescription>
+            </div>
+            <div className="rounded-full border border-white/8 bg-black/20 px-3 py-1 text-xs text-muted-foreground">
+              Auto preview: {project.name}.preview.example.com
+            </div>
+          </div>
+          <div className="grid gap-3 md:grid-cols-2">
+            <LiveEndpointChip
+              environment="preview"
+              url={previewUrl}
+              deployment={latestPreview}
+              onCopy={copyUrl}
+            />
+            <LiveEndpointChip
+              environment="production"
+              url={productionUrl}
+              deployment={latestProduction}
+              onCopy={copyUrl}
+            />
+          </div>
+        </CardHeader>
+      </Card>
+
+      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+        <OverviewStatCard
+          label="Preview Health"
+          value={
+            latestPreview
+              ? DEPLOYMENT_STATUS_META[latestPreview.status].label
+              : "Not deployed"
+          }
+          icon={<Globe2 className="h-4 w-4" />}
+          hint={
+            previewUrl
+              ? "Preview has an active public endpoint."
+              : "Deploy preview to create a public staging URL."
+          }
+        />
+        <OverviewStatCard
+          label="Production Health"
+          value={
+            latestProduction
+              ? DEPLOYMENT_STATUS_META[latestProduction.status].label
+              : "Not released"
+          }
+          icon={<GlobeLock className="h-4 w-4" />}
+          hint={
+            productionUrl
+              ? "Production has a verified domain."
+              : "Release once production domains are ready."
+          }
+        />
+        <OverviewStatCard
+          label="Latest Release"
+          value={latestRelease ? latestRelease.commit_sha.slice(0, 7) : "None"}
+          icon={<Rocket className="h-4 w-4" />}
+          hint={
+            latestRelease
+              ? `Released ${formatRelativeDate(latestRelease.created_at)}`
+              : "No successful production release yet."
+          }
+        />
+        <OverviewStatCard
+          label="Active Domains"
+          value={readyDomainCount.toString()}
+          icon={<Link2 className="h-4 w-4" />}
+          hint="Verified domains with active SSL."
+        />
+        <OverviewStatCard
+          label="Traffic"
+          value={
+            analyticsLoading
+              ? "—"
+              : formatCompactNumber(analytics?.runtime.summary.requests ?? 0)
+          }
+          icon={<Activity className="h-4 w-4" />}
+          hint="Requests over the last 24 hours."
+        />
+        <OverviewStatCard
+          label="Analytics Status"
+          value={analytics ? overviewAudienceMeta.label : "Loading"}
+          icon={<BarChart3 className="h-4 w-4" />}
+          hint={
+            analytics?.audience.status === "ready_to_install"
+              ? "Setup is still pending."
+              : "Audience analytics status from Umami."
+          }
+        />
+      </div>
+
+      <Card className="overflow-hidden border-white/10">
+        <CardContent className="relative px-5 py-5 sm:px-6">
+          <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-primary/40 to-transparent" />
+          <div className="flex flex-col gap-5 xl:flex-row xl:items-start xl:justify-between">
+            <div className="min-w-0 space-y-3">
+              <div className="flex flex-wrap items-center gap-2">
+                <Badge
+                  variant="outline"
+                  className={
+                    latestDeployment
+                      ? DEPLOYMENT_STATUS_META[latestDeployment.status].badgeClass
+                      : "border-white/10 bg-white/5 text-slate-200"
+                  }
+                >
+                  {latestDeployment
+                    ? DEPLOYMENT_STATUS_META[latestDeployment.status].label
+                    : "No deployments yet"}
+                </Badge>
+                {latestDeployment ? (
+                  <Badge
+                    variant="outline"
+                    className={
+                      ENVIRONMENT_META[latestDeployment.environment].badgeClass
+                    }
                   >
-                    <ArrowUpRight className="mr-1.5 h-3.5 w-3.5" />
-                    {domain.is_auto ? "Auto URL" : domain.domain}
-                  </a>
-                </Button>
-              ))}
+                    {ENVIRONMENT_META[latestDeployment.environment].label}
+                  </Badge>
+                ) : null}
+              </div>
+              <div>
+                <h2 className="text-lg font-semibold tracking-tight text-foreground">
+                  Latest Deployment
+                </h2>
+                <p className="mt-2 max-w-2xl text-sm leading-6 text-muted-foreground">
+                  The most recent build is the fastest way to understand the
+                  current state of this project.
+                </p>
+              </div>
+            </div>
+
+            <div className="flex flex-wrap gap-2">
+              <Button variant="outline" onClick={onShowDeployments}>
+                See all deployments
+              </Button>
+              {analytics?.audience.status === "ready_to_install" ? (
+                <Button onClick={onShowIntegration}>Setup Analytics</Button>
+              ) : null}
+            </div>
+          </div>
+
+          {isLoading ? (
+            <Skeleton className="mt-6 h-48 w-full" />
+          ) : latestDeployment ? (
+            <div className="mt-6 grid gap-4 xl:grid-cols-[minmax(0,1.1fr)_minmax(280px,0.9fr)]">
+              <div className="rounded-3xl border border-white/8 bg-black/20 p-5 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
+                <div className="flex items-start justify-between gap-4">
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2 text-sm font-medium text-foreground">
+                      <GitCommit className="h-4 w-4 text-muted-foreground" />
+                      {latestDeployment.commit_sha
+                        ? latestDeployment.commit_sha.slice(0, 7)
+                        : "pending"}
+                    </div>
+                    <p
+                      className="mt-3 truncate text-lg font-semibold text-foreground"
+                      title={
+                        latestDeployment.commit_message ||
+                        latestDeployment.error_message
+                      }
+                    >
+                      {latestDeployment.commit_message ||
+                        latestDeployment.error_message ||
+                        "Waiting for commit metadata"}
+                    </p>
+                  </div>
+                </div>
+                <div className="mt-5 grid gap-3 sm:grid-cols-3">
+                  <MiniMeta label="Branch" value={latestDeployment.branch} />
+                  <MiniMeta
+                    label="Started"
+                    value={formatRelativeDate(latestDeployment.created_at)}
+                  />
+                  <MiniMeta
+                    label="Duration"
+                    value={
+                      latestDeployment.build_duration > 0
+                        ? `${latestDeployment.build_duration}s`
+                        : "—"
+                    }
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-3">
+                <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
+                  Previous deployments
+                </p>
+                {(deployments ?? []).slice(1, 4).length ? (
+                  (deployments ?? []).slice(1, 4).map((deployment) => (
+                    <button
+                      type="button"
+                      key={deployment.id}
+                      onClick={() =>
+                        navigate({
+                          to: "/projects/$id/deployments/$did",
+                          params: { id: projectId, did: deployment.id },
+                        })
+                      }
+                      className="flex w-full items-center justify-between gap-3 rounded-2xl border border-white/8 bg-black/10 px-4 py-3 text-left transition-colors hover:bg-white/[0.04]"
+                    >
+                      <div className="min-w-0">
+                        <p className="text-sm font-medium text-foreground">
+                          {deployment.commit_sha
+                            ? deployment.commit_sha.slice(0, 7)
+                            : deployment.id.slice(0, 8)}
+                        </p>
+                        <p className="truncate text-xs text-muted-foreground">
+                          {deployment.commit_message ||
+                            DEPLOYMENT_STATUS_META[deployment.status].label}
+                        </p>
+                      </div>
+                      <div className="text-right">
+                        <p className="text-xs text-muted-foreground">
+                          {ENVIRONMENT_META[deployment.environment].label}
+                        </p>
+                        <p className="mt-1 text-xs text-muted-foreground">
+                          {formatRelativeDate(deployment.created_at)}
+                        </p>
+                      </div>
+                    </button>
+                  ))
+                ) : (
+                  <div className="rounded-2xl border border-dashed border-white/10 px-4 py-8 text-sm text-muted-foreground">
+                    No previous deployments yet.
+                  </div>
+                )}
+              </div>
             </div>
           ) : (
-            <div className="rounded-xl border border-dashed border-white/8 px-3 py-2 text-xs text-muted-foreground">
-              {environment === "preview"
-                ? "No active preview URL yet."
-                : "No verified production domain yet."}
+            <div className="mt-6 rounded-3xl border border-dashed border-white/10 px-5 py-12 text-sm text-muted-foreground">
+              No deployments yet. Use the command bar to queue the first preview
+              build.
             </div>
           )}
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
+function LiveEndpointChip({
+  environment,
+  url,
+  deployment,
+  onCopy,
+}: {
+  environment: Domain["environment"];
+  url: string | null;
+  deployment: Deployment | undefined;
+  onCopy: (value: string, label: string) => void;
+}) {
+  const isLive = Boolean(url);
+
+  return (
+    <div className="flex items-center justify-between gap-3 rounded-2xl border border-white/8 bg-black/20 px-4 py-3">
+      <div className="min-w-0">
+        <div className="flex items-center gap-2">
+          <span
+            className={cn(
+              "h-2.5 w-2.5 rounded-full",
+              isLive ? "bg-emerald-400" : "bg-slate-500",
+            )}
+          />
+          <p className="text-sm font-medium text-foreground">
+            {ENVIRONMENT_META[environment].label}
+          </p>
         </div>
-      )}
+        <p className="mt-1 truncate text-sm text-muted-foreground">
+          {url || "Not live yet"}
+        </p>
+        <p className="mt-1 text-xs text-muted-foreground">
+          {deployment
+            ? DEPLOYMENT_STATUS_META[deployment.status].label
+            : "No deployment yet"}
+        </p>
+      </div>
+      <div className="flex shrink-0 gap-2">
+        {url ? (
+          <>
+            <Button asChild size="sm" variant="ghost">
+              <a href={url} target="_blank" rel="noopener noreferrer">
+                Open
+              </a>
+            </Button>
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={() => onCopy(url, `${ENVIRONMENT_META[environment].label} URL`)}
+            >
+              <Copy className="h-3.5 w-3.5" />
+            </Button>
+          </>
+        ) : (
+          <Badge
+            variant="outline"
+            className="border-white/10 bg-white/5 text-slate-200"
+          >
+            Pending
+          </Badge>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function OverviewStatCard({
+  label,
+  value,
+  icon,
+  hint,
+}: {
+  label: string;
+  value: string;
+  icon: ReactNode;
+  hint: string;
+}) {
+  return (
+    <Card className="border-white/10 bg-black/10">
+      <CardContent className="flex items-start justify-between gap-4 px-4 py-4">
+        <div className="min-w-0">
+          <p className="text-[11px] uppercase tracking-[0.2em] text-muted-foreground">
+            {label}
+          </p>
+          <p className="mt-3 text-lg font-semibold tracking-tight text-foreground">
+            {value}
+          </p>
+          <p className="mt-2 text-xs leading-5 text-muted-foreground">{hint}</p>
+        </div>
+        <div className="rounded-2xl border border-white/8 bg-white/5 p-2 text-muted-foreground">
+          {icon}
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+function MiniMeta({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-2xl border border-white/8 bg-black/10 px-3 py-3">
+      <p className="text-[11px] uppercase tracking-[0.18em] text-muted-foreground">
+        {label}
+      </p>
+      <p className="mt-2 truncate text-sm font-medium text-foreground">
+        {value}
+      </p>
     </div>
   );
 }
@@ -582,14 +1068,19 @@ function DeploymentsTab({
   deployments,
   domains,
   isLoading,
+  onDeployPreview,
+  onRelease,
+  isActionPending,
 }: {
   projectId: string;
   deployments: Deployment[] | undefined;
   domains: Domain[] | undefined;
   isLoading: boolean;
+  onDeployPreview: () => void;
+  onRelease: () => void;
+  isActionPending: boolean;
 }) {
   const navigate = useNavigate();
-  const queryClient = useQueryClient();
 
   const openDeploymentDetails = (deploymentId: string) => {
     navigate({
@@ -598,44 +1089,25 @@ function DeploymentsTab({
     });
   };
 
-  const deployMutation = useMutation({
-    mutationFn: (env: string) =>
-      api.triggerDeployment(projectId, { environment: env }),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["deployments", projectId] });
-      toast.success("Deployment triggered");
-    },
-    onError: (err) => toast.error(err.message),
-  });
-
   return (
     <div className="space-y-4">
       <Card className="border-white/10">
         <CardHeader className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
           <div>
-            <CardTitle className="text-base">Deployment Timeline</CardTitle>
+            <CardTitle className="text-base">Deployments</CardTitle>
             <CardDescription>
-              Trigger fresh builds and open the current live environment without
-              leaving the table.
+              Every deployment stays readable and row-clickable, with direct
+              access to logs and live endpoints.
             </CardDescription>
           </div>
           <div className="flex flex-wrap gap-2">
-            <Button
-              size="sm"
-              onClick={() => deployMutation.mutate("preview")}
-              disabled={deployMutation.isPending}
-            >
+            <Button size="sm" onClick={onDeployPreview} disabled={isActionPending}>
               <Rocket className="mr-1.5 h-3.5 w-3.5" />
-              Deploy preview
+              Deploy Preview
             </Button>
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => deployMutation.mutate("production")}
-              disabled={deployMutation.isPending}
-            >
+            <Button size="sm" variant="outline" onClick={onRelease} disabled={isActionPending}>
               <GlobeLock className="mr-1.5 h-3.5 w-3.5" />
-              Deploy production
+              Release
             </Button>
           </div>
         </CardHeader>
@@ -801,10 +1273,16 @@ function DeploymentsTab({
 }
 
 function SettingsTab({
+  projectId,
   project,
+  domains,
+  isDomainsLoading,
   onDelete,
 }: {
+  projectId: string;
   project: NonNullable<Awaited<ReturnType<typeof api.getProject>>>;
+  domains: Domain[] | undefined;
+  isDomainsLoading: boolean;
   onDelete: () => void;
 }) {
   const queryClient = useQueryClient();
@@ -840,62 +1318,101 @@ function SettingsTab({
 
   return (
     <div className="space-y-6">
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">Build Settings</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="space-y-2">
-            <Label>Workspace</Label>
-            <Input value={project.organization_name || "Personal"} disabled />
-          </div>
-          <div className="space-y-2">
-            <Label>Branch</Label>
-            <Input value={branch} onChange={(e) => setBranch(e.target.value)} />
-          </div>
-          <BuildSettingsFields
-            value={buildSettings}
-            onChange={setBuildSettings}
-          />
-          <Button
-            onClick={() => updateMutation.mutate()}
-            disabled={updateMutation.isPending}
-          >
-            {updateMutation.isPending ? "Saving..." : "Save Settings"}
-          </Button>
-        </CardContent>
-      </Card>
+      <Tabs defaultValue="build">
+        <TabsList className="h-auto w-full justify-start gap-1 overflow-x-auto rounded-2xl border border-white/8 bg-black/10 p-1">
+          <TabsTrigger value="build">Build</TabsTrigger>
+          <TabsTrigger value="domains">Domains</TabsTrigger>
+          <TabsTrigger value="env">Env Vars</TabsTrigger>
+          <TabsTrigger value="secrets">Secrets</TabsTrigger>
+          <TabsTrigger value="danger">Danger</TabsTrigger>
+        </TabsList>
 
-      <Card className="border-destructive/50">
-        <CardHeader>
-          <CardTitle className="text-base text-destructive">
-            Danger Zone
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          <AlertDialog>
-            <AlertDialogTrigger asChild>
-              <Button variant="destructive">
-                <Trash2 className="mr-1.5 h-3.5 w-3.5" />
-                Delete Project
+        <TabsContent value="build" className="mt-4">
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base">Build Settings</CardTitle>
+              <CardDescription>
+                Source control branch, framework defaults, and package/runtime
+                behavior for this project.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="space-y-2">
+                <Label>Workspace</Label>
+                <Input value={project.organization_name || "Personal"} disabled />
+              </div>
+              <div className="space-y-2">
+                <Label>Branch</Label>
+                <Input
+                  value={branch}
+                  onChange={(event) => setBranch(event.target.value)}
+                />
+              </div>
+              <BuildSettingsFields
+                value={buildSettings}
+                onChange={setBuildSettings}
+              />
+              <Button
+                onClick={() => updateMutation.mutate()}
+                disabled={updateMutation.isPending}
+              >
+                {updateMutation.isPending ? "Saving..." : "Save Settings"}
               </Button>
-            </AlertDialogTrigger>
-            <AlertDialogContent>
-              <AlertDialogHeader>
-                <AlertDialogTitle>Delete project?</AlertDialogTitle>
-                <AlertDialogDescription>
-                  This will stop all running containers and remove the project.
-                  This action cannot be undone.
-                </AlertDialogDescription>
-              </AlertDialogHeader>
-              <AlertDialogFooter>
-                <AlertDialogCancel>Cancel</AlertDialogCancel>
-                <AlertDialogAction onClick={onDelete}>Delete</AlertDialogAction>
-              </AlertDialogFooter>
-            </AlertDialogContent>
-          </AlertDialog>
-        </CardContent>
-      </Card>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="domains" className="mt-4">
+          <DomainsTab
+            projectId={projectId}
+            domains={domains}
+            isLoading={isDomainsLoading}
+          />
+        </TabsContent>
+
+        <TabsContent value="env" className="mt-4">
+          <EnvVarsTab projectId={projectId} />
+        </TabsContent>
+
+        <TabsContent value="secrets" className="mt-4">
+          <SecretsTab projectId={projectId} />
+        </TabsContent>
+
+        <TabsContent value="danger" className="mt-4">
+          <Card className="border-destructive/50">
+            <CardHeader>
+              <CardTitle className="text-base text-destructive">
+                Danger Zone
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <AlertDialog>
+                <AlertDialogTrigger asChild>
+                  <Button variant="destructive">
+                    <Trash2 className="mr-1.5 h-3.5 w-3.5" />
+                    Delete Project
+                  </Button>
+                </AlertDialogTrigger>
+                <AlertDialogContent>
+                  <AlertDialogHeader>
+                    <AlertDialogTitle>Delete project?</AlertDialogTitle>
+                    <AlertDialogDescription>
+                      This will stop all running containers and remove the
+                      project. This action cannot be undone.
+                    </AlertDialogDescription>
+                  </AlertDialogHeader>
+                  <AlertDialogFooter>
+                    <AlertDialogCancel>Cancel</AlertDialogCancel>
+                    <AlertDialogAction onClick={onDelete}>
+                      Delete
+                    </AlertDialogAction>
+                  </AlertDialogFooter>
+                </AlertDialogContent>
+              </AlertDialog>
+            </CardContent>
+          </Card>
+        </TabsContent>
+      </Tabs>
     </div>
   );
 }

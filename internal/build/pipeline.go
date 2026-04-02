@@ -70,7 +70,7 @@ func (p *Pipeline) Deploy(ctx context.Context, project *db.Project, deployment *
 
 	// Step 1: Update status to building
 	p.DB.UpdateDeploymentStatus(deployment.ID, "building", "")
-	emit(fmt.Sprintf("Starting build for %s/%s@%s", project.GithubOwner, project.GithubRepo, project.Branch))
+	emit(fmt.Sprintf("Starting build for %s/%s@%s", project.GithubOwner, project.GithubRepo, deployment.Branch))
 
 	// Step 2: Clone repository
 	emit("Cloning repository...")
@@ -78,7 +78,7 @@ func (p *Pipeline) Deploy(ctx context.Context, project *db.Project, deployment *
 	os.MkdirAll(buildDir, 0755)
 	defer os.RemoveAll(buildDir) // Always clean up
 
-	repoDir, err := CloneRepo(buildDir, project.GithubOwner, project.GithubRepo, project.Branch, githubToken)
+	repoDir, err := CloneRepo(buildDir, project.GithubOwner, project.GithubRepo, deployment.Branch, githubToken)
 	if err != nil {
 		fail(err, "Clone failed")
 		return

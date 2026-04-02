@@ -188,7 +188,12 @@ class ApiClient {
 
   async triggerDeployment(
     projectId: string,
-    data: { environment: string; branch?: string },
+    data: {
+      environment: string;
+      branch?: string;
+      create_tag?: boolean;
+      tag_name?: string;
+    },
   ): Promise<Deployment> {
     return this.request(`/projects/${projectId}/deployments`, {
       method: "POST",

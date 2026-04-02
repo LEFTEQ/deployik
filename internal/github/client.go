@@ -1,6 +1,7 @@
 package github
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -40,6 +41,11 @@ type Commit struct {
 	Commit struct {
 		Message string `json:"message"`
 	} `json:"commit"`
+}
+
+type createRefRequest struct {
+	Ref string `json:"ref"`
+	SHA string `json:"sha"`
 }
 
 // Client is a GitHub API client authenticated with a user's token.
@@ -89,6 +95,23 @@ func (c *Client) GetLatestCommit(owner, repo, branch string) (*Commit, error) {
 	return &commit, nil
 }
 
+// CreateTagReference creates a lightweight git tag ref for the provided commit SHA.
+func (c *Client) CreateTagReference(owner, repo, tagName, sha string) error {
+	url := fmt.Sprintf("%s/repos/%s/%s/git/refs", apiBase, owner, repo)
+	body, err := json.Marshal(createRefRequest{
+		Ref: "refs/tags/" + tagName,
+		SHA: sha,
+	})
+	if err != nil {
+		return fmt.Errorf("marshal create ref: %w", err)
+	}
+
+	if err := c.post(url, bytes.NewReader(body), http.StatusCreated, nil); err != nil {
+		return fmt.Errorf("create tag reference: %w", err)
+	}
+	return nil
+}
+
 func (c *Client) get(url string, target interface{}) error {
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
@@ -108,5 +131,31 @@ func (c *Client) get(url string, target interface{}) error {
 		return fmt.Errorf("github API returned %d: %s", resp.StatusCode, string(body))
 	}
 
+	return json.NewDecoder(resp.Body).Decode(target)
+}
+
+func (c *Client) post(url string, body io.Reader, expectedStatus int, target interface{}) error {
+	req, err := http.NewRequest("POST", url, body)
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Authorization", "Bearer "+c.token)
+	req.Header.Set("Accept", "application/vnd.github.v3+json")
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != expectedStatus {
+		payload, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("github API returned %d: %s", resp.StatusCode, string(payload))
+	}
+
+	if target == nil {
+		return nil
+	}
 	return json.NewDecoder(resp.Body).Decode(target)
 }

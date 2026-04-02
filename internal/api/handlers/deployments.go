@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"log"
 	"net/http"
+	"strings"
 
 	"github.com/go-chi/chi/v5"
 
@@ -13,6 +14,7 @@ import (
 	"github.com/LEFTEQ/lovinka-deployik/internal/build"
 	"github.com/LEFTEQ/lovinka-deployik/internal/crypto"
 	"github.com/LEFTEQ/lovinka-deployik/internal/db"
+	ghclient "github.com/LEFTEQ/lovinka-deployik/internal/github"
 )
 
 type DeploymentHandler struct {
@@ -25,6 +27,8 @@ type DeploymentHandler struct {
 type triggerDeployRequest struct {
 	Environment string `json:"environment"`
 	Branch      string `json:"branch"`
+	CreateTag   bool   `json:"create_tag"`
+	TagName     string `json:"tag_name"`
 }
 
 // List returns deployments for a project.
@@ -90,19 +94,6 @@ func (h *DeploymentHandler) Trigger(w http.ResponseWriter, r *http.Request) {
 		branch = project.Branch
 	}
 
-	// Create deployment record
-	deployment := &db.Deployment{
-		ProjectID:   project.ID,
-		Environment: env,
-		Branch:      branch,
-		Status:      "queued",
-		TriggeredBy: claims.UserID,
-	}
-	if err := h.DB.CreateDeployment(deployment); err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to create deployment"})
-		return
-	}
-
 	// Get user's GitHub token
 	user, err := h.DB.GetUserByID(claims.UserID)
 	if err != nil || user == nil {
@@ -113,6 +104,49 @@ func (h *DeploymentHandler) Trigger(w http.ResponseWriter, r *http.Request) {
 	githubToken, err := h.Encryptor.Decrypt(user.GithubToken)
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to decrypt token"})
+		return
+	}
+
+	tagName := strings.TrimSpace(req.TagName)
+	var releaseCommitSHA string
+	var releaseCommitMessage string
+	if req.CreateTag {
+		if env != "production" {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "create_tag is only supported for production releases"})
+			return
+		}
+		if tagName == "" {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "tag_name is required when create_tag is enabled"})
+			return
+		}
+
+		client := ghclient.NewClient(githubToken)
+		commit, err := client.GetLatestCommit(project.GithubOwner, project.GithubRepo, branch)
+		if err != nil {
+			writeJSON(w, http.StatusBadGateway, map[string]string{"error": "failed to resolve latest commit for release"})
+			return
+		}
+		if err := client.CreateTagReference(project.GithubOwner, project.GithubRepo, tagName, commit.SHA); err != nil {
+			writeJSON(w, http.StatusBadGateway, map[string]string{"error": err.Error()})
+			return
+		}
+		branch = tagName
+		releaseCommitSHA = commit.SHA
+		releaseCommitMessage = commit.Commit.Message
+	}
+
+	// Create deployment record
+	deployment := &db.Deployment{
+		ProjectID:     project.ID,
+		Environment:   env,
+		Branch:        branch,
+		CommitSHA:     releaseCommitSHA,
+		CommitMessage: releaseCommitMessage,
+		Status:        "queued",
+		TriggeredBy:   claims.UserID,
+	}
+	if err := h.DB.CreateDeployment(deployment); err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to create deployment"})
 		return
 	}
 
@@ -142,6 +176,8 @@ func (h *DeploymentHandler) Trigger(w http.ResponseWriter, r *http.Request) {
 		Metadata: map[string]any{
 			"environment": env,
 			"branch":      branch,
+			"create_tag":  req.CreateTag,
+			"tag_name":    tagName,
 		},
 	})
 }

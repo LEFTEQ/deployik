@@ -36,7 +36,7 @@ internal/
     handlers/
       auth.go             GitHub OAuth callback, OAuth state verification, cookie session issuance, refresh, logout, /me
       projects.go         CRUD + GitHub repo/branch listing
-      deployments.go      List, trigger, get, build logs
+    deployments.go      List, trigger, get, build logs; production releases can optionally create a git tag and deploy that tagged ref
       domains.go          Add, list, delete, verify (DNS + SSL)
       envvars.go          VariableHandler -- generic for both env and secret stores
       access.go           loadAuthorizedProject/Deployment helpers (calls authz)
@@ -66,7 +66,7 @@ internal/
     access.go             CanAccessProject, LoadProject, LoadDeployment (ownership + admin bypass)
 
   build/
-    pipeline.go           Full deploy orchestration: clone -> patch -> build -> run -> health -> swap
+    pipeline.go           Full deploy orchestration: clone -> patch -> build -> run -> health -> swap (uses deployment.Branch/ref, so tagged releases deploy the exact tagged commit)
     clone.go              Git shallow clone with OAuth token auth
     docker.go             Docker SDK: BuildImage, RunContainer, StopContainer, WaitForHealthy, ContainerExists
     dockerfile.go         Programmatic Dockerfile generation (Next.js standalone + static site)
@@ -129,17 +129,19 @@ web/src/
     AuthCallback.tsx      Exchanges code/state for cookie session, stores only user state
     Projects.tsx          Dashboard: project list
     NewProject.tsx        Two-step: select repo -> configure build settings
-    ProjectDetail.tsx     Tabs: deployments, domains, env vars, secrets, settings
+    ProjectDetail.tsx     Overview-first project workspace: command bar, endpoints strip, deployments, analytics, integration, settings
     DeploymentDetail.tsx  Build log viewer with real-time WebSocket streaming
   components/
     analytics/metric-chart.tsx  Reusable Recharts card wrapper for Deployik analytics charts
     analytics/stat-card.tsx  Reusable stat KPI card for analytics and future dashboards
-    layout/AppLayout.tsx  Protected shell with sidebar
-    layout/Sidebar.tsx    Navigation sidebar + workspace selector
+    layout/AppLayout.tsx  Protected shell with desktop rail + mobile sheet navigation
+    layout/Sidebar.tsx    Narrow `/deployik` rail navigation + mobile sheet nav
     projects/build-settings.tsx  Reusable BuildSettingsFields component with framework + package manager presets
-    projects/project-analytics.tsx  Analytics tab UI: filters, install with AI, audience cards, runtime charts
+    projects/project-analytics.tsx  Analytics tab UI: filters, audience/runtime metrics, setup empty-state routing into Integration
+    projects/project-integration.tsx  Analytics setup stepper: install, verify, track events
     BuildLog.tsx          Log viewer with auto-scroll, stderr highlighting
     ui/                   shadcn/ui components (button, card, dialog, input, etc.)
+    ui/code-panel.tsx     Reusable fixed-height scrollable code/prompt surface with sticky copy action
   hooks/
     useBuildLogs.ts       WebSocket hook for real-time build log streaming
     use-organizations.ts  React Query + Zustand bridge for accessible organizations and selected workspace
@@ -199,7 +201,7 @@ SQLite with 6 migrations. Tables:
 
 **Deployments:**
 - `GET  /api/projects/{id}/deployments` -- List deployments (limit 20)
-- `POST /api/projects/{id}/deployments` -- Trigger deployment `{environment, branch?}`
+- `POST /api/projects/{id}/deployments` -- Trigger deployment `{environment, branch?, create_tag?, tag_name?}`
 - `GET  /api/projects/{id}/deployments/{did}` -- Get deployment
 - `GET  /api/deployments/{did}/logs` -- Get build logs
 
