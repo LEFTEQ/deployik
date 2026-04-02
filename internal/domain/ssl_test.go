@@ -42,7 +42,9 @@ func TestRequestSSLCertUsesHostBindMountsAndKeepUntilExpiring(t *testing.T) {
 		"-v /opt/nginx-proxy/certs:/etc/letsencrypt",
 		"-v /opt/nginx-proxy/html:/var/www/html",
 		"certbot/certbot certonly",
+		"--cert-name acme-web.preview.example.com",
 		"-d acme-web.preview.example.com",
+		"--expand",
 		"--keep-until-expiring",
 		"--non-interactive",
 	} {

@@ -123,8 +123,10 @@ func (m *Manager) RequestSSLCert(domainNames ...string) error {
 		"--agree-tos",
 		"--no-eff-email",
 		"--non-interactive",
+		"--expand",
 		"--keep-until-expiring",
 	}
+	cmd = append(cmd, "--cert-name", domainNames[0])
 	for _, domainName := range domainNames {
 		if domainName == "" {
 			continue

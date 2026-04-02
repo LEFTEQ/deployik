@@ -1,7 +1,9 @@
 package domain
 
 import (
+	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/LEFTEQ/lovinka-deployik/internal/db"
 )
@@ -12,11 +14,14 @@ func ReconcileActiveConfigs(manager *Manager, targets []db.DomainProvisionTarget
 		return nil
 	}
 
+	var errs []string
+	wroteConfig := false
 	for _, target := range targets {
 		plan := ResolveVariantPlan(target.DomainName, target.Environment)
 		if plan.RedirectDomain != "" {
 			if err := manager.RequestSSLCert(plan.AllDomains()...); err != nil {
-				return fmt.Errorf("ensure ssl for %s: %w", target.DomainName, err)
+				errs = append(errs, fmt.Sprintf("ensure ssl for %s: %v", target.DomainName, err))
+				continue
 			}
 		}
 		if _, err := manager.WriteNginxConfig(ProvisionConfig{
@@ -27,12 +32,20 @@ func ReconcileActiveConfigs(manager *Manager, targets []db.DomainProvisionTarget
 			Environment:    target.Environment,
 			ContainerName:  fmt.Sprintf("deployik-%s-%s", target.ProjectName, target.Environment),
 		}); err != nil {
-			return fmt.Errorf("reconcile domain %s: %w", target.DomainName, err)
+			errs = append(errs, fmt.Sprintf("reconcile domain %s: %v", target.DomainName, err))
+			continue
+		}
+		wroteConfig = true
+	}
+
+	if wroteConfig {
+		if err := manager.ReloadNginx(); err != nil {
+			errs = append(errs, fmt.Sprintf("reload nginx after reconcile: %v", err))
 		}
 	}
 
-	if err := manager.ReloadNginx(); err != nil {
-		return fmt.Errorf("reload nginx after reconcile: %w", err)
+	if len(errs) > 0 {
+		return errors.New(strings.Join(errs, "; "))
 	}
 
 	return nil
