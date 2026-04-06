@@ -15,6 +15,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { LoadingState } from "@/components/ui/spinner";
 import { Switch } from "@/components/ui/switch";
 
 export function ProjectSettingsProtection() {
@@ -22,7 +23,7 @@ export function ProjectSettingsProtection() {
   const queryClient = useQueryClient();
   const [passwordToShow, setPasswordToShow] = useState<string | null>(null);
 
-  const { data: protection } = useQuery({
+  const { data: protection, isLoading } = useQuery({
     queryKey: ["protection", id],
     queryFn: () => api.getProtectionStatus(id),
   });
@@ -57,14 +58,40 @@ export function ProjectSettingsProtection() {
 
   const isPending = updateMutation.isPending || regenerateMutation.isPending;
 
+  const anyEnabled =
+    protection?.preview_enabled || protection?.production_enabled;
+
+  if (isLoading) {
+    return (
+      <LoadingState
+        title="Loading protection..."
+        description="Checking password protection status."
+        className="min-h-[200px]"
+      />
+    );
+  }
+
   return (
     <div className="space-y-8">
-      <div>
-        <h2 className="text-lg font-semibold">Password Protection</h2>
-        <p className="text-sm text-muted-foreground">
-          Control access to your deployed environments. When enabled, visitors
-          see an "unavailable" page and must enter a password to access the site.
-        </p>
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <div className="flex items-center gap-2">
+            <h2 className="text-lg font-semibold">Password Protection</h2>
+            {anyEnabled && (
+              <Badge
+                variant="outline"
+                className="border-emerald-400/25 bg-emerald-400/12 text-emerald-100"
+              >
+                Enabled
+              </Badge>
+            )}
+          </div>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Control access to your deployed environments. When enabled, visitors
+            see an "unavailable" page and must enter a password to access the
+            site.
+          </p>
+        </div>
       </div>
 
       <div className="divide-y rounded-lg border">

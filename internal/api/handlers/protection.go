@@ -220,12 +220,14 @@ func (h *ProtectionHandler) Verify(w http.ResponseWriter, r *http.Request) {
 	expiry := time.Now().Add(siteAuthTTL).Unix()
 	cookieValue := signSiteAuth(h.JWTSecret, projectID, environment, expiry)
 
+	isSecure := r.TLS != nil || r.Header.Get("X-Forwarded-Proto") == "https"
 	http.SetCookie(w, &http.Cookie{
 		Name:     siteAuthCookieName,
 		Value:    cookieValue,
 		Path:     "/",
 		MaxAge:   int(siteAuthTTL.Seconds()),
 		HttpOnly: true,
+		Secure:   isSecure,
 		SameSite: http.SameSiteLaxMode,
 	})
 
