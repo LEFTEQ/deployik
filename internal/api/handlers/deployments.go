@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"log"
 	"net/http"
+	"strconv"
 	"strings"
 
 	"github.com/go-chi/chi/v5"
@@ -31,22 +32,38 @@ type triggerDeployRequest struct {
 	TagName     string `json:"tag_name"`
 }
 
-// List returns deployments for a project.
+// List returns deployments for a project with optional filters.
 func (h *DeploymentHandler) List(w http.ResponseWriter, r *http.Request) {
 	projectID := chi.URLParam(r, "id")
 	if _, _, ok := loadAuthorizedProject(w, r, h.DB, projectID); !ok {
 		return
 	}
 
-	deployments, err := h.DB.ListDeployments(projectID, 20)
+	q := r.URL.Query()
+	limit, _ := strconv.Atoi(q.Get("limit"))
+	offset, _ := strconv.Atoi(q.Get("offset"))
+
+	filter := db.DeploymentFilter{
+		ProjectID:   projectID,
+		Branch:      q.Get("branch"),
+		Environment: q.Get("environment"),
+		Status:      q.Get("status"),
+		TriggeredBy: q.Get("triggered_by"),
+		From:        q.Get("from"),
+		To:          q.Get("to"),
+		Limit:       limit,
+		Offset:      offset,
+	}
+
+	result, err := h.DB.ListDeploymentsFiltered(filter)
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to list deployments"})
 		return
 	}
-	if deployments == nil {
-		deployments = []db.Deployment{}
+	if result.Deployments == nil {
+		result.Deployments = []db.DeploymentWithUser{}
 	}
-	writeJSON(w, http.StatusOK, deployments)
+	writeJSON(w, http.StatusOK, result)
 }
 
 // Get returns a single deployment.
@@ -137,13 +154,15 @@ func (h *DeploymentHandler) Trigger(w http.ResponseWriter, r *http.Request) {
 
 	// Create deployment record
 	deployment := &db.Deployment{
-		ProjectID:     project.ID,
-		Environment:   env,
-		Branch:        branch,
-		CommitSHA:     releaseCommitSHA,
-		CommitMessage: releaseCommitMessage,
-		Status:        "queued",
-		TriggeredBy:   claims.UserID,
+		ProjectID:           project.ID,
+		Environment:         env,
+		Branch:              branch,
+		CommitSHA:           releaseCommitSHA,
+		CommitMessage:       releaseCommitMessage,
+		Status:              "queued",
+		TriggeredBy:         claims.UserID,
+		TriggerSource:       "manual",
+		TriggeredByUsername: user.Username,
 	}
 	if err := h.DB.CreateDeployment(deployment); err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to create deployment"})

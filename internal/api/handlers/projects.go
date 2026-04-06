@@ -76,13 +76,13 @@ func (h *ProjectHandler) List(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	projects, err := h.DB.ListProjects(claims.UserID, organizationID)
+	projects, err := h.DB.ListProjectsWithLatestDeployment(claims.UserID, organizationID)
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to list projects"})
 		return
 	}
 	if projects == nil {
-		projects = []db.Project{}
+		projects = []db.ProjectWithLatestDeployment{}
 	}
 	writeJSON(w, http.StatusOK, projects)
 }

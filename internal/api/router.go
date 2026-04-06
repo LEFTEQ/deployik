@@ -34,6 +34,8 @@ type RouterConfig struct {
 	DomainManager  *domain.Manager
 	WSHub          *ws.Hub
 	Analytics      *analytics.Service
+	WebhookURL     string
+	ScreenshotDir  string
 }
 
 func NewRouter(cfg *RouterConfig) *chi.Mux {
@@ -75,6 +77,16 @@ func NewRouter(cfg *RouterConfig) *chi.Mux {
 		r.With(oauthLimiter.Middleware("oauth_callback")).Get("/auth/github/callback", authHandler.GithubCallback)
 		r.With(refreshLimiter.Middleware("auth_refresh")).Post("/auth/refresh", authHandler.RefreshToken)
 		r.With(refreshLimiter.Middleware("auth_logout")).Post("/auth/logout", authHandler.Logout)
+
+		// Webhook routes (public, signature-validated)
+		webhookHandler := &handlers.WebhookHandler{
+			DB:        cfg.DB,
+			Encryptor: cfg.Encryptor,
+			Pipeline:  cfg.Pipeline,
+		}
+		webhookLimiter := middleware.NewRateLimiter(60, time.Minute)
+		r.With(webhookLimiter.Middleware("webhook_github")).
+			Post("/webhooks/github", webhookHandler.HandleGithub)
 
 		// Protected routes
 		r.Group(func(r chi.Router) {
@@ -122,6 +134,21 @@ func NewRouter(cfg *RouterConfig) *chi.Mux {
 			r.With(mutationLimiter.Middleware("deployment_trigger")).Post("/projects/{id}/deployments", deployHandler.Trigger)
 			r.Get("/projects/{id}/deployments/{did}", deployHandler.Get)
 			r.Get("/deployments/{did}/logs", deployHandler.GetLogs)
+
+			// Auto-build
+			autobuildHandler := &handlers.AutoBuildHandler{
+				DB:         cfg.DB,
+				Encryptor:  cfg.Encryptor,
+				Audit:      auditRecorder,
+				WebhookURL: cfg.WebhookURL,
+			}
+			r.Get("/projects/{id}/auto-build", autobuildHandler.Get)
+			r.With(mutationLimiter.Middleware("autobuild_update")).Put("/projects/{id}/auto-build", autobuildHandler.Put)
+			r.With(mutationLimiter.Middleware("autobuild_delete")).Delete("/projects/{id}/auto-build", autobuildHandler.Delete)
+
+			// Screenshots
+			screenshotHandler := &handlers.ScreenshotHandler{DB: cfg.DB}
+			r.Get("/deployments/{did}/screenshot", screenshotHandler.Get)
 
 			// Domains
 			domainHandler := &handlers.DomainHandler{DB: cfg.DB, Manager: cfg.DomainManager, Audit: auditRecorder}

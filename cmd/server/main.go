@@ -100,6 +100,7 @@ func main() {
 		BuildDir:      cfg.BuildDir,
 		ProxyNetwork:  "proxy",
 		Hub:           wsHub,
+		ScreenshotDir: cfg.ScreenshotDir,
 	}
 
 	if targets, err := database.ListActiveDomainProvisionTargets(); err != nil {
@@ -130,6 +131,8 @@ func main() {
 		DomainManager:  domainManager,
 		WSHub:          wsHub,
 		Analytics:      analyticsService,
+		WebhookURL:     cfg.WebhookURL,
+		ScreenshotDir:  cfg.ScreenshotDir,
 	})
 
 	addr := fmt.Sprintf(":%s", cfg.Port)

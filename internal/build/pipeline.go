@@ -25,6 +25,7 @@ type Pipeline struct {
 	BuildDir      string
 	ProxyNetwork  string // Docker network name (e.g., "proxy")
 	Hub           *ws.Hub
+	ScreenshotDir string // Directory to store deployment screenshots
 }
 
 // LogCallback is called for each build log line.
@@ -248,6 +249,37 @@ func (p *Pipeline) Deploy(ctx context.Context, project *db.Project, deployment *
 	p.DB.UpdateDeploymentStatus(deployment.ID, "live", "")
 
 	emit(fmt.Sprintf("Deployment live! (%ds)", duration))
+
+	// Step 11: Capture screenshot asynchronously
+	if p.ScreenshotDir != "" && p.Docker != nil {
+		go func() {
+			time.Sleep(5 * time.Second)
+			domains, err := p.DB.ListDomains(project.ID)
+			if err != nil {
+				log.Printf("Screenshot: failed to list domains for %s: %v", deployment.ID, err)
+				return
+			}
+			var screenshotURL string
+			for _, d := range domains {
+				if d.Environment == deployment.Environment && d.SSLStatus == "active" {
+					screenshotURL = "https://" + d.DomainName
+					break
+				}
+			}
+			if screenshotURL == "" {
+				log.Printf("Screenshot: no active domain for deployment %s", deployment.ID)
+				return
+			}
+			path, err := CaptureScreenshot(context.Background(), p.Docker, screenshotURL, deployment.ID, p.ScreenshotDir, p.ProxyNetwork)
+			if err != nil {
+				log.Printf("Screenshot capture failed for %s: %v", deployment.ID, err)
+				return
+			}
+			if err := p.DB.UpdateDeploymentScreenshot(deployment.ID, path); err != nil {
+				log.Printf("Screenshot: failed to save path for %s: %v", deployment.ID, err)
+			}
+		}()
+	}
 }
 
 func (p *Pipeline) ensureEnvironmentDomains(project *db.Project, deployment *db.Deployment, containerName string, emit func(string)) error {
