@@ -322,14 +322,17 @@ func (p *Pipeline) ensureEnvironmentDomains(project *db.Project, deployment *db.
 		}
 
 		emit(fmt.Sprintf("Provisioning domain %s...", plan.CanonicalDomain))
+		passwordProtected := (d.Environment == "preview" && project.PreviewPassword != "") ||
+			(d.Environment == "production" && project.ProductionPassword != "")
 		err = p.DomainManager.ProvisionDomain(domain.ProvisionConfig{
-			ProjectID:      project.ID,
-			ProjectName:    project.Name,
-			Domain:         plan.CanonicalDomain,
-			RedirectDomain: plan.RedirectDomain,
-			SSLDomains:     plan.AllDomains(),
-			Environment:    d.Environment,
-			ContainerName:  containerName,
+			ProjectID:         project.ID,
+			ProjectName:       project.Name,
+			Domain:            plan.CanonicalDomain,
+			RedirectDomain:    plan.RedirectDomain,
+			SSLDomains:        plan.AllDomains(),
+			Environment:       d.Environment,
+			ContainerName:     containerName,
+			PasswordProtected: passwordProtected,
 		}, false)
 		if err != nil {
 			_ = p.DB.UpdateDomainSSL(d.ID, "error", d.SSLExpiresAt)

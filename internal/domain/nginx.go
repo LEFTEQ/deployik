@@ -77,10 +77,45 @@ server {
     add_header X-Frame-Options "DENY" always;
     add_header X-Content-Type-Options "nosniff" always;
     access_log /var/log/nginx/deployik-{{.ProjectID}}-{{.ProjectName}}-{{.Environment}}.json deployik_json;
+{{- if .PasswordProtected }}
+
+    set $deployik_project_id "{{.ProjectID}}";
+    set $deployik_environment "{{.Environment}}";
+
+    location = /_deployik/auth-check {
+        internal;
+        proxy_pass http://deployik-app:8080/api/site-auth/check;
+        proxy_set_header X-Deployik-Project $deployik_project_id;
+        proxy_set_header X-Deployik-Environment $deployik_environment;
+        proxy_set_header Cookie $http_cookie;
+        proxy_pass_request_body off;
+        proxy_set_header Content-Length "";
+    }
+
+    error_page 401 = @auth_page;
+
+    location @auth_page {
+        root /opt/nginx-proxy/auth-pages;
+        try_files /auth.html =503;
+    }
+
+    location = /_deployik/verify {
+        proxy_pass http://deployik-app:8080/api/site-auth/verify;
+        proxy_set_header X-Deployik-Project $deployik_project_id;
+        proxy_set_header X-Deployik-Environment $deployik_environment;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+{{- end }}
 
     location / {
         set $upstream {{.ContainerName}}:3000;
         limit_req zone=deployik_preview burst=20 nodelay;
+{{- if .PasswordProtected }}
+        auth_request /_deployik/auth-check;
+{{- end }}
         proxy_pass http://$upstream;
 
         proxy_http_version 1.1;
@@ -100,13 +135,14 @@ server {
 
 // NginxConfig holds data for generating an nginx config.
 type NginxConfig struct {
-	ProjectID      string
-	ProjectName    string
-	Domain         string
-	RedirectDomain string
-	Environment    string
-	SSLDomain      string // may differ for wildcard certs
-	ContainerName  string
+	ProjectID         string
+	ProjectName       string
+	Domain            string
+	RedirectDomain    string
+	Environment       string
+	SSLDomain         string // may differ for wildcard certs
+	ContainerName     string
+	PasswordProtected bool
 }
 
 // GenerateNginxConfig creates an nginx config file for a domain.

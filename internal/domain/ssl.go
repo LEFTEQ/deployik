@@ -31,14 +31,15 @@ type Manager struct {
 }
 
 type ProvisionConfig struct {
-	ProjectID      string
-	ProjectName    string
-	Domain         string
-	Environment    string
-	SSLDomain      string
-	SSLDomains     []string
-	RedirectDomain string
-	ContainerName  string
+	ProjectID         string
+	ProjectName       string
+	Domain            string
+	Environment       string
+	SSLDomain         string
+	SSLDomains        []string
+	RedirectDomain    string
+	ContainerName     string
+	PasswordProtected bool
 }
 
 type commandRunner interface {
@@ -149,13 +150,14 @@ func (m *Manager) WriteNginxConfig(cfg ProvisionConfig) (string, error) {
 	}
 
 	return GenerateNginxConfig(m.NginxConfDir, NginxConfig{
-		ProjectID:      cfg.ProjectID,
-		ProjectName:    cfg.ProjectName,
-		Domain:         cfg.Domain,
-		RedirectDomain: cfg.RedirectDomain,
-		Environment:    cfg.Environment,
-		SSLDomain:      cfg.sslDomain(),
-		ContainerName:  cfg.ContainerName,
+		ProjectID:         cfg.ProjectID,
+		ProjectName:       cfg.ProjectName,
+		Domain:            cfg.Domain,
+		RedirectDomain:    cfg.RedirectDomain,
+		Environment:       cfg.Environment,
+		SSLDomain:         cfg.sslDomain(),
+		ContainerName:     cfg.ContainerName,
+		PasswordProtected: cfg.PasswordProtected,
 	})
 }
 

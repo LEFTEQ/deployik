@@ -66,6 +66,17 @@ func NewRouter(cfg *RouterConfig) *chi.Mux {
 		Audit:        auditRecorder,
 	}
 
+	// Site-auth routes (public, called by nginx and auth page)
+	protectionHandler := &handlers.ProtectionHandler{
+		DB:        cfg.DB,
+		Encryptor: cfg.Encryptor,
+		JWTSecret: cfg.JWTSecret,
+		Manager:   cfg.DomainManager,
+		Audit:     auditRecorder,
+	}
+	r.Post("/api/site-auth/verify", protectionHandler.Verify)
+	r.Get("/api/site-auth/check", protectionHandler.Check)
+
 	r.Route("/api", func(r chi.Router) {
 		// Public routes
 		r.Get("/health", func(w http.ResponseWriter, r *http.Request) {
@@ -140,6 +151,11 @@ func NewRouter(cfg *RouterConfig) *chi.Mux {
 			r.With(mutationLimiter.Middleware("deployment_trigger")).Post("/projects/{id}/deployments", deployHandler.Trigger)
 			r.Get("/projects/{id}/deployments/{did}", deployHandler.Get)
 			r.Get("/deployments/{did}/logs", deployHandler.GetLogs)
+
+			// Password protection
+			r.Get("/projects/{id}/protection", protectionHandler.Get)
+			r.With(mutationLimiter.Middleware("protection_update")).Put("/projects/{id}/protection", protectionHandler.Update)
+			r.With(mutationLimiter.Middleware("protection_regenerate")).Post("/projects/{id}/protection/regenerate", protectionHandler.Regenerate)
 
 			// Auto-build
 			autobuildHandler := &handlers.AutoBuildHandler{

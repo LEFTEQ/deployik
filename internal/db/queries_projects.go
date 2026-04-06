@@ -11,7 +11,8 @@ func (db *DB) ListProjects(userID, organizationID string) ([]Project, error) {
 		SELECT p.id, p.name, p.github_repo, p.github_owner, p.branch, p.user_id,
 		       COALESCE(p.organization_id, ''), COALESCE(o.name, ''), p.framework, p.package_manager,
 		       p.root_directory, p.output_directory, p.build_command, p.install_command, p.node_version,
-		       p.status, p.created_at, p.updated_at
+		       p.status, COALESCE(p.preview_password, ''), COALESCE(p.production_password, ''),
+		       p.created_at, p.updated_at
 		FROM projects p
 		LEFT JOIN organizations o ON o.id = p.organization_id
 		WHERE p.status != 'deleted'
@@ -42,7 +43,8 @@ func (db *DB) ListProjects(userID, organizationID string) ([]Project, error) {
 		var p Project
 		if err := rows.Scan(&p.ID, &p.Name, &p.GithubRepo, &p.GithubOwner, &p.Branch,
 			&p.UserID, &p.OrganizationID, &p.OrganizationName, &p.Framework, &p.PackageManager, &p.RootDirectory, &p.OutputDirectory, &p.BuildCommand, &p.InstallCommand, &p.NodeVersion,
-			&p.Status, &p.CreatedAt, &p.UpdatedAt); err != nil {
+			&p.Status, &p.PreviewPassword, &p.ProductionPassword,
+			&p.CreatedAt, &p.UpdatedAt); err != nil {
 			return nil, fmt.Errorf("scan project: %w", err)
 		}
 		projects = append(projects, p)
@@ -55,13 +57,16 @@ func (db *DB) GetProject(id string) (*Project, error) {
 	err := db.QueryRow(
 		`SELECT p.id, p.name, p.github_repo, p.github_owner, p.branch, p.user_id,
 		        COALESCE(p.organization_id, ''), COALESCE(o.name, ''), p.framework, p.package_manager,
-		        p.root_directory, p.output_directory, p.build_command, p.install_command, p.node_version, p.status, p.created_at, p.updated_at
+		        p.root_directory, p.output_directory, p.build_command, p.install_command, p.node_version, p.status,
+		        COALESCE(p.preview_password, ''), COALESCE(p.production_password, ''),
+		        p.created_at, p.updated_at
 		 FROM projects p
 		 LEFT JOIN organizations o ON o.id = p.organization_id
 		 WHERE p.id = ?`, id,
 	).Scan(&p.ID, &p.Name, &p.GithubRepo, &p.GithubOwner, &p.Branch,
 		&p.UserID, &p.OrganizationID, &p.OrganizationName, &p.Framework, &p.PackageManager, &p.RootDirectory, &p.OutputDirectory, &p.BuildCommand, &p.InstallCommand, &p.NodeVersion,
-		&p.Status, &p.CreatedAt, &p.UpdatedAt)
+		&p.Status, &p.PreviewPassword, &p.ProductionPassword,
+		&p.CreatedAt, &p.UpdatedAt)
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}
@@ -76,7 +81,9 @@ func (db *DB) GetProjectForUser(id, userID string) (*Project, error) {
 	err := db.QueryRow(
 		`SELECT p.id, p.name, p.github_repo, p.github_owner, p.branch, p.user_id,
 		        COALESCE(p.organization_id, ''), COALESCE(o.name, ''), p.framework, p.package_manager,
-		        p.root_directory, p.output_directory, p.build_command, p.install_command, p.node_version, p.status, p.created_at, p.updated_at
+		        p.root_directory, p.output_directory, p.build_command, p.install_command, p.node_version, p.status,
+		        COALESCE(p.preview_password, ''), COALESCE(p.production_password, ''),
+		        p.created_at, p.updated_at
 		 FROM projects p
 		 LEFT JOIN organizations o ON o.id = p.organization_id
 		 WHERE p.id = ?
@@ -90,7 +97,8 @@ func (db *DB) GetProjectForUser(id, userID string) (*Project, error) {
 		   )`, id, userID, userID,
 	).Scan(&p.ID, &p.Name, &p.GithubRepo, &p.GithubOwner, &p.Branch,
 		&p.UserID, &p.OrganizationID, &p.OrganizationName, &p.Framework, &p.PackageManager, &p.RootDirectory, &p.OutputDirectory, &p.BuildCommand, &p.InstallCommand, &p.NodeVersion,
-		&p.Status, &p.CreatedAt, &p.UpdatedAt)
+		&p.Status, &p.PreviewPassword, &p.ProductionPassword,
+		&p.CreatedAt, &p.UpdatedAt)
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}
@@ -156,7 +164,8 @@ func (db *DB) ListProjectsWithLatestDeployment(userID, orgID string) ([]ProjectW
 		SELECT p.id, p.name, p.github_repo, p.github_owner, p.branch, p.user_id,
 		       COALESCE(p.organization_id, ''), COALESCE(o.name, ''), p.framework, p.package_manager,
 		       p.root_directory, p.output_directory, p.build_command, p.install_command, p.node_version,
-		       p.status, p.created_at, p.updated_at,
+		       p.status, COALESCE(p.preview_password, ''), COALESCE(p.production_password, ''),
+		       p.created_at, p.updated_at,
 		       ld.id, ld.status, ld.branch, ld.commit_sha, ld.commit_message, ld.created_at
 		FROM projects p
 		LEFT JOIN organizations o ON o.id = p.organization_id
@@ -202,7 +211,8 @@ func (db *DB) ListProjectsWithLatestDeployment(userID, orgID string) ([]ProjectW
 			&p.ID, &p.Name, &p.GithubRepo, &p.GithubOwner, &p.Branch,
 			&p.UserID, &p.OrganizationID, &p.OrganizationName, &p.Framework, &p.PackageManager,
 			&p.RootDirectory, &p.OutputDirectory, &p.BuildCommand, &p.InstallCommand, &p.NodeVersion,
-			&p.Status, &p.CreatedAt, &p.UpdatedAt,
+			&p.Status, &p.PreviewPassword, &p.ProductionPassword,
+			&p.CreatedAt, &p.UpdatedAt,
 			&ldID, &ldStatus, &ldBranch, &ldCommitSHA, &ldCommitMsg, &ldCreatedAt,
 		); err != nil {
 			return nil, fmt.Errorf("scan project with latest deployment: %w", err)
@@ -247,4 +257,77 @@ func nullableString(value string) any {
 		return nil
 	}
 	return strings.TrimSpace(value)
+}
+
+// GetProjectPassword returns the encrypted password for the given environment ("preview" or "production").
+// Returns an empty string if no password is set.
+func (db *DB) GetProjectPassword(projectID, environment string) (string, error) {
+	var col string
+	switch environment {
+	case "preview":
+		col = "preview_password"
+	case "production":
+		col = "production_password"
+	default:
+		return "", fmt.Errorf("invalid environment: %s", environment)
+	}
+
+	var val sql.NullString
+	err := db.QueryRow(
+		fmt.Sprintf(`SELECT %s FROM projects WHERE id = ?`, col), projectID,
+	).Scan(&val)
+	if err == sql.ErrNoRows {
+		return "", nil
+	}
+	if err != nil {
+		return "", fmt.Errorf("get project password: %w", err)
+	}
+	if !val.Valid {
+		return "", nil
+	}
+	return val.String, nil
+}
+
+// SetProjectPassword stores an encrypted password for the given environment.
+func (db *DB) SetProjectPassword(projectID, environment, encryptedPassword string) error {
+	var col string
+	switch environment {
+	case "preview":
+		col = "preview_password"
+	case "production":
+		col = "production_password"
+	default:
+		return fmt.Errorf("invalid environment: %s", environment)
+	}
+
+	_, err := db.Exec(
+		fmt.Sprintf(`UPDATE projects SET %s = ?, updated_at = datetime('now') WHERE id = ?`, col),
+		encryptedPassword, projectID,
+	)
+	if err != nil {
+		return fmt.Errorf("set project password: %w", err)
+	}
+	return nil
+}
+
+// ClearProjectPassword removes the password for the given environment (sets it to NULL).
+func (db *DB) ClearProjectPassword(projectID, environment string) error {
+	var col string
+	switch environment {
+	case "preview":
+		col = "preview_password"
+	case "production":
+		col = "production_password"
+	default:
+		return fmt.Errorf("invalid environment: %s", environment)
+	}
+
+	_, err := db.Exec(
+		fmt.Sprintf(`UPDATE projects SET %s = NULL, updated_at = datetime('now') WHERE id = ?`, col),
+		projectID,
+	)
+	if err != nil {
+		return fmt.Errorf("clear project password: %w", err)
+	}
+	return nil
 }

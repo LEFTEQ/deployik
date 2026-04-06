@@ -80,9 +80,11 @@ type Project struct {
 	BuildCommand     string    `json:"build_command"`
 	InstallCommand   string    `json:"install_command"`
 	NodeVersion      string    `json:"node_version"`
-	Status           string    `json:"status"`
-	CreatedAt        time.Time `json:"created_at"`
-	UpdatedAt        time.Time `json:"updated_at"`
+	Status              string    `json:"status"`
+	PreviewPassword     string    `json:"-"` // encrypted, never expose in JSON
+	ProductionPassword  string    `json:"-"` // encrypted, never expose in JSON
+	CreatedAt           time.Time `json:"created_at"`
+	UpdatedAt           time.Time `json:"updated_at"`
 }
 
 type AnalyticsTrackingMode string
@@ -162,10 +164,11 @@ type Domain struct {
 }
 
 type DomainProvisionTarget struct {
-	ProjectID   string
-	ProjectName string
-	DomainName  string
-	Environment string
+	ProjectID         string
+	ProjectName       string
+	DomainName        string
+	Environment       string
+	PasswordProtected bool
 }
 
 type VariableKind string

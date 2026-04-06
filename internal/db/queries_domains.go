@@ -99,7 +99,12 @@ func (db *DB) DeleteAllDomainsForProject(projectID string) error {
 
 func (db *DB) ListActiveDomainProvisionTargets() ([]DomainProvisionTarget, error) {
 	rows, err := db.Query(
-		`SELECT p.id, p.name, d.domain, d.environment
+		`SELECT p.id, p.name, d.domain, d.environment,
+		        CASE
+		            WHEN d.environment = 'preview'    AND p.preview_password    IS NOT NULL THEN 1
+		            WHEN d.environment = 'production' AND p.production_password IS NOT NULL THEN 1
+		            ELSE 0
+		        END AS password_protected
 		 FROM domains d
 		 JOIN projects p ON p.id = d.project_id
 		 WHERE p.status = 'active' AND d.ssl_status = 'active'
@@ -113,9 +118,11 @@ func (db *DB) ListActiveDomainProvisionTargets() ([]DomainProvisionTarget, error
 	var targets []DomainProvisionTarget
 	for rows.Next() {
 		var target DomainProvisionTarget
-		if err := rows.Scan(&target.ProjectID, &target.ProjectName, &target.DomainName, &target.Environment); err != nil {
+		var pwProtected int
+		if err := rows.Scan(&target.ProjectID, &target.ProjectName, &target.DomainName, &target.Environment, &pwProtected); err != nil {
 			return nil, fmt.Errorf("scan active domain provision target: %w", err)
 		}
+		target.PasswordProtected = pwProtected == 1
 		targets = append(targets, target)
 	}
 	return targets, rows.Err()

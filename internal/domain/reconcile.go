@@ -25,12 +25,13 @@ func ReconcileActiveConfigs(manager *Manager, targets []db.DomainProvisionTarget
 			}
 		}
 		if _, err := manager.WriteNginxConfig(ProvisionConfig{
-			ProjectID:      target.ProjectID,
-			ProjectName:    target.ProjectName,
-			Domain:         plan.CanonicalDomain,
-			RedirectDomain: plan.RedirectDomain,
-			Environment:    target.Environment,
-			ContainerName:  fmt.Sprintf("deployik-%s-%s", target.ProjectName, target.Environment),
+			ProjectID:         target.ProjectID,
+			ProjectName:       target.ProjectName,
+			Domain:            plan.CanonicalDomain,
+			RedirectDomain:    plan.RedirectDomain,
+			Environment:       target.Environment,
+			ContainerName:     fmt.Sprintf("deployik-%s-%s", target.ProjectName, target.Environment),
+			PasswordProtected: target.PasswordProtected,
 		}); err != nil {
 			errs = append(errs, fmt.Sprintf("reconcile domain %s: %v", target.DomainName, err))
 			continue
