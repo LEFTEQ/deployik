@@ -100,108 +100,105 @@ export function VariableStore({ projectId, kind }: VariableStoreProps) {
 
   return (
     <div className="space-y-4">
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">{storeTitle}</CardTitle>
-          <CardDescription>
-            {storeDescription} {scopeDescription}
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-3">
-          <div className="flex flex-wrap gap-2">
-            {(Object.keys(VARIABLE_SCOPE_META) as VariableScope[]).map(
-              (value) => (
-                <Button
-                  key={value}
-                  size="sm"
-                  variant={scope === value ? "default" : "outline"}
-                  onClick={() => setScope(value)}
-                >
-                  {VARIABLE_SCOPE_META[value].label}
-                </Button>
-              ),
-            )}
-          </div>
-          <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
-            <Badge
-              variant="outline"
-              className={VARIABLE_SCOPE_META[scope].badgeClass}
-            >
-              {VARIABLE_SCOPE_META[scope].label}
-            </Badge>
-            <span>{VARIABLE_SCOPE_META[scope].description}</span>
-          </div>
-        </CardContent>
-      </Card>
+      {/* Scope selector */}
+      <div className="space-y-3">
+        <h3 className="text-base font-semibold">{storeTitle}</h3>
+        <p className="text-sm text-muted-foreground">
+          {storeDescription} {scopeDescription}
+        </p>
+        <div className="flex flex-wrap gap-2">
+          {(Object.keys(VARIABLE_SCOPE_META) as VariableScope[]).map(
+            (value) => (
+              <Button
+                key={value}
+                size="sm"
+                variant={scope === value ? "default" : "outline"}
+                onClick={() => setScope(value)}
+              >
+                {VARIABLE_SCOPE_META[value].label}
+              </Button>
+            ),
+          )}
+        </div>
+        <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
+          <Badge
+            variant="outline"
+            className={VARIABLE_SCOPE_META[scope].badgeClass}
+          >
+            {VARIABLE_SCOPE_META[scope].label}
+          </Badge>
+          <span>{VARIABLE_SCOPE_META[scope].description}</span>
+        </div>
+      </div>
 
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">
+      {/* Current variables */}
+      <div className="space-y-2">
+        <div className="flex flex-col gap-0.5">
+          <h3 className="text-base font-semibold">
             Current {storeTitle} ({VARIABLE_SCOPE_META[scope].label})
-          </CardTitle>
-          <CardDescription>
+          </h3>
+          <p className="text-sm text-muted-foreground">
             Values are masked after save. Delete a key here or replace the full
             scope below.
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          {isLoading ? (
-            <LoadingState
-              title={`Loading ${storeTitle.toLowerCase()}...`}
-              description={`Fetching stored ${storeTitle.toLowerCase()} for the selected scope.`}
-              className="min-h-[220px]"
-            />
-          ) : existingVars?.length ? (
-            <div className="space-y-2 font-mono text-sm">
-              {existingVars.map((variable) => {
-                const deleting =
-                  deleteMutation.isPending &&
-                  deleteMutation.variables === variable.key;
+          </p>
+        </div>
+        {isLoading ? (
+          <LoadingState
+            title={`Loading ${storeTitle.toLowerCase()}...`}
+            description={`Fetching stored ${storeTitle.toLowerCase()} for the selected scope.`}
+            className="min-h-[220px]"
+          />
+        ) : existingVars?.length ? (
+          <div className="divide-y rounded-lg border font-mono text-sm">
+            {existingVars.map((variable) => {
+              const deleting =
+                deleteMutation.isPending &&
+                deleteMutation.variables === variable.key;
 
-                return (
-                  <div
-                    key={variable.id}
-                    className="flex flex-col gap-3 rounded-xl border bg-muted/30 p-3 md:flex-row md:items-center md:justify-between"
-                  >
-                    <div className="space-y-1">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <span className="text-foreground">{variable.key}</span>
-                        <Badge
-                          variant="outline"
-                          className={
-                            VARIABLE_SCOPE_META[variable.environment].badgeClass
-                          }
-                        >
-                          {VARIABLE_SCOPE_META[variable.environment].label}
-                        </Badge>
-                      </div>
-                      <p className="text-xs text-muted-foreground">
-                        {variable.value}
-                      </p>
+              return (
+                <div
+                  key={variable.id}
+                  className="flex flex-col gap-3 px-4 py-3 md:flex-row md:items-center md:justify-between"
+                >
+                  <div className="space-y-1">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="text-foreground">{variable.key}</span>
+                      <Badge
+                        variant="outline"
+                        className={
+                          VARIABLE_SCOPE_META[variable.environment].badgeClass
+                        }
+                      >
+                        {VARIABLE_SCOPE_META[variable.environment].label}
+                      </Badge>
                     </div>
-
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      onClick={() => deleteMutation.mutate(variable.key)}
-                      disabled={deleteMutation.isPending}
-                    >
-                      {deleting ? (
-                        <LoaderCircle className="h-4 w-4 animate-spin" />
-                      ) : (
-                        <Trash2 className="h-4 w-4" />
-                      )}
-                    </Button>
+                    <p className="text-xs text-muted-foreground">
+                      {variable.value}
+                    </p>
                   </div>
-                );
-              })}
-            </div>
-          ) : (
-            <p className="text-sm text-muted-foreground">{emptyState}</p>
-          )}
-        </CardContent>
-      </Card>
 
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={() => deleteMutation.mutate(variable.key)}
+                    disabled={deleteMutation.isPending}
+                  >
+                    {deleting ? (
+                      <LoaderCircle className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <Trash2 className="h-4 w-4" />
+                    )}
+                  </Button>
+                </div>
+              );
+            })}
+          </div>
+        ) : (
+          <p className="text-sm text-muted-foreground">{emptyState}</p>
+        )}
+      </div>
+
+      {/* Replace / bulk edit — keeps Card for visual separation */}
       <Card>
         <CardHeader>
           <CardTitle className="text-base">
