@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net/url"
 	"os"
+	"path/filepath"
 	"strings"
 )
 
@@ -32,6 +33,8 @@ type Config struct {
 	AnalyticsUmamiUsername  string
 	AnalyticsUmamiPassword  string
 	AnalyticsLokiURL        string
+	WebhookURL              string
+	ScreenshotDir           string
 }
 
 func Load() (*Config, error) {
@@ -65,6 +68,9 @@ func Load() (*Config, error) {
 	if cfg.AnalyticsUmamiScriptURL == "" && cfg.AnalyticsUmamiPublicURL != "" {
 		cfg.AnalyticsUmamiScriptURL = cfg.AnalyticsUmamiPublicURL + "/script.js"
 	}
+
+	cfg.WebhookURL = getEnv("WEBHOOK_URL", cfg.FrontendURL+"/api/webhooks/github")
+	cfg.ScreenshotDir = getEnv("SCREENSHOT_DIR", filepath.Join(cfg.DataDir, "screenshots"))
 
 	if users := os.Getenv("ALLOWED_GITHUB_USERS"); users != "" {
 		cfg.AllowedGithubUsers = splitCSV(users)

@@ -131,8 +131,11 @@ type Deployment struct {
 	ContainerName string       `json:"container_name"`
 	ImageTag      string       `json:"image_tag"`
 	BuildDuration int          `json:"build_duration"`
-	TriggeredBy   string       `json:"triggered_by"`
-	ErrorMessage  string       `json:"error_message,omitempty"`
+	TriggeredBy         string       `json:"triggered_by"`
+	TriggerSource       string       `json:"trigger_source"`
+	TriggeredByUsername string       `json:"triggered_by_username"`
+	ScreenshotPath      string       `json:"screenshot_path,omitempty"`
+	ErrorMessage        string       `json:"error_message,omitempty"`
 	CreatedAt     time.Time    `json:"created_at"`
 	FinishedAt    sql.NullTime `json:"finished_at"`
 }
@@ -183,3 +186,63 @@ type ProjectVariable struct {
 }
 
 type EnvVariable = ProjectVariable
+
+type AutoBuildConfig struct {
+	ID               string    `json:"id"`
+	ProjectID        string    `json:"project_id"`
+	Enabled          bool      `json:"enabled"`
+	ProductionBranch string    `json:"production_branch"`
+	PreviewBranches  string    `json:"preview_branches"`
+	WebhookID        *int64    `json:"webhook_id,omitempty"`
+	WebhookSecret    string    `json:"-"`
+	CreatedAt        time.Time `json:"created_at"`
+	UpdatedAt        time.Time `json:"updated_at"`
+}
+
+type WebhookEvent struct {
+	ID               int64     `json:"id"`
+	ProjectID        string    `json:"project_id"`
+	GithubDeliveryID string    `json:"github_delivery_id"`
+	EventType        string    `json:"event_type"`
+	Branch           string    `json:"branch"`
+	CommitSHA        string    `json:"commit_sha"`
+	CommitMessage    string    `json:"commit_message"`
+	Pusher           string    `json:"pusher"`
+	DeploymentID     string    `json:"deployment_id,omitempty"`
+	Status           string    `json:"status"`
+	ErrorMessage     *string   `json:"error_message,omitempty"`
+	CreatedAt        time.Time `json:"created_at"`
+}
+
+type ProjectWithLatestDeployment struct {
+	Project
+	LatestDeploymentID        *string    `json:"latest_deployment_id,omitempty"`
+	LatestDeploymentStatus    *string    `json:"latest_deployment_status,omitempty"`
+	LatestDeploymentBranch    *string    `json:"latest_deployment_branch,omitempty"`
+	LatestDeploymentCommitSHA *string    `json:"latest_deployment_commit_sha,omitempty"`
+	LatestDeploymentCommitMsg *string    `json:"latest_deployment_commit_message,omitempty"`
+	LatestDeploymentCreatedAt *time.Time `json:"latest_deployment_created_at,omitempty"`
+}
+
+type DeploymentWithUser struct {
+	Deployment
+	Username  string `json:"username"`
+	AvatarURL string `json:"avatar_url"`
+}
+
+type DeploymentListResponse struct {
+	Deployments []DeploymentWithUser `json:"deployments"`
+	Total       int                  `json:"total"`
+}
+
+type DeploymentFilter struct {
+	ProjectID   string
+	Branch      string
+	Environment string
+	Status      string
+	TriggeredBy string
+	From        string
+	To          string
+	Limit       int
+	Offset      int
+}
