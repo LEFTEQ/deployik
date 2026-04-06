@@ -1,26 +1,45 @@
 import { Link, useRouterState } from "@tanstack/react-router";
 import {
   BarChart3,
+  Building2,
   FolderKanban,
   Globe2,
   LayoutGrid,
+  LogOut,
+  Plus,
   Rocket,
   Settings,
   Sparkles,
 } from "lucide-react";
 
+import { useAuthStore } from "@/store/auth";
+import { useOrganizationStore } from "@/store/organization";
+import { useOrganizations } from "@/hooks/use-organizations";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import {
   Sidebar,
   SidebarContent,
+  SidebarFooter,
   SidebarGroup,
   SidebarGroupLabel,
+  SidebarHeader,
   SidebarMenu,
   SidebarMenuButton,
   SidebarMenuItem,
   SidebarRail,
 } from "@/components/ui/sidebar";
 
-interface AppSidebarProps {
+interface AppSidebarProps extends React.ComponentProps<typeof Sidebar> {
   context: "workspace" | "project";
   projectId?: string;
 }
@@ -30,7 +49,6 @@ interface NavItem {
   icon: typeof FolderKanban;
   to: string;
   params?: Record<string, string>;
-  /** Check the current pathname against this pattern for active state. */
   matchPath: (pathname: string) => boolean;
 }
 
@@ -61,8 +79,7 @@ function getProjectItems(projectId: string): NavItem[] {
       to: "/projects/$id/deployments",
       params: { id: projectId },
       matchPath: (p) =>
-        p === `${base}/deployments` ||
-        p.startsWith(`${base}/deployments/`),
+        p === `${base}/deployments` || p.startsWith(`${base}/deployments/`),
     },
     {
       label: "Analytics",
@@ -95,9 +112,16 @@ function getProjectItems(projectId: string): NavItem[] {
   ];
 }
 
-export function AppSidebar({ context, projectId }: AppSidebarProps) {
+export function AppSidebar({ context, projectId, ...props }: AppSidebarProps) {
   const routerState = useRouterState();
   const pathname = routerState.location.pathname;
+  const { user, clearAuth } = useAuthStore();
+  const {
+    organizations,
+    selectedOrganization,
+    selectedOrganizationId,
+    setSelectedOrganizationId,
+  } = useOrganizations();
 
   const items =
     context === "project" && projectId
@@ -106,8 +130,39 @@ export function AppSidebar({ context, projectId }: AppSidebarProps) {
 
   const groupLabel = context === "project" ? "Project" : "Navigation";
 
+  const handleLogout = async () => {
+    try {
+      const { api } = await import("@/lib/api");
+      await api.logout();
+    } finally {
+      useOrganizationStore.getState().clearSelection();
+      clearAuth();
+    }
+    window.location.href = "/login";
+  };
+
   return (
-    <Sidebar side="left" variant="sidebar" collapsible="icon">
+    <Sidebar variant="sidebar" collapsible="icon" {...props}>
+      <SidebarHeader>
+        <SidebarMenu>
+          <SidebarMenuItem>
+            <SidebarMenuButton size="lg" asChild>
+              <Link to="/">
+                <div className="flex aspect-square size-8 items-center justify-center rounded-lg bg-sidebar-primary text-sidebar-primary-foreground">
+                  <FolderKanban className="size-4" />
+                </div>
+                <div className="flex flex-col gap-0.5 leading-none">
+                  <span className="font-semibold">Deployik</span>
+                  <span className="text-xs">
+                    {selectedOrganization?.name ?? "Workspace"}
+                  </span>
+                </div>
+              </Link>
+            </SidebarMenuButton>
+          </SidebarMenuItem>
+        </SidebarMenu>
+      </SidebarHeader>
+
       <SidebarContent>
         <SidebarGroup>
           <SidebarGroupLabel>{groupLabel}</SidebarGroupLabel>
@@ -131,7 +186,78 @@ export function AppSidebar({ context, projectId }: AppSidebarProps) {
             })}
           </SidebarMenu>
         </SidebarGroup>
+
+        {/* Quick action */}
+        <SidebarGroup>
+          <SidebarMenu>
+            <SidebarMenuItem>
+              <SidebarMenuButton asChild tooltip="New Project">
+                <Link to="/new">
+                  <Plus />
+                  <span>New Project</span>
+                </Link>
+              </SidebarMenuButton>
+            </SidebarMenuItem>
+          </SidebarMenu>
+        </SidebarGroup>
       </SidebarContent>
+
+      <SidebarFooter>
+        <SidebarMenu>
+          <SidebarMenuItem>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <SidebarMenuButton
+                  size="lg"
+                  className="data-[state=open]:bg-sidebar-accent data-[state=open]:text-sidebar-accent-foreground"
+                >
+                  <Avatar className="h-8 w-8 rounded-lg">
+                    <AvatarImage
+                      src={user?.avatar_url}
+                      alt={user?.username}
+                    />
+                    <AvatarFallback className="rounded-lg">
+                      {user?.username?.[0]?.toUpperCase() ?? "D"}
+                    </AvatarFallback>
+                  </Avatar>
+                  <div className="grid flex-1 text-left text-sm leading-tight">
+                    <span className="truncate font-medium">
+                      {user?.username}
+                    </span>
+                    <span className="truncate text-xs text-muted-foreground">
+                      {selectedOrganization?.name ?? "Workspace"}
+                    </span>
+                  </div>
+                </SidebarMenuButton>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent
+                className="w-[--radix-dropdown-menu-trigger-width] min-w-56 rounded-lg"
+                side="top"
+                align="start"
+                sideOffset={4}
+              >
+                <DropdownMenuLabel>Workspaces</DropdownMenuLabel>
+                <DropdownMenuRadioGroup
+                  value={selectedOrganizationId ?? ""}
+                  onValueChange={setSelectedOrganizationId}
+                >
+                  {organizations.map((org) => (
+                    <DropdownMenuRadioItem key={org.id} value={org.id}>
+                      <Building2 className="size-4" />
+                      {org.name}
+                    </DropdownMenuRadioItem>
+                  ))}
+                </DropdownMenuRadioGroup>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem onClick={handleLogout}>
+                  <LogOut className="size-4" />
+                  Log Out
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </SidebarMenuItem>
+        </SidebarMenu>
+      </SidebarFooter>
       <SidebarRail />
     </Sidebar>
   );

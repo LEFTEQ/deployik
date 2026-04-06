@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"log"
 	"net/http"
@@ -330,6 +331,46 @@ func (h *AuthHandler) determineRole(existingUser *db.User, githubLogin string) (
 		return "admin", nil
 	}
 	return "user", nil
+}
+
+// DevLogin creates a test session without GitHub OAuth. Only available in DEV_MODE.
+func (h *AuthHandler) DevLogin(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Username string `json:"username"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Username == "" {
+		req.Username = "dev-user"
+	}
+
+	// Upsert a dev user with a fake GitHub ID
+	user := &db.User{
+		ID:          db.NewID(),
+		GithubID:    999999,
+		Username:    req.Username,
+		AvatarURL:   "https://github.com/identicons/" + req.Username + ".png",
+		GithubToken: "", // no real token in dev mode
+		Role:        "admin",
+	}
+
+	existing, _ := h.DB.GetUserByGithubID(user.GithubID)
+	if existing != nil {
+		user.ID = existing.ID
+	}
+
+	if err := h.DB.UpsertUser(user); err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to create dev user"})
+		return
+	}
+	if _, err := h.DB.EnsurePersonalOrganization(user); err != nil {
+		log.Printf("Dev login: personal org error: %v", err)
+	}
+
+	if err := h.issueSession(w, user, ""); err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to issue session"})
+		return
+	}
+
+	writeJSON(w, http.StatusOK, authResponse{User: *user})
 }
 
 // GetMe returns the current authenticated user.

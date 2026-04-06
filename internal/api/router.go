@@ -36,6 +36,7 @@ type RouterConfig struct {
 	Analytics      *analytics.Service
 	WebhookURL     string
 	ScreenshotDir  string
+	DevMode        bool
 }
 
 func NewRouter(cfg *RouterConfig) *chi.Mux {
@@ -75,6 +76,11 @@ func NewRouter(cfg *RouterConfig) *chi.Mux {
 		// Auth routes (public)
 		r.With(oauthLimiter.Middleware("oauth_start")).Get("/auth/github", authHandler.GetGithubAuth)
 		r.With(oauthLimiter.Middleware("oauth_callback")).Get("/auth/github/callback", authHandler.GithubCallback)
+
+		// Dev-only login (bypasses GitHub OAuth for local testing)
+		if cfg.DevMode {
+			r.Post("/auth/dev-login", authHandler.DevLogin)
+		}
 		r.With(refreshLimiter.Middleware("auth_refresh")).Post("/auth/refresh", authHandler.RefreshToken)
 		r.With(refreshLimiter.Middleware("auth_logout")).Post("/auth/logout", authHandler.Logout)
 

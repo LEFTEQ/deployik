@@ -42,3 +42,5 @@ Thumbs.db
 # Build temp
 /tmp/deployik-builds/
 server
+.playwright-mcp/
+qa-screenshots/

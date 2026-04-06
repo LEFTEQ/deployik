@@ -133,6 +133,7 @@ func main() {
 		Analytics:      analyticsService,
 		WebhookURL:     cfg.WebhookURL,
 		ScreenshotDir:  cfg.ScreenshotDir,
+		DevMode:        os.Getenv("DEV_MODE") == "true",
 	})
 
 	addr := fmt.Sprintf(":%s", cfg.Port)
