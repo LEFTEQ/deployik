@@ -21,7 +21,6 @@ function ProjectCard({ project }: { project: Project }) {
     <Link
       to="/projects/$id"
       params={{ id: project.id }}
-      search={{ tab: "overview" }}
     >
       <Card className="transition-all hover:-translate-y-0.5 hover:border-primary/35">
         <CardHeader className="pb-3">

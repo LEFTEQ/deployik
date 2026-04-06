@@ -87,7 +87,6 @@ export function NewProject() {
       navigate({
         to: "/projects/$id",
         params: { id: project.id },
-        search: { tab: "overview" },
       });
     },
     onError: (err) => toast.error(err.message),

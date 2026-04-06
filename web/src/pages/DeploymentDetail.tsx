@@ -1,9 +1,8 @@
 import { useQuery } from "@tanstack/react-query";
-import { useParams, Link, useSearch } from "@tanstack/react-router";
+import { useParams, Link } from "@tanstack/react-router";
 import { ArrowLeft, Clock, GitBranch, GitCommit } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { api } from "@/lib/api";
-import { normalizeDeploymentReturnTab } from "@/lib/project-tabs";
 import { useBuildLogs } from "@/hooks/useBuildLogs";
 import { BuildLog } from "@/components/BuildLog";
 import { Badge } from "@/components/ui/badge";
@@ -25,15 +24,12 @@ export function DeploymentDetail() {
     id: string;
     did: string;
   };
-  const search = useSearch({ strict: false }) as { tab?: string };
-  const returnTab = normalizeDeploymentReturnTab(search.tab);
 
   const { data: deployment, isLoading } = useQuery({
     queryKey: ["deployment", did],
     queryFn: () => api.getDeployment(id, did),
     refetchInterval: (query) => {
       const status = query.state.data?.status;
-      // Auto-refresh while deployment is in progress
       if (
         status === "queued" ||
         status === "building" ||
@@ -77,34 +73,27 @@ export function DeploymentDetail() {
 
   if (isLoading) {
     return (
-      <div className="p-6">
-        <LoadingState
-          title="Loading deployment…"
-          description="Fetching deployment metadata and build logs."
-          className="min-h-[420px]"
-        />
-      </div>
+      <LoadingState
+        title="Loading deployment..."
+        description="Fetching deployment metadata and build logs."
+        className="min-h-[420px]"
+      />
     );
   }
 
   if (!deployment) {
-    return (
-      <div className="p-6">
-        <p>Deployment not found</p>
-      </div>
-    );
+    return <p>Deployment not found</p>;
   }
 
   return (
-    <div className="p-6">
+    <div>
       <Link
-        to="/projects/$id"
+        to="/projects/$id/deployments"
         params={{ id }}
-        search={{ tab: returnTab }}
         className="mb-4 inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
       >
         <ArrowLeft className="h-4 w-4" />
-        Back to project
+        Back to deployments
       </Link>
 
       {/* Header */}

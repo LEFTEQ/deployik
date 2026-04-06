@@ -159,7 +159,6 @@ export function CommandPalette({ compact = false }: { compact?: boolean }) {
                       navigate({
                         to: "/projects/$id",
                         params: { id: project.id },
-                        search: { tab: "overview" },
                       }),
                     )
                   }

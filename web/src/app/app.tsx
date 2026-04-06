@@ -14,14 +14,17 @@ import { Login } from "@/pages/Login";
 import { AuthCallback } from "@/pages/AuthCallback";
 import { Projects } from "@/pages/Projects";
 import { NewProject } from "@/pages/NewProject";
-import { ProjectDetail } from "@/pages/ProjectDetail";
+import { ProjectOverview } from "@/pages/ProjectOverview";
+import { ProjectDeployments } from "@/pages/ProjectDeployments";
+import { ProjectAnalytics } from "@/pages/ProjectAnalytics";
+import { ProjectIntegration } from "@/pages/ProjectIntegration";
+import { ProjectDomains } from "@/pages/ProjectDomains";
+import { ProjectSettings } from "@/pages/ProjectSettings";
 import { DeploymentDetail } from "@/pages/DeploymentDetail";
 import { AppLayout } from "@/components/layout/AppLayout";
+import { WorkspaceLayout } from "@/components/layout/WorkspaceLayout";
+import { ProjectLayout } from "@/components/layout/ProjectLayout";
 import { api } from "@/lib/api";
-import {
-  normalizeDeploymentReturnTab,
-  normalizeProjectTab,
-} from "@/lib/project-tabs";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -90,7 +93,7 @@ const authCallbackRoute = createRoute({
   component: AuthCallback,
 });
 
-// Protected layout route
+// Protected layout route (wraps everything with sidebar provider + top bar)
 const protectedRoute = createRoute({
   getParentRoute: () => rootRoute,
   id: "protected",
@@ -104,52 +107,92 @@ const protectedRoute = createRoute({
   component: AppLayout,
 });
 
+// Workspace layout (sidebar shows workspace nav items)
+const workspaceLayoutRoute = createRoute({
+  getParentRoute: () => protectedRoute,
+  id: "workspace",
+  component: WorkspaceLayout,
+});
+
 // Dashboard (projects list)
 const indexRoute = createRoute({
-  getParentRoute: () => protectedRoute,
+  getParentRoute: () => workspaceLayoutRoute,
   path: "/",
   component: Projects,
 });
 
-// New project
+// New project (no sidebar context needed, uses workspace layout)
 const newProjectRoute = createRoute({
   getParentRoute: () => protectedRoute,
   path: "/new",
   component: NewProject,
 });
 
-// Project detail
-const projectDetailRoute = createRoute({
+// Project layout (sidebar shows project nav items)
+const projectLayoutRoute = createRoute({
   getParentRoute: () => protectedRoute,
   path: "/projects/$id",
-  validateSearch: (search: Record<string, unknown>) => ({
-    tab:
-      typeof search.tab === "string" ? normalizeProjectTab(search.tab) : undefined,
-  }),
-  component: ProjectDetail,
+  component: ProjectLayout,
 });
 
-// Deployment detail
+// Project sub-pages
+const projectOverviewRoute = createRoute({
+  getParentRoute: () => projectLayoutRoute,
+  path: "/",
+  component: ProjectOverview,
+});
+
+const projectDeploymentsRoute = createRoute({
+  getParentRoute: () => projectLayoutRoute,
+  path: "/deployments",
+  component: ProjectDeployments,
+});
+
 const deploymentDetailRoute = createRoute({
-  getParentRoute: () => protectedRoute,
-  path: "/projects/$id/deployments/$did",
-  validateSearch: (search: Record<string, unknown>) => ({
-    tab:
-      typeof search.tab === "string"
-        ? normalizeDeploymentReturnTab(search.tab)
-        : undefined,
-  }),
+  getParentRoute: () => projectLayoutRoute,
+  path: "/deployments/$did",
   component: DeploymentDetail,
+});
+
+const projectAnalyticsRoute = createRoute({
+  getParentRoute: () => projectLayoutRoute,
+  path: "/analytics",
+  component: ProjectAnalytics,
+});
+
+const projectIntegrationRoute = createRoute({
+  getParentRoute: () => projectLayoutRoute,
+  path: "/integration",
+  component: ProjectIntegration,
+});
+
+const projectDomainsRoute = createRoute({
+  getParentRoute: () => projectLayoutRoute,
+  path: "/domains",
+  component: ProjectDomains,
+});
+
+const projectSettingsRoute = createRoute({
+  getParentRoute: () => projectLayoutRoute,
+  path: "/settings",
+  component: ProjectSettings,
 });
 
 const routeTree = rootRoute.addChildren([
   loginRoute,
   authCallbackRoute,
   protectedRoute.addChildren([
-    indexRoute,
+    workspaceLayoutRoute.addChildren([indexRoute]),
     newProjectRoute,
-    projectDetailRoute,
-    deploymentDetailRoute,
+    projectLayoutRoute.addChildren([
+      projectOverviewRoute,
+      projectDeploymentsRoute,
+      deploymentDetailRoute,
+      projectAnalyticsRoute,
+      projectIntegrationRoute,
+      projectDomainsRoute,
+      projectSettingsRoute,
+    ]),
   ]),
 ]);
 
