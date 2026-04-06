@@ -151,6 +151,85 @@ func (db *DB) DeleteProject(id string) error {
 	return nil
 }
 
+func (db *DB) ListProjectsWithLatestDeployment(userID, orgID string) ([]ProjectWithLatestDeployment, error) {
+	baseQuery := `
+		SELECT p.id, p.name, p.github_repo, p.github_owner, p.branch, p.user_id,
+		       COALESCE(p.organization_id, ''), COALESCE(o.name, ''), p.framework, p.package_manager,
+		       p.root_directory, p.output_directory, p.build_command, p.install_command, p.node_version,
+		       p.status, p.created_at, p.updated_at,
+		       ld.id, ld.status, ld.branch, ld.commit_sha, ld.commit_message, ld.created_at
+		FROM projects p
+		LEFT JOIN organizations o ON o.id = p.organization_id
+		LEFT JOIN (
+		    SELECT d1.*
+		    FROM deployments d1
+		    INNER JOIN (
+		        SELECT project_id, MAX(created_at) AS max_created
+		        FROM deployments
+		        GROUP BY project_id
+		    ) d2 ON d1.project_id = d2.project_id AND d1.created_at = d2.max_created
+		) ld ON ld.project_id = p.id
+		WHERE p.status != 'deleted'
+		  AND (
+		    p.user_id = ?
+		    OR EXISTS (
+		      SELECT 1
+		      FROM organization_memberships om
+		      WHERE om.organization_id = p.organization_id AND om.user_id = ?
+		    )
+		  )`
+
+	args := []any{userID, userID}
+	if trimmedOrgID := strings.TrimSpace(orgID); trimmedOrgID != "" {
+		baseQuery += ` AND p.organization_id = ?`
+		args = append(args, trimmedOrgID)
+	}
+	baseQuery += ` ORDER BY p.updated_at DESC`
+
+	rows, err := db.Query(baseQuery, args...)
+	if err != nil {
+		return nil, fmt.Errorf("list projects with latest deployment: %w", err)
+	}
+	defer rows.Close()
+
+	var projects []ProjectWithLatestDeployment
+	for rows.Next() {
+		var pw ProjectWithLatestDeployment
+		p := &pw.Project
+		var ldID, ldStatus, ldBranch, ldCommitSHA, ldCommitMsg sql.NullString
+		var ldCreatedAt sql.NullTime
+		if err := rows.Scan(
+			&p.ID, &p.Name, &p.GithubRepo, &p.GithubOwner, &p.Branch,
+			&p.UserID, &p.OrganizationID, &p.OrganizationName, &p.Framework, &p.PackageManager,
+			&p.RootDirectory, &p.OutputDirectory, &p.BuildCommand, &p.InstallCommand, &p.NodeVersion,
+			&p.Status, &p.CreatedAt, &p.UpdatedAt,
+			&ldID, &ldStatus, &ldBranch, &ldCommitSHA, &ldCommitMsg, &ldCreatedAt,
+		); err != nil {
+			return nil, fmt.Errorf("scan project with latest deployment: %w", err)
+		}
+		if ldID.Valid {
+			pw.LatestDeploymentID = &ldID.String
+		}
+		if ldStatus.Valid {
+			pw.LatestDeploymentStatus = &ldStatus.String
+		}
+		if ldBranch.Valid {
+			pw.LatestDeploymentBranch = &ldBranch.String
+		}
+		if ldCommitSHA.Valid {
+			pw.LatestDeploymentCommitSHA = &ldCommitSHA.String
+		}
+		if ldCommitMsg.Valid {
+			pw.LatestDeploymentCommitMsg = &ldCommitMsg.String
+		}
+		if ldCreatedAt.Valid {
+			pw.LatestDeploymentCreatedAt = &ldCreatedAt.Time
+		}
+		projects = append(projects, pw)
+	}
+	return projects, rows.Err()
+}
+
 func normalizeStoredPackageManager(value string) string {
 	trimmed := strings.ToLower(strings.TrimSpace(value))
 	switch trimmed {
