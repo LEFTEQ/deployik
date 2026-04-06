@@ -34,6 +34,7 @@ export function ProjectLayout() {
   else if (pathname === `${base}/integration`) currentPage = "Integration";
   else if (pathname === `${base}/settings/domains`) currentPage = "Domains";
   else if (pathname === `${base}/settings/env`) currentPage = "Environments";
+  else if (pathname === `${base}/settings/protection`) currentPage = "Protection";
   else if (pathname === `${base}/settings`) currentPage = "Build Settings";
 
   return (

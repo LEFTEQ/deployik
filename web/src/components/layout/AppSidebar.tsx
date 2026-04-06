@@ -11,6 +11,7 @@ import {
   Plus,
   Rocket,
   Settings,
+  Shield,
   Sparkles,
   Wrench,
 } from "lucide-react";
@@ -142,6 +143,13 @@ function getProjectItems(projectId: string): NavItem[] {
           to: "/projects/$id/settings/env",
           params: { id: projectId },
           matchPath: (p) => p === `${base}/settings/env`,
+        },
+        {
+          label: "Protection",
+          icon: Shield,
+          to: "/projects/$id/settings/protection",
+          params: { id: projectId },
+          matchPath: (p) => p === `${base}/settings/protection`,
         },
       ],
     },

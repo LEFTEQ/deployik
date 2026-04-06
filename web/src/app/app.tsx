@@ -21,6 +21,7 @@ import { ProjectIntegration } from "@/pages/ProjectIntegration";
 import { ProjectSettings } from "@/pages/ProjectSettings";
 import { ProjectSettingsDomains } from "@/pages/ProjectSettingsDomains";
 import { ProjectSettingsEnv } from "@/pages/ProjectSettingsEnv";
+import { ProjectSettingsProtection } from "@/pages/ProjectSettingsProtection";
 import { DeploymentDetail } from "@/pages/DeploymentDetail";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { WorkspaceLayout } from "@/components/layout/WorkspaceLayout";
@@ -185,6 +186,12 @@ const projectSettingsEnvRoute = createRoute({
   component: ProjectSettingsEnv,
 });
 
+const projectSettingsProtectionRoute = createRoute({
+  getParentRoute: () => projectLayoutRoute,
+  path: "/settings/protection",
+  component: ProjectSettingsProtection,
+});
+
 const routeTree = rootRoute.addChildren([
   loginRoute,
   authCallbackRoute,
@@ -200,6 +207,7 @@ const routeTree = rootRoute.addChildren([
       projectSettingsRoute,
       projectSettingsDomainsRoute,
       projectSettingsEnvRoute,
+      projectSettingsProtectionRoute,
     ]),
   ]),
 ]);
