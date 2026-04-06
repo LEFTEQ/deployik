@@ -120,6 +120,81 @@ func TestGenerateDockerfileQuotesBuildEnvValues(t *testing.T) {
 	}
 }
 
+func TestGenerateDockerfileAutoDetectsNpmFromPackageLockJSON(t *testing.T) {
+	t.Parallel()
+
+	repoDir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(repoDir, "package.json"), []byte(`{"name":"app"}`), 0644); err != nil {
+		t.Fatalf("WriteFile package.json: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(repoDir, "package-lock.json"), []byte(`{"lockfileVersion":3}`), 0644); err != nil {
+		t.Fatalf("WriteFile package-lock.json: %v", err)
+	}
+
+	dockerfilePath, err := GenerateDockerfile(repoDir, DockerfileData{
+		PackageManager:  projectconfig.PackageManagerAuto,
+		NodeVersion:     "22",
+		OutputDirectory: "dist",
+		Runtime:         projectconfig.RuntimeStatic,
+		// Bun defaults from Resolve() — auto detection should override these.
+		InstallCommand: "bun install --frozen-lockfile",
+		BuildCommand:   "bun run build",
+	})
+	if err != nil {
+		t.Fatalf("GenerateDockerfile: %v", err)
+	}
+
+	content, err := os.ReadFile(dockerfilePath)
+	if err != nil {
+		t.Fatalf("ReadFile: %v", err)
+	}
+
+	got := string(content)
+	if strings.Contains(got, "npm i -g bun") {
+		t.Fatalf("expected no bun install when package-lock.json is present, got:\n%s", got)
+	}
+	if !strings.Contains(got, "RUN npm ci") {
+		t.Fatalf("expected npm ci install command, got:\n%s", got)
+	}
+	if !strings.Contains(got, "RUN npm run build") {
+		t.Fatalf("expected npm run build command, got:\n%s", got)
+	}
+}
+
+func TestGenerateDockerfileExplicitNpmDoesNotInstallBun(t *testing.T) {
+	t.Parallel()
+
+	repoDir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(repoDir, "package.json"), []byte(`{"name":"app"}`), 0644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	dockerfilePath, err := GenerateDockerfile(repoDir, DockerfileData{
+		PackageManager:  projectconfig.PackageManagerNpm,
+		NodeVersion:     "22",
+		OutputDirectory: "dist",
+		Runtime:         projectconfig.RuntimeStatic,
+		InstallCommand:  "npm ci",
+		BuildCommand:    "npm run build",
+	})
+	if err != nil {
+		t.Fatalf("GenerateDockerfile: %v", err)
+	}
+
+	content, err := os.ReadFile(dockerfilePath)
+	if err != nil {
+		t.Fatalf("ReadFile: %v", err)
+	}
+
+	got := string(content)
+	if strings.Contains(got, "npm i -g bun") {
+		t.Fatalf("expected no bun install with explicit npm package manager, got:\n%s", got)
+	}
+	if !strings.Contains(got, "RUN npm ci") {
+		t.Fatalf("expected npm ci install command, got:\n%s", got)
+	}
+}
+
 func TestGenerateDockerfileSupportsYarnPackageManager(t *testing.T) {
 	t.Parallel()
 

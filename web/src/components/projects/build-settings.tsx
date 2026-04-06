@@ -249,11 +249,11 @@ export function syncBuildSettingsWithPackageManager(
   const shouldReplaceInstallCommand =
     values.installCommand.trim() === "" ||
     values.installCommand === currentDefaults.installCommand ||
-    (currentPackageManager === "auto" && isKnownInstallDefault(values.installCommand));
+    isKnownInstallDefault(values.installCommand);
   const shouldReplaceBuildCommand =
     values.buildCommand.trim() === "" ||
     values.buildCommand === currentDefaults.buildCommand ||
-    (currentPackageManager === "auto" && isKnownBuildDefault(values.buildCommand));
+    isKnownBuildDefault(values.buildCommand);
 
   return {
     ...values,

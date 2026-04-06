@@ -75,12 +75,12 @@ func Resolve(project *db.Project) (Settings, error) {
 	}
 
 	installCommand := strings.TrimSpace(project.InstallCommand)
-	if installCommand == "" {
+	if installCommand == "" || IsKnownInstallDefault(installCommand) {
 		installCommand = DefaultInstallCommand(packageManager)
 	}
 
 	buildCommand := strings.TrimSpace(project.BuildCommand)
-	if buildCommand == "" {
+	if buildCommand == "" || IsKnownBuildDefault(buildCommand) {
 		buildCommand = DefaultBuildCommand(packageManager)
 	}
 
@@ -183,6 +183,30 @@ func DefaultNodeVersion() string {
 
 func DefaultPackageManager() string {
 	return PackageManagerAuto
+}
+
+// IsKnownInstallDefault returns true if the command matches any package
+// manager's default install command.
+func IsKnownInstallDefault(command string) bool {
+	trimmed := strings.TrimSpace(command)
+	for _, pm := range []string{PackageManagerAuto, PackageManagerBun, PackageManagerPnpm, PackageManagerNpm, PackageManagerYarn} {
+		if trimmed == DefaultInstallCommand(pm) {
+			return true
+		}
+	}
+	return false
+}
+
+// IsKnownBuildDefault returns true if the command matches any package
+// manager's default build command.
+func IsKnownBuildDefault(command string) bool {
+	trimmed := strings.TrimSpace(command)
+	for _, pm := range []string{PackageManagerAuto, PackageManagerBun, PackageManagerPnpm, PackageManagerNpm, PackageManagerYarn} {
+		if trimmed == DefaultBuildCommand(pm) {
+			return true
+		}
+	}
+	return false
 }
 
 func NormalizeProjectPath(value string, allowEmpty bool) (string, error) {

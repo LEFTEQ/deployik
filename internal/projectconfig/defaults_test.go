@@ -91,6 +91,54 @@ func TestResolveDefaultsUsesSelectedPackageManager(t *testing.T) {
 	}
 }
 
+func TestResolveSyncsCommandsWhenPackageManagerChanges(t *testing.T) {
+	t.Parallel()
+
+	// Simulate switching from bun/auto to npm: old bun commands should be
+	// replaced with npm defaults.
+	project := &db.Project{
+		Framework:      "nextjs",
+		PackageManager: "npm",
+		InstallCommand: "bun install --frozen-lockfile",
+		BuildCommand:   "bun run build",
+	}
+
+	settings, err := Resolve(project)
+	if err != nil {
+		t.Fatalf("Resolve: %v", err)
+	}
+
+	if settings.InstallCommand != "npm ci" {
+		t.Fatalf("install_command = %q, want %q", settings.InstallCommand, "npm ci")
+	}
+	if settings.BuildCommand != "npm run build" {
+		t.Fatalf("build_command = %q, want %q", settings.BuildCommand, "npm run build")
+	}
+}
+
+func TestResolvePreservesCustomCommands(t *testing.T) {
+	t.Parallel()
+
+	project := &db.Project{
+		Framework:      "nextjs",
+		PackageManager: "npm",
+		InstallCommand: "npm ci --legacy-peer-deps",
+		BuildCommand:   "npm run build -- --profile",
+	}
+
+	settings, err := Resolve(project)
+	if err != nil {
+		t.Fatalf("Resolve: %v", err)
+	}
+
+	if settings.InstallCommand != "npm ci --legacy-peer-deps" {
+		t.Fatalf("install_command = %q, want %q", settings.InstallCommand, "npm ci --legacy-peer-deps")
+	}
+	if settings.BuildCommand != "npm run build -- --profile" {
+		t.Fatalf("build_command = %q, want %q", settings.BuildCommand, "npm run build -- --profile")
+	}
+}
+
 func TestResolveRejectsEscapingProjectPaths(t *testing.T) {
 	t.Parallel()
 
