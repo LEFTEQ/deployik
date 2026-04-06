@@ -179,7 +179,10 @@ class ApiClient {
 
   // Deployments
   async listDeployments(projectId: string): Promise<Deployment[]> {
-    return this.request(`/projects/${projectId}/deployments`);
+    const res = await this.request<DeploymentListResponse>(
+      `/projects/${projectId}/deployments`,
+    );
+    return res.deployments ?? [];
   }
 
   async getDeployment(
