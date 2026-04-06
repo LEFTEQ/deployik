@@ -103,6 +103,12 @@ func main() {
 		ScreenshotDir: cfg.ScreenshotDir,
 	}
 
+	// Write the auth page HTML for password-protected sites
+	authPagesDir := cfg.ProxyHTMLDir
+	if err := domain.WriteAuthPage(authPagesDir); err != nil {
+		log.Printf("Warning: failed to write auth page: %v", err)
+	}
+
 	if targets, err := database.ListActiveDomainProvisionTargets(); err != nil {
 		log.Printf("Warning: failed to list active domains for nginx reconcile: %v", err)
 	} else if err := domain.ReconcileActiveConfigs(domainManager, targets); err != nil {

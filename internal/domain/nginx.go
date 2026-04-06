@@ -84,7 +84,7 @@ server {
 
     location = /_deployik/auth-check {
         internal;
-        proxy_pass http://deployik-app:8080/api/site-auth/check;
+        proxy_pass http://deployik:8080/api/site-auth/check;
         proxy_set_header X-Deployik-Project $deployik_project_id;
         proxy_set_header X-Deployik-Environment $deployik_environment;
         proxy_set_header Cookie $http_cookie;
@@ -95,12 +95,12 @@ server {
     error_page 401 = @auth_page;
 
     location @auth_page {
-        root /opt/nginx-proxy/auth-pages;
+        root /var/www/html;
         try_files /auth.html =503;
     }
 
     location = /_deployik/verify {
-        proxy_pass http://deployik-app:8080/api/site-auth/verify;
+        proxy_pass http://deployik:8080/api/site-auth/verify;
         proxy_set_header X-Deployik-Project $deployik_project_id;
         proxy_set_header X-Deployik-Environment $deployik_environment;
         proxy_set_header Host $host;
