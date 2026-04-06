@@ -1,32 +1,23 @@
 import { useMemo, useState } from "react";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowUpRight, Copy, RefreshCcw, Sparkles } from "lucide-react";
+import { Check, ChevronDown, ChevronRight, RefreshCcw } from "lucide-react";
 import { toast } from "sonner";
 
-import { AUDIENCE_STATUS_META } from "@/components/projects/project-analytics-meta";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
-  Card,
-  CardAction,
-  CardContent,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "@/components/ui/collapsible";
 import { CodePanel } from "@/components/ui/code-panel";
 import { LoadingState, Spinner } from "@/components/ui/spinner";
-import { ScrollArea } from "@/components/ui/scroll-area";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { api } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
-const STEP_VALUES = ["install", "verify", "events"] as const;
-type StepValue = (typeof STEP_VALUES)[number];
-
 export function ProjectIntegrationTab({ projectId }: { projectId: string }) {
   const queryClient = useQueryClient();
-  const [step, setStep] = useState<StepValue>("install");
   const timezone =
     Intl.DateTimeFormat().resolvedOptions().timeZone?.trim() || "UTC";
 
@@ -104,306 +95,239 @@ export function ProjectIntegrationTab({ projectId }: { projectId: string }) {
 
   if (error || !data) {
     return (
-      <Card className="border-rose-400/25">
-        <CardHeader>
-          <CardTitle className="text-base text-rose-100">
-            Integration failed to load
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="text-sm text-muted-foreground">
-          {error instanceof Error ? error.message : "Unknown analytics error."}
-        </CardContent>
-      </Card>
+      <div className="rounded-xl border border-rose-400/25 bg-rose-400/10 px-5 py-4 text-sm text-rose-100">
+        {error instanceof Error ? error.message : "Unknown analytics error."}
+      </div>
     );
   }
 
-  const meta = AUDIENCE_STATUS_META[data.audience.status] || {
-    label: "Ready to install",
-    badgeClass: "border-primary/25 bg-primary/12 text-primary",
-    description:
-      "The website exists. Add the tracker to start collecting audience data.",
-  };
+  // Unavailable state — Umami not configured on this instance
+  if (data.audience.status === "unavailable") {
+    return (
+      <div className="rounded-xl border border-dashed border-border/70 px-5 py-12 text-center text-sm text-muted-foreground">
+        Analytics not configured for this project. Contact your administrator.
+      </div>
+    );
+  }
+
+  const step1Complete =
+    data.audience.status === "receiving_data" ||
+    data.audience.status === "waiting_for_data";
+  const step2Verified = Boolean(data.audience.verified_at);
 
   return (
-    <div className="space-y-4">
-      <Card className="@container/card overflow-hidden">
-        <CardContent className="px-5 py-5 sm:px-6">
-          <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-            <div className="space-y-3">
-              <div className="flex flex-wrap items-center gap-2">
-                <Badge variant="outline" className={meta.badgeClass}>
-                  {meta.label}
-                </Badge>
-                <Badge
-                  variant="outline"
-                  className="border-white/10 bg-white/5 font-mono text-slate-200"
-                >
-                  {data.audience.website_id || "website pending"}
-                </Badge>
-              </div>
-              <div>
-                <h2 className="text-lg font-semibold tracking-tight text-foreground">
-                  Analytics Integration
-                </h2>
-                <p className="mt-2 max-w-2xl text-sm leading-6 text-muted-foreground">
-                  Keep setup separate from the analytics dashboard. Install the
-                  tracker, verify traffic, then add custom events only when you
-                  need them.
-                </p>
-              </div>
-            </div>
+    <div className="space-y-8">
+      <div>
+        <h2 className="text-lg font-semibold tracking-tight text-foreground">
+          Analytics Integration
+        </h2>
+        <p className="mt-1 text-sm text-muted-foreground">
+          Set up audience tracking for your project.
+        </p>
+      </div>
 
-            <div className="flex flex-wrap gap-2">
-              <Button
-                size="sm"
-                onClick={() =>
-                  copyValue(
-                    data.audience.install.ai_prompt,
-                    "AI install prompt",
-                  )
-                }
-              >
-                <Sparkles className="mr-1.5 h-3.5 w-3.5" />
-                Install with AI
-              </Button>
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={() =>
-                  copyValue(data.audience.install.snippet, "Manual snippet")
-                }
-              >
-                <Copy className="mr-1.5 h-3.5 w-3.5" />
-                Copy snippet
-              </Button>
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={() => verifyMutation.mutate()}
-                disabled={verifyMutation.isPending}
-              >
-                {verifyMutation.isPending ? (
-                  <Spinner className="size-3.5" />
-                ) : (
-                  <RefreshCcw className="mr-1.5 h-3.5 w-3.5" />
-                )}
-                Verify
-              </Button>
-              {data.audience.open_url ? (
-                <Button asChild size="sm" variant="ghost">
-                  <a
-                    href={data.audience.open_url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                  >
-                    <ArrowUpRight className="mr-1.5 h-3.5 w-3.5" />
-                    Open Umami
-                  </a>
-                </Button>
-              ) : null}
-            </div>
-          </div>
-        </CardContent>
-      </Card>
-
-      <Tabs value={step} onValueChange={(value) => setStep(value as StepValue)}>
-        <TabsList
-          variant="line"
-          className="h-auto flex-wrap justify-start gap-1"
+      <div className="space-y-0">
+        {/* Step 1: Install Tracker */}
+        <WizardStep
+          number={1}
+          title="Install Tracker"
+          statusLabel={step1Complete ? "Complete" : "Pending"}
+          isComplete={step1Complete}
+          defaultOpen={!step1Complete}
+          isLast={false}
         >
-          <TabsTrigger value="install">Install</TabsTrigger>
-          <TabsTrigger value="verify">Verify</TabsTrigger>
-          <TabsTrigger value="events">Track Events</TabsTrigger>
-        </TabsList>
-
-        <TabsContent value="install" className="mt-4">
-          <div className="grid gap-4 xl:grid-cols-[minmax(0,0.9fr)_minmax(320px,1.1fr)]">
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-base">Install Surface</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <InfoTile
-                  label="Collection host"
-                  value={data.audience.install.host_url || "Unavailable"}
-                />
-                <InfoTile
-                  label="Tracker script"
-                  value={data.audience.install.script_url || "Unavailable"}
-                />
-                <InfoTile
-                  label="Tracked domains"
-                  value={data.audience.install.domains.all.length.toString()}
-                />
-                <div className="rounded-xl border bg-muted/30 p-4 text-sm text-muted-foreground">
-                  Use the AI prompt for framework-aware installation. Keep the
-                  snippet path small and first-party, and avoid installing the
-                  tracker more than once.
-                </div>
-              </CardContent>
-            </Card>
-
-            <div className="space-y-4">
-              <CodePanel
-                title="AI Install Prompt"
-                description="Paste this into Claude, Codex, or ChatGPT inside the app repository."
-                value={data.audience.install.ai_prompt}
-                onCopy={() =>
-                  copyValue(
-                    data.audience.install.ai_prompt,
-                    "AI install prompt",
-                  )
-                }
-              />
-              <CodePanel
-                title="Manual Snippet"
-                description="Fallback snippet if you want to wire Umami manually."
-                value={data.audience.install.snippet}
-                heightClassName="h-36"
-                onCopy={() =>
-                  copyValue(data.audience.install.snippet, "Manual snippet")
-                }
-              />
-            </div>
-          </div>
-        </TabsContent>
-
-        <TabsContent value="verify" className="mt-4">
-          <div className="grid gap-4 xl:grid-cols-[minmax(0,0.72fr)_minmax(340px,1fr)]">
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-base">Verification Status</CardTitle>
-                <CardAction>
-                  <Button
-                    size="sm"
-                    onClick={() => verifyMutation.mutate()}
-                    disabled={verifyMutation.isPending}
-                  >
-                    {verifyMutation.isPending ? (
-                      <Spinner className="size-3.5" />
-                    ) : (
-                      <RefreshCcw className="mr-1.5 h-3.5 w-3.5" />
-                    )}
-                    Verify
-                  </Button>
-                </CardAction>
-              </CardHeader>
-              <CardContent className="space-y-3">
-                <InfoTile
-                  label="Status"
-                  value={meta.label}
-                  valueClassName="text-foreground"
-                />
-                <InfoTile
-                  label="Last event"
-                  value={data.audience.last_event_at || "No events yet"}
-                />
-                <InfoTile
-                  label="Verified"
-                  value={data.audience.verified_at || "Not verified yet"}
-                />
-                {data.audience.error ? (
-                  <div className="rounded-xl border border-rose-400/25 bg-rose-400/10 px-4 py-3 text-sm text-rose-100">
-                    {data.audience.error}
-                  </div>
-                ) : null}
-                <div className="rounded-xl border border-primary/20 bg-primary/10 px-4 py-3 text-sm text-slate-100">
-                  {meta.description}
-                </div>
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-base">
-                  Recent host coverage
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <ScrollArea className="h-72">
-                  <div className="space-y-2">
-                    {data.audience.install.domains.all.length ? (
-                      data.audience.install.domains.all.map((domain) => (
-                        <div
-                          key={domain}
-                          className="rounded-lg border bg-muted/30 px-3 py-3 text-sm text-foreground"
-                        >
-                          {domain}
-                        </div>
-                      ))
-                    ) : (
-                      <div className="rounded-xl border border-dashed border-border/70 px-4 py-12 text-sm text-muted-foreground">
-                        No verified domains are attached to this project yet.
-                      </div>
-                    )}
-                  </div>
-                </ScrollArea>
-              </CardContent>
-            </Card>
-          </div>
-        </TabsContent>
-
-        <TabsContent value="events" className="mt-4">
-          <div className="grid gap-4 xl:grid-cols-[minmax(0,0.78fr)_minmax(320px,1fr)]">
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-base">Track Events</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-4 text-sm leading-6 text-muted-foreground">
-                <p>
-                  Once pageviews are live, add a tiny analytics wrapper in the
-                  app instead of calling Umami all over the codebase. Track only
-                  meaningful product events: conversion starts, completed
-                  submissions, purchases, upgrades, and activation milestones.
-                </p>
-                <div className="rounded-xl border bg-muted/30 p-4">
-                  Recommended event names:
-                  <ul className="mt-3 space-y-1 font-mono text-xs text-slate-100">
-                    <li>`signup_started`</li>
-                    <li>`signup_completed`</li>
-                    <li>`checkout_started`</li>
-                    <li>`checkout_completed`</li>
-                    <li>`contact_form_submitted`</li>
-                  </ul>
-                </div>
-              </CardContent>
-            </Card>
-
+          <p className="mb-4 text-sm text-muted-foreground">
+            Add the tracking snippet to your site. Paste this in your{" "}
+            <code className="rounded bg-muted/60 px-1 py-0.5 text-xs text-foreground">
+              {"<head>"}
+            </code>
+            :
+          </p>
+          <div className="space-y-4">
             <CodePanel
-              title="Event Helper Example"
-              description="A small wrapper keeps event naming consistent across the app."
-              value={eventHelperSnippet}
-              onCopy={() => copyValue(eventHelperSnippet, "Event helper")}
+              title="Manual Snippet"
+              description="Paste this script tag into your HTML head."
+              value={data.audience.install.snippet}
+              heightClassName="h-28"
+              onCopy={() =>
+                copyValue(data.audience.install.snippet, "Manual snippet")
+              }
+            />
+            <CodePanel
+              title="AI Install Prompt"
+              description="Paste this into Claude, Codex, or ChatGPT inside the app repository."
+              value={data.audience.install.ai_prompt}
+              onCopy={() =>
+                copyValue(data.audience.install.ai_prompt, "AI install prompt")
+              }
             />
           </div>
-        </TabsContent>
-      </Tabs>
+        </WizardStep>
+
+        {/* Step 2: Verify Installation */}
+        <WizardStep
+          number={2}
+          title="Verify Installation"
+          statusLabel={step2Verified ? "Verified" : "Pending"}
+          isComplete={step2Verified}
+          defaultOpen={step1Complete && !step2Verified}
+          isLast={false}
+        >
+          <p className="mb-4 text-sm text-muted-foreground">
+            Domains being tracked:
+          </p>
+          {data.audience.install.domains.all.length > 0 ? (
+            <div className="mb-4 flex flex-wrap gap-2">
+              {data.audience.install.domains.all.map((domain) => (
+                <Badge
+                  key={domain}
+                  variant="outline"
+                  className="gap-1.5 border-white/10 bg-white/5 font-mono text-xs text-slate-200"
+                >
+                  <Check className="h-3 w-3 text-emerald-400" />
+                  {domain}
+                </Badge>
+              ))}
+            </div>
+          ) : (
+            <div className="mb-4 rounded-xl border border-dashed border-border/70 px-4 py-4 text-sm text-muted-foreground">
+              No verified domains are attached to this project yet.
+            </div>
+          )}
+          {data.audience.error ? (
+            <div className="mb-4 rounded-xl border border-rose-400/25 bg-rose-400/10 px-4 py-3 text-sm text-rose-100">
+              {data.audience.error}
+            </div>
+          ) : null}
+          <Button
+            size="sm"
+            onClick={() => verifyMutation.mutate()}
+            disabled={verifyMutation.isPending}
+          >
+            {verifyMutation.isPending ? (
+              <Spinner className="mr-1.5 size-3.5" />
+            ) : (
+              <RefreshCcw className="mr-1.5 h-3.5 w-3.5" />
+            )}
+            Verify Now
+          </Button>
+        </WizardStep>
+
+        {/* Step 3: Track Custom Events */}
+        <WizardStep
+          number={3}
+          title="Track Custom Events"
+          statusLabel="Optional"
+          isComplete={false}
+          isOptional
+          defaultOpen={false}
+          isLast={true}
+        >
+          <p className="mb-4 text-sm text-muted-foreground">
+            Once pageviews are live, add a tiny analytics wrapper instead of
+            calling Umami directly across the codebase. Track only meaningful
+            product events: conversion starts, completed submissions, purchases,
+            upgrades, and activation milestones.
+          </p>
+          <CodePanel
+            title="Event Helper Example"
+            description="A small wrapper keeps event naming consistent across the app."
+            value={eventHelperSnippet}
+            onCopy={() => copyValue(eventHelperSnippet, "Event helper")}
+          />
+        </WizardStep>
+      </div>
     </div>
   );
 }
 
-function InfoTile({
-  label,
-  value,
-  valueClassName,
-}: {
-  label: string;
-  value: string;
-  valueClassName?: string;
-}) {
+interface WizardStepProps {
+  number: number;
+  title: string;
+  statusLabel: string;
+  isComplete: boolean;
+  isOptional?: boolean;
+  defaultOpen: boolean;
+  isLast: boolean;
+  children: React.ReactNode;
+}
+
+function WizardStep({
+  number,
+  title,
+  statusLabel,
+  isComplete,
+  isOptional = false,
+  defaultOpen,
+  isLast,
+  children,
+}: WizardStepProps) {
+  const [open, setOpen] = useState(defaultOpen);
+
   return (
-    <div className="rounded-xl border bg-muted/30 px-4 py-3">
-      <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">
-        {label}
-      </p>
-      <p
-        className={cn(
-          "mt-2 break-all text-sm font-medium text-foreground",
-          valueClassName,
+    <div className="flex gap-4">
+      {/* Left column: number + vertical line */}
+      <div className="flex flex-col items-center">
+        <div
+          className={cn(
+            "flex h-8 w-8 shrink-0 items-center justify-center rounded-full border text-sm font-semibold",
+            isComplete
+              ? "border-emerald-400/50 bg-emerald-400/15 text-emerald-300"
+              : isOptional
+                ? "border-white/15 bg-white/5 text-muted-foreground"
+                : "border-primary/40 bg-primary/10 text-primary",
+          )}
+        >
+          {isComplete ? <Check className="h-4 w-4" /> : number}
+        </div>
+        {!isLast && (
+          <div
+            className={cn(
+              "mt-1 w-px flex-1",
+              isComplete ? "bg-emerald-400/25" : "bg-border/50",
+            )}
+          />
         )}
-      >
-        {value}
-      </p>
+      </div>
+
+      {/* Right column: header + collapsible content */}
+      <div className={cn("min-w-0 flex-1 pb-8", isLast && "pb-0")}>
+        <Collapsible open={open} onOpenChange={setOpen}>
+          <CollapsibleTrigger className="group flex w-full items-center justify-between gap-3 rounded-lg py-1 text-left hover:opacity-80">
+            <div className="flex items-center gap-3">
+              <span className="font-medium text-foreground">{title}</span>
+              <span
+                className={cn(
+                  "rounded-full px-2 py-0.5 text-xs font-medium",
+                  isComplete
+                    ? "bg-emerald-400/15 text-emerald-300"
+                    : isOptional
+                      ? "bg-white/5 text-muted-foreground"
+                      : "bg-amber-400/15 text-amber-300",
+                )}
+              >
+                {isComplete && !isOptional ? (
+                  <span className="flex items-center gap-1">
+                    <Check className="h-3 w-3" />
+                    {statusLabel}
+                  </span>
+                ) : (
+                  statusLabel
+                )}
+              </span>
+            </div>
+            <span className="text-muted-foreground">
+              {open ? (
+                <ChevronDown className="h-4 w-4" />
+              ) : (
+                <ChevronRight className="h-4 w-4" />
+              )}
+            </span>
+          </CollapsibleTrigger>
+
+          <CollapsibleContent className="mt-4">{children}</CollapsibleContent>
+        </Collapsible>
+      </div>
     </div>
   );
 }
