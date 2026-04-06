@@ -18,8 +18,9 @@ import { ProjectOverview } from "@/pages/ProjectOverview";
 import { ProjectDeployments } from "@/pages/ProjectDeployments";
 import { ProjectAnalytics } from "@/pages/ProjectAnalytics";
 import { ProjectIntegration } from "@/pages/ProjectIntegration";
-import { ProjectDomains } from "@/pages/ProjectDomains";
 import { ProjectSettings } from "@/pages/ProjectSettings";
+import { ProjectSettingsDomains } from "@/pages/ProjectSettingsDomains";
+import { ProjectSettingsEnv } from "@/pages/ProjectSettingsEnv";
 import { DeploymentDetail } from "@/pages/DeploymentDetail";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { WorkspaceLayout } from "@/components/layout/WorkspaceLayout";
@@ -166,16 +167,22 @@ const projectIntegrationRoute = createRoute({
   component: ProjectIntegration,
 });
 
-const projectDomainsRoute = createRoute({
-  getParentRoute: () => projectLayoutRoute,
-  path: "/domains",
-  component: ProjectDomains,
-});
-
 const projectSettingsRoute = createRoute({
   getParentRoute: () => projectLayoutRoute,
   path: "/settings",
   component: ProjectSettings,
+});
+
+const projectSettingsDomainsRoute = createRoute({
+  getParentRoute: () => projectLayoutRoute,
+  path: "/settings/domains",
+  component: ProjectSettingsDomains,
+});
+
+const projectSettingsEnvRoute = createRoute({
+  getParentRoute: () => projectLayoutRoute,
+  path: "/settings/env",
+  component: ProjectSettingsEnv,
 });
 
 const routeTree = rootRoute.addChildren([
@@ -190,8 +197,9 @@ const routeTree = rootRoute.addChildren([
       deploymentDetailRoute,
       projectAnalyticsRoute,
       projectIntegrationRoute,
-      projectDomainsRoute,
       projectSettingsRoute,
+      projectSettingsDomainsRoute,
+      projectSettingsEnvRoute,
     ]),
   ]),
 ]);

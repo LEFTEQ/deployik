@@ -34,7 +34,7 @@ import {
 import { cn } from "@/lib/utils";
 import type { Domain } from "@/types/api";
 
-export function ProjectDomains() {
+export function ProjectSettingsDomains() {
   const { id } = useParams({ strict: false }) as { id: string };
   const queryClient = useQueryClient();
   const [newDomain, setNewDomain] = useState("");

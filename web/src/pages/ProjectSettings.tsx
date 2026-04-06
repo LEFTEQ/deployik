@@ -8,7 +8,6 @@ import { api } from "@/lib/api";
 import {
   BuildSettingsFields,
 } from "@/components/projects/build-settings";
-import { VariableStore } from "@/components/projects/variable-store";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -55,8 +54,6 @@ export function ProjectSettings() {
   return (
     <div className="space-y-6">
       <BuildSettingsSection project={project} />
-      <VariableStore projectId={id} kind="env" />
-      <VariableStore projectId={id} kind="secret" />
       <DangerZone
         projectId={id}
         onDeleted={() => {

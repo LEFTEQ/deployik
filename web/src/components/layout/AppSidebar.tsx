@@ -2,20 +2,28 @@ import { Link, useRouterState } from "@tanstack/react-router";
 import {
   BarChart3,
   Building2,
+  ChevronRight,
   FolderKanban,
   Globe2,
+  KeyRound,
   LayoutGrid,
   LogOut,
   Plus,
   Rocket,
   Settings,
   Sparkles,
+  Wrench,
 } from "lucide-react";
 
 import { useAuthStore } from "@/store/auth";
 import { useOrganizationStore } from "@/store/organization";
 import { useOrganizations } from "@/hooks/use-organizations";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "@/components/ui/collapsible";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -36,6 +44,9 @@ import {
   SidebarMenu,
   SidebarMenuButton,
   SidebarMenuItem,
+  SidebarMenuSub,
+  SidebarMenuSubButton,
+  SidebarMenuSubItem,
   SidebarRail,
 } from "@/components/ui/sidebar";
 
@@ -44,12 +55,21 @@ interface AppSidebarProps extends React.ComponentProps<typeof Sidebar> {
   projectId?: string;
 }
 
+interface NavSubItem {
+  label: string;
+  icon: typeof FolderKanban;
+  to: string;
+  params?: Record<string, string>;
+  matchPath: (pathname: string) => boolean;
+}
+
 interface NavItem {
   label: string;
   icon: typeof FolderKanban;
   to: string;
   params?: Record<string, string>;
   matchPath: (pathname: string) => boolean;
+  subItems?: NavSubItem[];
 }
 
 function getWorkspaceItems(): NavItem[] {
@@ -96,18 +116,34 @@ function getProjectItems(projectId: string): NavItem[] {
       matchPath: (p) => p === `${base}/integration`,
     },
     {
-      label: "Domains",
-      icon: Globe2,
-      to: "/projects/$id/domains",
-      params: { id: projectId },
-      matchPath: (p) => p === `${base}/domains`,
-    },
-    {
       label: "Settings",
       icon: Settings,
       to: "/projects/$id/settings",
       params: { id: projectId },
-      matchPath: (p) => p === `${base}/settings`,
+      matchPath: (p) => p.startsWith(`${base}/settings`),
+      subItems: [
+        {
+          label: "Build",
+          icon: Wrench,
+          to: "/projects/$id/settings",
+          params: { id: projectId },
+          matchPath: (p) => p === `${base}/settings`,
+        },
+        {
+          label: "Domains",
+          icon: Globe2,
+          to: "/projects/$id/settings/domains",
+          params: { id: projectId },
+          matchPath: (p) => p === `${base}/settings/domains`,
+        },
+        {
+          label: "Environments",
+          icon: KeyRound,
+          to: "/projects/$id/settings/env",
+          params: { id: projectId },
+          matchPath: (p) => p === `${base}/settings/env`,
+        },
+      ],
     },
   ];
 }
@@ -169,6 +205,46 @@ export function AppSidebar({ context, projectId, ...props }: AppSidebarProps) {
           <SidebarMenu>
             {items.map((item) => {
               const active = item.matchPath(pathname);
+              if (item.subItems) {
+                return (
+                  <Collapsible
+                    key={item.label}
+                    asChild
+                    defaultOpen={active}
+                    className="group/collapsible"
+                  >
+                    <SidebarMenuItem>
+                      <CollapsibleTrigger asChild>
+                        <SidebarMenuButton
+                          isActive={active}
+                          tooltip={item.label}
+                        >
+                          <item.icon />
+                          <span>{item.label}</span>
+                          <ChevronRight className="ml-auto transition-transform duration-200 group-data-[state=open]/collapsible:rotate-90" />
+                        </SidebarMenuButton>
+                      </CollapsibleTrigger>
+                      <CollapsibleContent>
+                        <SidebarMenuSub>
+                          {item.subItems.map((sub) => {
+                            const subActive = sub.matchPath(pathname);
+                            return (
+                              <SidebarMenuSubItem key={sub.label}>
+                                <SidebarMenuSubButton asChild isActive={subActive}>
+                                  <Link to={sub.to} params={sub.params ?? {}}>
+                                    <sub.icon />
+                                    <span>{sub.label}</span>
+                                  </Link>
+                                </SidebarMenuSubButton>
+                              </SidebarMenuSubItem>
+                            );
+                          })}
+                        </SidebarMenuSub>
+                      </CollapsibleContent>
+                    </SidebarMenuItem>
+                  </Collapsible>
+                );
+              }
               return (
                 <SidebarMenuItem key={item.label}>
                   <SidebarMenuButton
