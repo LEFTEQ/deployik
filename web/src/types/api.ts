@@ -249,6 +249,17 @@ export interface AutoBuildConfig {
   updated_at: string;
 }
 
+export interface ProtectionStatus {
+  preview_enabled: boolean;
+  production_enabled: boolean;
+}
+
+export interface ProtectionUpdateResponse {
+  environment: string;
+  enabled: boolean;
+  password?: string; // only present when enabling or regenerating
+}
+
 // Deployment list query filters
 export interface DeploymentListFilters {
   branch?: string;

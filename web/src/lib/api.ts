@@ -18,6 +18,8 @@ import type {
   AutoBuildConfig,
   DeploymentListFilters,
   DeploymentListResponse,
+  ProtectionStatus,
+  ProtectionUpdateResponse,
 } from "@/types/api";
 
 const API_URL = import.meta.env.VITE_API_URL || "/api";
@@ -413,6 +415,31 @@ class ApiClient {
   // Deployment screenshots
   getDeploymentScreenshotUrl(deploymentId: string): string {
     return `${API_URL}/deployments/${deploymentId}/screenshot`;
+  }
+
+  // Password protection
+  async getProtectionStatus(projectId: string): Promise<ProtectionStatus> {
+    return this.request(`/projects/${projectId}/protection`);
+  }
+
+  async updateProtection(
+    projectId: string,
+    data: { environment: string; enabled: boolean },
+  ): Promise<ProtectionUpdateResponse> {
+    return this.request(`/projects/${projectId}/protection`, {
+      method: "PUT",
+      body: JSON.stringify(data),
+    });
+  }
+
+  async regeneratePassword(
+    projectId: string,
+    data: { environment: string },
+  ): Promise<ProtectionUpdateResponse> {
+    return this.request(`/projects/${projectId}/protection/regenerate`, {
+      method: "POST",
+      body: JSON.stringify(data),
+    });
   }
 
   // WebSocket URL builder
