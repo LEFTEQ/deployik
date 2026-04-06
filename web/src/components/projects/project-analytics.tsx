@@ -2,14 +2,7 @@ import { useMemo, useState } from "react";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { format, parseISO } from "date-fns";
-import {
-  Activity,
-  BarChart3,
-  Gauge,
-  Globe2,
-  Radar,
-  ShieldCheck,
-} from "lucide-react";
+import { ChevronDown } from "lucide-react";
 import { toast } from "sonner";
 
 import { AUDIENCE_STATUS_META } from "@/components/projects/project-analytics-meta";
@@ -28,8 +21,14 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "@/components/ui/collapsible";
 import { LoadingState, Spinner } from "@/components/ui/spinner";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
+import { cn } from "@/lib/utils";
 import { api } from "@/lib/api";
 import type {
   AnalyticsBreakdownItem,
@@ -46,6 +45,9 @@ const ENVIRONMENT_OPTIONS: AnalyticsEnvironmentFilter[] = [
 
 const RANGE_OPTIONS: AnalyticsRangePreset[] = ["1h", "24h", "7d", "30d"];
 
+const AUDIENCE_BREAKDOWN_TABS = ["Pages", "Referrers", "Countries"] as const;
+type AudienceBreakdownTab = (typeof AUDIENCE_BREAKDOWN_TABS)[number];
+
 export function ProjectAnalyticsTab({
   projectId,
   onSetupAnalytics,
@@ -57,6 +59,9 @@ export function ProjectAnalyticsTab({
   const [environment, setEnvironment] =
     useState<AnalyticsEnvironmentFilter>("all");
   const [range, setRange] = useState<AnalyticsRangePreset>("24h");
+  const [audienceOpen, setAudienceOpen] = useState(true);
+  const [runtimeOpen, setRuntimeOpen] = useState(true);
+  const [audienceTab, setAudienceTab] = useState<AudienceBreakdownTab>("Pages");
   const timezone =
     Intl.DateTimeFormat().resolvedOptions().timeZone?.trim() || "UTC";
 
@@ -117,34 +122,20 @@ export function ProjectAnalyticsTab({
     [data, range],
   );
 
-  const runtimeDeliveryData = useMemo(
-    () =>
-      data
-        ? mergeSeries(
-            [
-              { key: "bandwidth", points: data.runtime.series.bandwidth },
-              {
-                key: "latency",
-                points: data.runtime.series.p95_latency_ms,
-              },
-            ],
-            range,
-          )
-        : [],
-    [data, range],
-  );
   const selectedDomains =
     environment === "preview"
       ? (data?.domains.preview ?? [])
       : environment === "production"
         ? (data?.domains.production ?? [])
         : (data?.domains.all ?? []);
+
   const readyToInstallMeta = AUDIENCE_STATUS_META.ready_to_install ?? {
     label: "Ready to install",
     badgeClass: "border-primary/25 bg-primary/12 text-primary",
     description:
       "The website exists. Add the tracker to start collecting audience data.",
   };
+
   const audienceStatusMeta = AUDIENCE_STATUS_META[
     data?.audience.status ?? ""
   ] ??
@@ -154,79 +145,77 @@ export function ProjectAnalyticsTab({
       description: "Audience analytics is live and receiving traffic.",
     };
 
+  const audienceBreakdownItems = useMemo(() => {
+    if (!data) return [];
+    switch (audienceTab) {
+      case "Pages":
+        return data.audience.top_pages;
+      case "Referrers":
+        return data.audience.top_referrers;
+      case "Countries":
+        return data.audience.top_countries;
+    }
+  }, [data, audienceTab]);
+
+  const audienceBreakdownFormatter = (item: AnalyticsBreakdownItem) => {
+    if (audienceTab === "Pages") return formatNumber(item.pageviews ?? item.value);
+    return formatNumber(item.visitors ?? item.value);
+  };
+
   return (
-    <div className="space-y-4">
-      <Card className="@container/card">
-        <CardHeader>
-          <div>
-            <CardTitle className="text-base">Analytics</CardTitle>
-            <CardDescription>
-              Audience analytics comes from Umami. Runtime analytics comes from
-              the edge proxy and Loki.
-            </CardDescription>
-          </div>
-          <CardAction className="flex flex-col gap-2">
-            <ToggleGroup
-              type="single"
-              value={environment}
-              onValueChange={(value) =>
-                value
-                  ? setEnvironment(value as AnalyticsEnvironmentFilter)
-                  : null
-              }
+    <div className="space-y-6">
+      {/* Top controls */}
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <ToggleGroup
+          type="single"
+          value={environment}
+          onValueChange={(value) =>
+            value ? setEnvironment(value as AnalyticsEnvironmentFilter) : null
+          }
+          variant="outline"
+        >
+          {ENVIRONMENT_OPTIONS.map((value) => (
+            <ToggleGroupItem key={value} value={value}>
+              {formatEnvironmentLabel(value)}
+            </ToggleGroupItem>
+          ))}
+        </ToggleGroup>
+
+        <div className="flex items-center gap-2">
+          <ToggleGroup
+            type="single"
+            value={range}
+            onValueChange={(value) =>
+              value ? setRange(value as AnalyticsRangePreset) : null
+            }
+            variant="outline"
+          >
+            {RANGE_OPTIONS.map((value) => (
+              <ToggleGroupItem key={value} value={value}>
+                {value}
+              </ToggleGroupItem>
+            ))}
+          </ToggleGroup>
+
+          {data && data.audience.status !== "ready_to_install" ? (
+            <Button
               variant="outline"
-              className="hidden @[720px]/card:flex"
+              size="sm"
+              onClick={() => verifyMutation.mutate()}
+              disabled={verifyMutation.isPending}
             >
-              {ENVIRONMENT_OPTIONS.map((value) => (
-                <ToggleGroupItem key={value} value={value}>
-                  {formatEnvironmentLabel(value)}
-                </ToggleGroupItem>
-              ))}
-            </ToggleGroup>
-            <ToggleGroup
-              type="single"
-              value={range}
-              onValueChange={(value) =>
-                value ? setRange(value as AnalyticsRangePreset) : null
-              }
-              variant="outline"
-              className="hidden @[720px]/card:flex"
-            >
-              {RANGE_OPTIONS.map((value) => (
-                <ToggleGroupItem key={value} value={value}>
-                  {value}
-                </ToggleGroupItem>
-              ))}
-            </ToggleGroup>
-            <div className="flex flex-wrap gap-2 @[720px]/card:hidden">
-              {ENVIRONMENT_OPTIONS.map((value) => (
-                <Button
-                  key={value}
-                  size="sm"
-                  variant={environment === value ? "default" : "outline"}
-                  onClick={() => setEnvironment(value)}
-                >
-                  {formatEnvironmentLabel(value)}
-                </Button>
-              ))}
-              {RANGE_OPTIONS.map((value) => (
-                <Button
-                  key={value}
-                  size="sm"
-                  variant={range === value ? "default" : "outline"}
-                  onClick={() => setRange(value)}
-                >
-                  {value}
-                </Button>
-              ))}
-            </div>
-          </CardAction>
-        </CardHeader>
-      </Card>
+              {verifyMutation.isPending ? (
+                <Spinner className="size-3.5" />
+              ) : null}
+              Verify
+            </Button>
+          ) : null}
+        </div>
+      </div>
 
       {isLoading ? (
         <LoadingState
-          title="Loading analytics…"
+          title="Loading analytics..."
           description="Pulling audience metrics from Umami and runtime metrics from Loki."
           className="min-h-[360px]"
         />
@@ -259,30 +248,21 @@ export function ProjectAnalyticsTab({
           ) : null}
 
           {data.audience.status === "ready_to_install" ? (
-            <Card className="@container/card overflow-hidden">
+            <Card className="border-primary/20">
               <CardHeader>
                 <div className="space-y-2">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <Badge
-                      variant="outline"
-                      className={readyToInstallMeta.badgeClass}
-                    >
-                      {readyToInstallMeta.label}
-                    </Badge>
-                    <Badge
-                      variant="outline"
-                      className="border-white/10 bg-white/5 text-slate-200"
-                    >
-                      Audience analytics
-                    </Badge>
-                  </div>
+                  <Badge
+                    variant="outline"
+                    className={readyToInstallMeta.badgeClass}
+                  >
+                    {readyToInstallMeta.label}
+                  </Badge>
                   <CardTitle className="text-base">
-                    Set up audience analytics to start tracking visitors,
-                    pageviews, and events.
+                    Set up audience analytics to start tracking visitors and
+                    pageviews.
                   </CardTitle>
                   <CardDescription>
-                    Keep setup in the Integration tab. The analytics surface
-                    stays focused on metrics once the tracker is installed.
+                    Go to the Integration tab to install the tracking snippet.
                   </CardDescription>
                 </div>
                 <CardAction className="flex shrink-0 gap-2">
@@ -302,254 +282,204 @@ export function ProjectAnalyticsTab({
             </Card>
           ) : (
             <>
-              <Card className="@container/card">
-                <CardHeader>
-                  <div className="space-y-2">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <Badge
-                        variant="outline"
-                        className={audienceStatusMeta.badgeClass}
-                      >
-                        {audienceStatusMeta.label}
-                      </Badge>
-                      <Badge
-                        variant="outline"
-                        className="border-white/10 bg-white/5 font-mono text-slate-200"
-                      >
-                        {data.audience.website_id || "website pending"}
-                      </Badge>
-                    </div>
-                    <CardTitle className="text-base">
-                      Audience + Runtime Analytics
-                    </CardTitle>
-                    <CardDescription>
-                      Audience analytics comes from Umami. Runtime analytics
-                      comes from the edge proxy and Loki.
-                    </CardDescription>
-                  </div>
-                  <CardAction className="flex gap-2">
-                    <Button
-                      variant="outline"
-                      onClick={() => verifyMutation.mutate()}
-                      disabled={verifyMutation.isPending}
-                    >
-                      {verifyMutation.isPending ? (
-                        <Spinner className="size-3.5" />
-                      ) : null}
-                      Verify
-                    </Button>
-                    <Button variant="ghost" onClick={onSetupAnalytics}>
-                      Integration
-                    </Button>
-                  </CardAction>
-                </CardHeader>
-              </Card>
+              {/* Status badge row */}
+              <div className="flex flex-wrap items-center gap-2">
+                <Badge
+                  variant="outline"
+                  className={audienceStatusMeta.badgeClass}
+                >
+                  {audienceStatusMeta.label}
+                </Badge>
+                <Badge
+                  variant="outline"
+                  className="border-white/10 bg-white/5 font-mono text-slate-200"
+                >
+                  {data.audience.website_id || "website pending"}
+                </Badge>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={onSetupAnalytics}
+                  className="ml-auto"
+                >
+                  Integration
+                </Button>
+              </div>
 
-              <section className="space-y-4">
-                <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-                  <AnalyticsStatCard
-                    label="Visitors"
-                    value={formatNumber(data.audience.summary.visitors)}
-                    hint="Unique visitors for the selected window."
-                    icon={<Globe2 className="h-4 w-4" />}
-                  />
-                  <AnalyticsStatCard
-                    label="Pageviews"
-                    value={formatNumber(data.audience.summary.pageviews)}
-                    hint="Total pageviews tracked by Umami."
-                    icon={<BarChart3 className="h-4 w-4" />}
-                  />
-                  <AnalyticsStatCard
-                    label="Visits"
-                    value={formatNumber(data.audience.summary.visits)}
-                    hint="Unique visits in the selected range."
-                    icon={<Activity className="h-4 w-4" />}
-                  />
-                  <AnalyticsStatCard
-                    label="Bounce Rate"
-                    value={formatPercent(data.audience.summary.bounce_rate)}
-                    hint="Single-page visits divided by total visits."
-                    icon={<ShieldCheck className="h-4 w-4" />}
-                  />
-                  <AnalyticsStatCard
-                    label="Avg. Visit"
-                    value={formatDuration(
-                      data.audience.summary.avg_visit_duration_ms,
-                    )}
-                    hint="Average visit duration from Umami session totals."
-                    icon={<Gauge className="h-4 w-4" />}
-                  />
-                  <AnalyticsStatCard
-                    label="Realtime"
-                    value={
-                      data.audience.realtime
-                        ? formatNumber(data.audience.realtime.visitors)
-                        : "—"
-                    }
-                    hint={
-                      environment === "all"
-                        ? "Active visitors during the last few minutes."
-                        : "Realtime is only shown for the full project view."
-                    }
-                    icon={<Radar className="h-4 w-4" />}
-                  />
-                </div>
-
-                <AnalyticsMetricChart
-                  title="Audience Traffic"
-                  description="Pageviews and visits from the linked Umami website."
-                  data={audienceChartData}
-                  series={[
-                    {
-                      key: "pageviews",
-                      label: "Pageviews",
-                      color: "var(--color-chart-1)",
-                    },
-                    {
-                      key: "visits",
-                      label: "Visits",
-                      color: "var(--color-chart-2)",
-                    },
-                  ]}
-                  valueFormatter={(value) => formatCompactNumber(value)}
+              {/* Four key stat cards */}
+              <div className="grid gap-4 grid-cols-2 md:grid-cols-4">
+                <AnalyticsStatCard
+                  label="Pageviews"
+                  value={formatNumber(data.audience.summary.pageviews)}
+                  hint="Total pageviews tracked by Umami."
                 />
+                <AnalyticsStatCard
+                  label="Visitors"
+                  value={formatNumber(data.audience.summary.visitors)}
+                  hint="Unique visitors for the selected window."
+                />
+                <AnalyticsStatCard
+                  label="Requests"
+                  value={
+                    data.runtime.available
+                      ? formatNumber(data.runtime.summary.requests)
+                      : "---"
+                  }
+                  hint="Total edge requests for the selected range."
+                />
+                <AnalyticsStatCard
+                  label="Error Rate"
+                  value={
+                    data.runtime.available
+                      ? formatPercent(data.runtime.summary.error_rate)
+                      : "---"
+                  }
+                  hint="4xx and 5xx requests divided by total requests."
+                />
+              </div>
 
-                <div className="grid gap-4 xl:grid-cols-3">
-                  <BreakdownCard
-                    title="Top Pages"
-                    description="Most-viewed paths in the selected window."
-                    items={data.audience.top_pages}
-                    formatter={(item) =>
-                      formatNumber(item.pageviews ?? item.value)
-                    }
-                  />
-                  <BreakdownCard
-                    title="Referrers"
-                    description="Where traffic is coming from."
-                    items={data.audience.top_referrers}
-                    formatter={(item) =>
-                      formatNumber(item.visitors ?? item.value)
-                    }
-                  />
-                  <BreakdownCard
-                    title="Countries"
-                    description="Geographic split of audience traffic."
-                    items={data.audience.top_countries}
-                    formatter={(item) =>
-                      formatNumber(item.visitors ?? item.value)
-                    }
-                  />
-                </div>
-              </section>
+              {/* Audience section */}
+              <Collapsible open={audienceOpen} onOpenChange={setAudienceOpen}>
+                <CollapsibleTrigger asChild>
+                  <button
+                    type="button"
+                    className="flex w-full items-center justify-between rounded-lg border bg-muted/30 px-4 py-3 text-sm font-medium text-foreground hover:bg-muted/50 transition-colors"
+                  >
+                    <span>Audience</span>
+                    <ChevronDown
+                      className={cn(
+                        "h-4 w-4 text-muted-foreground transition-transform",
+                        audienceOpen && "rotate-180",
+                      )}
+                    />
+                  </button>
+                </CollapsibleTrigger>
+                <CollapsibleContent>
+                  <div className="mt-4 space-y-4">
+                    <AnalyticsMetricChart
+                      title="Audience Traffic"
+                      description="Pageviews and visits from the linked Umami website."
+                      data={audienceChartData}
+                      series={[
+                        {
+                          key: "pageviews",
+                          label: "Pageviews",
+                          color: "var(--color-chart-1)",
+                        },
+                        {
+                          key: "visits",
+                          label: "Visits",
+                          color: "var(--color-chart-2)",
+                        },
+                      ]}
+                      valueFormatter={(value) => formatCompactNumber(value)}
+                    />
 
-              <section className="space-y-4">
-                {data.runtime.available ? (
-                  <>
-                    <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
-                      <AnalyticsStatCard
-                        label="Requests"
-                        value={formatNumber(data.runtime.summary.requests)}
-                        hint="Total edge requests for the selected range."
-                        icon={<Activity className="h-4 w-4" />}
-                      />
-                      <AnalyticsStatCard
-                        label="API Requests"
-                        value={formatNumber(data.runtime.summary.api_requests)}
-                        hint="Requests matching `/api/*` at the edge."
-                        icon={<BarChart3 className="h-4 w-4" />}
-                      />
-                      <AnalyticsStatCard
-                        label="Bandwidth"
-                        value={formatBytes(
-                          data.runtime.summary.bandwidth_bytes,
-                        )}
-                        hint="Response bytes sent by nginx."
-                        icon={<Globe2 className="h-4 w-4" />}
-                      />
-                      <AnalyticsStatCard
-                        label="Error Rate"
-                        value={formatPercent(data.runtime.summary.error_rate)}
-                        hint="4xx and 5xx requests divided by total requests."
-                        icon={<ShieldCheck className="h-4 w-4" />}
-                      />
-                      <AnalyticsStatCard
-                        label="P95 Latency"
-                        value={formatDuration(
-                          data.runtime.summary.p95_latency_ms,
-                        )}
-                        hint="95th percentile request latency from edge logs."
-                        icon={<Gauge className="h-4 w-4" />}
-                      />
-                    </div>
+                    {/* Breakdown tabs */}
+                    <Card>
+                      <CardHeader>
+                        <div className="flex items-center gap-1">
+                          {AUDIENCE_BREAKDOWN_TABS.map((tab) => (
+                            <Button
+                              key={tab}
+                              variant={audienceTab === tab ? "secondary" : "ghost"}
+                              size="sm"
+                              onClick={() => setAudienceTab(tab)}
+                            >
+                              {tab}
+                            </Button>
+                          ))}
+                        </div>
+                      </CardHeader>
+                      <CardContent>
+                        <BreakdownList
+                          items={audienceBreakdownItems}
+                          formatter={audienceBreakdownFormatter}
+                        />
+                      </CardContent>
+                    </Card>
+                  </div>
+                </CollapsibleContent>
+              </Collapsible>
 
-                    <div className="grid gap-4 xl:grid-cols-2">
-                      <AnalyticsMetricChart
-                        title="Runtime Traffic"
-                        description="Edge request volume split by all requests vs API requests."
-                        data={runtimeTrafficData}
-                        series={[
-                          {
-                            key: "requests",
-                            label: "Requests",
-                            color: "var(--color-chart-3)",
-                          },
-                          {
-                            key: "apiRequests",
-                            label: "API Requests",
-                            color: "var(--color-chart-1)",
-                          },
-                        ]}
-                        valueFormatter={(value) => formatCompactNumber(value)}
-                      />
-                      <AnalyticsMetricChart
-                        title="Delivery"
-                        description="Bandwidth and p95 latency from the edge proxy."
-                        data={runtimeDeliveryData}
-                        series={[
-                          {
-                            key: "bandwidth",
-                            label: "Bandwidth",
-                            color: "var(--color-chart-4)",
-                          },
-                          {
-                            key: "latency",
-                            label: "P95 Latency (ms)",
-                            color: "var(--color-chart-5)",
-                          },
-                        ]}
-                        valueFormatter={(value) => formatCompactNumber(value)}
-                      />
-                    </div>
+              {/* Runtime section */}
+              <Collapsible open={runtimeOpen} onOpenChange={setRuntimeOpen}>
+                <CollapsibleTrigger asChild>
+                  <button
+                    type="button"
+                    className="flex w-full items-center justify-between rounded-lg border bg-muted/30 px-4 py-3 text-sm font-medium text-foreground hover:bg-muted/50 transition-colors"
+                  >
+                    <span>
+                      Runtime
+                      {data.runtime.available ? (
+                        <span className="ml-3 text-xs font-normal text-muted-foreground">
+                          Bandwidth: {formatBytes(data.runtime.summary.bandwidth_bytes)}
+                          {" \u00B7 "}
+                          P95: {formatDuration(data.runtime.summary.p95_latency_ms)}
+                        </span>
+                      ) : null}
+                    </span>
+                    <ChevronDown
+                      className={cn(
+                        "h-4 w-4 text-muted-foreground transition-transform",
+                        runtimeOpen && "rotate-180",
+                      )}
+                    />
+                  </button>
+                </CollapsibleTrigger>
+                <CollapsibleContent>
+                  <div className="mt-4 space-y-4">
+                    {data.runtime.available ? (
+                      <>
+                        <AnalyticsMetricChart
+                          title="Runtime Traffic"
+                          description="Edge request volume split by all requests vs API requests."
+                          data={runtimeTrafficData}
+                          series={[
+                            {
+                              key: "requests",
+                              label: "Requests",
+                              color: "var(--color-chart-3)",
+                            },
+                            {
+                              key: "apiRequests",
+                              label: "API Requests",
+                              color: "var(--color-chart-1)",
+                            },
+                          ]}
+                          valueFormatter={(value) => formatCompactNumber(value)}
+                        />
 
-                    <div className="grid gap-4 xl:grid-cols-2">
-                      <BreakdownCard
-                        title="Top Paths"
-                        description="Most requested paths at the edge."
-                        items={data.runtime.top_paths}
-                        formatter={(item) => formatNumber(item.value)}
-                      />
-                      <BreakdownCard
-                        title="Status Codes"
-                        description="Request distribution by HTTP status."
-                        items={data.runtime.status_codes}
-                        formatter={(item) => formatNumber(item.value)}
-                      />
-                    </div>
-                  </>
-                ) : (
-                  <Card>
-                    <CardHeader>
-                      <CardTitle className="text-base">
-                        Runtime analytics unavailable
-                      </CardTitle>
-                      <CardDescription>
-                        {data.runtime.error ||
-                          "This Deployik instance is not connected to Loki yet."}
-                      </CardDescription>
-                    </CardHeader>
-                  </Card>
-                )}
-              </section>
+                        <Card>
+                          <CardHeader>
+                            <CardTitle className="text-base">
+                              Status Codes
+                            </CardTitle>
+                          </CardHeader>
+                          <CardContent>
+                            <BreakdownList
+                              items={data.runtime.status_codes}
+                              formatter={(item) => formatNumber(item.value)}
+                            />
+                          </CardContent>
+                        </Card>
+                      </>
+                    ) : (
+                      <Card>
+                        <CardHeader>
+                          <CardTitle className="text-base">
+                            Runtime analytics unavailable
+                          </CardTitle>
+                          <CardDescription>
+                            {data.runtime.error ||
+                              "This Deployik instance is not connected to Loki yet."}
+                          </CardDescription>
+                        </CardHeader>
+                      </Card>
+                    )}
+                  </div>
+                </CollapsibleContent>
+              </Collapsible>
             </>
           )}
         </>
@@ -558,47 +488,37 @@ export function ProjectAnalyticsTab({
   );
 }
 
-function BreakdownCard({
-  title,
-  description,
+function BreakdownList({
   items,
   formatter,
 }: {
-  title: string;
-  description: string;
   items: AnalyticsBreakdownItem[];
   formatter: (item: AnalyticsBreakdownItem) => string;
 }) {
+  if (!items.length) {
+    return (
+      <div className="rounded-xl border border-dashed border-border/70 px-4 py-10 text-sm text-muted-foreground">
+        No data for the selected window yet.
+      </div>
+    );
+  }
+
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle className="text-base">{title}</CardTitle>
-        <CardDescription>{description}</CardDescription>
-      </CardHeader>
-      <CardContent>
-        {items.length ? (
-          <div className="space-y-2">
-            {items.map((item) => (
-              <div
-                key={item.name}
-                className="flex items-center justify-between gap-3 rounded-lg border bg-muted/30 px-3 py-3"
-              >
-                <p className="truncate text-sm font-medium text-foreground">
-                  {item.name || "Unknown"}
-                </p>
-                <p className="text-sm text-muted-foreground">
-                  {formatter(item)}
-                </p>
-              </div>
-            ))}
-          </div>
-        ) : (
-          <div className="rounded-xl border border-dashed border-border/70 px-4 py-10 text-sm text-muted-foreground">
-            No analytics rows for this section yet.
-          </div>
-        )}
-      </CardContent>
-    </Card>
+    <div className="space-y-2">
+      {items.map((item) => (
+        <div
+          key={item.name}
+          className="flex items-center justify-between gap-3 rounded-lg border bg-muted/30 px-3 py-2.5"
+        >
+          <p className="truncate text-sm font-medium text-foreground">
+            {item.name || "Unknown"}
+          </p>
+          <p className="shrink-0 text-sm tabular-nums text-muted-foreground">
+            {formatter(item)}
+          </p>
+        </div>
+      ))}
+    </div>
   );
 }
 
