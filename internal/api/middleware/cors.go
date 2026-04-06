@@ -8,6 +8,12 @@ import (
 func CORS(allowedOrigins []string) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			// Skip CORS enforcement for site-auth endpoints (called from any protected domain)
+			if strings.HasPrefix(r.URL.Path, "/api/site-auth/") {
+				next.ServeHTTP(w, r)
+				return
+			}
+
 			origin := strings.TrimRight(r.Header.Get("Origin"), "/")
 			if origin != "" {
 				w.Header().Add("Vary", "Origin")

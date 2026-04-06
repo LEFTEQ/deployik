@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useParams } from "@tanstack/react-router";
+import { Check, Copy } from "lucide-react";
 import { toast } from "sonner";
 
 import { api } from "@/lib/api";
@@ -22,6 +23,7 @@ export function ProjectSettingsProtection() {
   const { id } = useParams({ strict: false }) as { id: string };
   const queryClient = useQueryClient();
   const [passwordToShow, setPasswordToShow] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
 
   const { data: protection, isLoading } = useQuery({
     queryKey: ["protection", id],
@@ -122,7 +124,10 @@ export function ProjectSettingsProtection() {
       {/* Password reveal dialog */}
       <AlertDialog
         open={!!passwordToShow}
-        onOpenChange={() => setPasswordToShow(null)}
+        onOpenChange={() => {
+          setPasswordToShow(null);
+          setCopied(false);
+        }}
       >
         <AlertDialogContent>
           <AlertDialogHeader>
@@ -131,19 +136,28 @@ export function ProjectSettingsProtection() {
               Save this password — it won't be shown again.
             </AlertDialogDescription>
           </AlertDialogHeader>
-          <div className="select-all rounded-lg border bg-muted/30 p-4 text-center font-mono text-lg tracking-wider">
-            {passwordToShow}
-          </div>
+          <button
+            type="button"
+            className="group flex w-full cursor-pointer items-center justify-between rounded-lg border bg-muted/30 px-4 py-4 text-left transition-colors hover:bg-accent"
+            onClick={() => {
+              navigator.clipboard.writeText(passwordToShow ?? "");
+              setCopied(true);
+              toast.success("Password copied");
+              setTimeout(() => setCopied(false), 2000);
+            }}
+          >
+            <span className="font-mono text-lg tracking-wider text-foreground">
+              {passwordToShow}
+            </span>
+            <span className="shrink-0 text-muted-foreground transition-colors group-hover:text-foreground">
+              {copied ? (
+                <Check className="h-5 w-5 text-emerald-400" />
+              ) : (
+                <Copy className="h-5 w-5" />
+              )}
+            </span>
+          </button>
           <AlertDialogFooter>
-            <Button
-              variant="outline"
-              onClick={() => {
-                navigator.clipboard.writeText(passwordToShow ?? "");
-                toast.success("Password copied");
-              }}
-            >
-              Copy
-            </Button>
             <AlertDialogAction onClick={() => setPasswordToShow(null)}>
               Done
             </AlertDialogAction>
