@@ -42,7 +42,7 @@ func (c *OAuthConfig) AuthorizeURL(state string) string {
 	params := url.Values{
 		"client_id":    {c.ClientID},
 		"redirect_uri": {c.RedirectURI},
-		"scope":        {"repo,read:user"},
+		"scope":        {"repo,read:user,admin:repo_hook"},
 		"state":        {state},
 	}
 	return authorizeURL + "?" + params.Encode()

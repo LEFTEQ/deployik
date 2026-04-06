@@ -112,6 +112,66 @@ func (c *Client) CreateTagReference(owner, repo, tagName, sha string) error {
 	return nil
 }
 
+// Webhook represents a GitHub repository webhook.
+type Webhook struct {
+	ID     int64 `json:"id"`
+	Active bool  `json:"active"`
+}
+
+type createWebhookRequest struct {
+	Name   string                 `json:"name"`
+	Active bool                   `json:"active"`
+	Events []string               `json:"events"`
+	Config map[string]interface{} `json:"config"`
+}
+
+// CreateWebhook creates a push webhook on the given repo and returns the webhook ID.
+func (c *Client) CreateWebhook(owner, repo, webhookURL, secret string) (int64, error) {
+	url := fmt.Sprintf("%s/repos/%s/%s/hooks", apiBase, owner, repo)
+	body, err := json.Marshal(createWebhookRequest{
+		Name:   "web",
+		Active: true,
+		Events: []string{"push"},
+		Config: map[string]interface{}{
+			"url":          webhookURL,
+			"content_type": "application/json",
+			"secret":       secret,
+			"insecure_ssl": "0",
+		},
+	})
+	if err != nil {
+		return 0, fmt.Errorf("marshal create webhook: %w", err)
+	}
+
+	var webhook Webhook
+	if err := c.post(url, bytes.NewReader(body), http.StatusCreated, &webhook); err != nil {
+		return 0, fmt.Errorf("create webhook: %w", err)
+	}
+	return webhook.ID, nil
+}
+
+// DeleteWebhook deletes a webhook from the given repo.
+func (c *Client) DeleteWebhook(owner, repo string, webhookID int64) error {
+	url := fmt.Sprintf("%s/repos/%s/%s/hooks/%d", apiBase, owner, repo, webhookID)
+	if err := c.delete(url); err != nil {
+		return fmt.Errorf("delete webhook: %w", err)
+	}
+	return nil
+}
+
+// UpdateWebhookActive enables or disables a webhook.
+func (c *Client) UpdateWebhookActive(owner, repo string, webhookID int64, active bool) error {
+	url := fmt.Sprintf("%s/repos/%s/%s/hooks/%d", apiBase, owner, repo, webhookID)
+	body, err := json.Marshal(map[string]bool{"active": active})
+	if err != nil {
+		return fmt.Errorf("marshal update webhook: %w", err)
+	}
+	if err := c.patch(url, bytes.NewReader(body), nil); err != nil {
+		return fmt.Errorf("update webhook: %w", err)
+	}
+	return nil
+}
+
 func (c *Client) get(url string, target interface{}) error {
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
@@ -150,6 +210,53 @@ func (c *Client) post(url string, body io.Reader, expectedStatus int, target int
 	defer resp.Body.Close()
 
 	if resp.StatusCode != expectedStatus {
+		payload, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("github API returned %d: %s", resp.StatusCode, string(payload))
+	}
+
+	if target == nil {
+		return nil
+	}
+	return json.NewDecoder(resp.Body).Decode(target)
+}
+
+func (c *Client) delete(url string) error {
+	req, err := http.NewRequest("DELETE", url, nil)
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Authorization", "Bearer "+c.token)
+	req.Header.Set("Accept", "application/vnd.github.v3+json")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusNoContent {
+		body, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("github API returned %d: %s", resp.StatusCode, string(body))
+	}
+	return nil
+}
+
+func (c *Client) patch(url string, body io.Reader, target interface{}) error {
+	req, err := http.NewRequest("PATCH", url, body)
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Authorization", "Bearer "+c.token)
+	req.Header.Set("Accept", "application/vnd.github.v3+json")
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
 		payload, _ := io.ReadAll(resp.Body)
 		return fmt.Errorf("github API returned %d: %s", resp.StatusCode, string(payload))
 	}
