@@ -99,7 +99,7 @@ export function VariableStore({ projectId, kind }: VariableStoreProps) {
     setRows(rows.filter((_, index) => index !== idx));
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-6">
       {/* Scope selector */}
       <div className="space-y-3">
         <h3 className="text-base font-semibold">{storeTitle}</h3>

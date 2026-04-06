@@ -90,7 +90,7 @@ export function DeploymentDetail() {
       <Link
         to="/projects/$id/deployments"
         params={{ id }}
-        className="mb-4 inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
+        className="mb-6 inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
       >
         <ArrowLeft className="h-4 w-4" />
         Back to deployments
@@ -149,7 +149,7 @@ export function DeploymentDetail() {
       </div>
 
       {/* Build Logs */}
-      <Card className="mt-6">
+      <Card className="mt-8">
         <CardHeader className="pb-3">
           <CardTitle className="text-base">Build Logs</CardTitle>
         </CardHeader>

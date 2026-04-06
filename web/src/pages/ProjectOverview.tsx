@@ -9,6 +9,7 @@ import {
   GitBranch,
   GitCommit,
   Globe2,
+  GlobeLock,
   Rocket,
 } from "lucide-react";
 import { toast } from "sonner";
@@ -25,15 +26,9 @@ import {
 import { formatFrameworkLabel } from "@/components/projects/build-settings";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import {
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
 import { LoadingState } from "@/components/ui/spinner";
 import { cn } from "@/lib/utils";
-import type { Deployment, Domain } from "@/types/api";
+import type { Deployment } from "@/types/api";
 
 export function ProjectOverview() {
   const { id } = useParams({ strict: false }) as { id: string };
@@ -111,9 +106,9 @@ export function ProjectOverview() {
   const recentDeployments = (deployments ?? []).slice(0, 6);
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-8">
       {/* Project Header */}
-      <div className="space-y-3 pb-2">
+      <div className="space-y-3">
         <div className="flex flex-wrap items-center gap-2">
           <Badge
             variant="outline"
@@ -186,36 +181,50 @@ export function ProjectOverview() {
         </div>
       )}
 
-      {/* Side-by-Side Environment Cards */}
-      <div className="grid gap-4 md:grid-cols-2">
-        <EnvironmentCard
-          environment="preview"
-          deployment={latestPreview}
-          domains={allDomains.filter((d) => d.environment === "preview")}
-          actionLabel="Deploy"
-          onAction={() => deployMutation.mutate({ environment: "preview" })}
-          actionPending={deployMutation.isPending}
-          onViewLogs={(did) =>
-            navigate({
-              to: "/projects/$id/deployments/$did",
-              params: { id, did },
-            })
-          }
-        />
-        <EnvironmentCard
-          environment="production"
-          deployment={latestProduction}
-          domains={allDomains.filter((d) => d.environment === "production")}
-          actionLabel="Release"
-          onAction={() => deployMutation.mutate({ environment: "production" })}
-          actionPending={deployMutation.isPending}
-          onViewLogs={(did) =>
-            navigate({
-              to: "/projects/$id/deployments/$did",
-              params: { id, did },
-            })
-          }
-        />
+      {/* Unified Environments */}
+      <div className="space-y-3">
+        <div className="flex items-center justify-between">
+          <h2 className="text-sm font-semibold text-foreground">
+            Environments
+          </h2>
+          <div className="flex gap-2">
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => deployMutation.mutate({ environment: "preview" })}
+              disabled={deployMutation.isPending}
+            >
+              <Rocket className="mr-1.5 h-3.5 w-3.5" />
+              Deploy Preview
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() =>
+                deployMutation.mutate({ environment: "production" })
+              }
+              disabled={deployMutation.isPending}
+            >
+              <GlobeLock className="mr-1.5 h-3.5 w-3.5" />
+              Release
+            </Button>
+          </div>
+        </div>
+
+        <div className="divide-y divide-border rounded-lg border">
+          <EnvironmentRow
+            environment="preview"
+            deployment={latestPreview}
+            projectId={id}
+            onNavigate={navigate}
+          />
+          <EnvironmentRow
+            environment="production"
+            deployment={latestProduction}
+            projectId={id}
+            onNavigate={navigate}
+          />
+        </div>
       </div>
 
       {/* Recent Deployments */}
@@ -286,124 +295,114 @@ export function ProjectOverview() {
   );
 }
 
-/* ── Environment Card ── */
+/* ── Environment Row ── */
 
-function EnvironmentCard({
+function EnvironmentRow({
   environment,
   deployment,
-  domains,
-  actionLabel,
-  onAction,
-  actionPending,
-  onViewLogs,
+  projectId,
+  onNavigate,
 }: {
   environment: "preview" | "production";
   deployment: Deployment | undefined;
-  domains: Domain[];
-  actionLabel: string;
-  onAction: () => void;
-  actionPending: boolean;
-  onViewLogs: (did: string) => void;
+  projectId: string;
+  onNavigate: ReturnType<typeof useNavigate>;
 }) {
   const envMeta = ENVIRONMENT_META[environment];
   const statusMeta = deployment
     ? DEPLOYMENT_STATUS_META[deployment.status]
     : null;
-  const primaryDomain = domains.find(isDomainReady);
   const isActive = deployment
     ? ACTIVE_DEPLOYMENT_STATUSES.has(deployment.status)
     : false;
 
+  const isProduction = environment === "production";
+
+  const handleClick = () => {
+    if (!deployment) return;
+    onNavigate({
+      to: "/projects/$id/deployments/$did",
+      params: { id: projectId, did: deployment.id },
+    });
+  };
+
   return (
-    <Card className="flex flex-col">
-      <CardHeader className="pb-3">
-        <div className="flex items-center justify-between">
-          <CardTitle className="text-sm font-semibold">
-            {envMeta.label}
-          </CardTitle>
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={onAction}
-            disabled={actionPending}
-          >
-            <Rocket className="mr-1.5 h-3.5 w-3.5" />
-            {actionLabel}
-          </Button>
-        </div>
-      </CardHeader>
-      <CardContent className="flex flex-1 flex-col gap-3">
-        {deployment ? (
-          <>
-            {/* Status */}
-            <div className="flex items-center gap-2">
-              <span
-                className={cn(
-                  "h-2.5 w-2.5 rounded-full",
-                  isActive && "animate-pulse",
-                  statusMeta?.dotClass ?? "bg-slate-500",
-                )}
-              />
-              <span className="text-sm font-medium">
-                {statusMeta?.label ?? deployment.status}
-              </span>
-            </div>
+    <button
+      type="button"
+      disabled={!deployment}
+      onClick={handleClick}
+      className={cn(
+        "flex w-full items-center gap-4 px-4 py-3 text-left transition-colors first:rounded-t-lg last:rounded-b-lg",
+        deployment && "hover:bg-accent cursor-pointer",
+        !deployment && "cursor-default",
+        isProduction && "border-l-2 border-l-amber-500/50",
+      )}
+    >
+      {/* Environment label */}
+      <Badge
+        variant="outline"
+        className={cn("shrink-0 text-xs", envMeta.badgeClass)}
+      >
+        {envMeta.label}
+      </Badge>
 
-            {/* Commit */}
-            <button
-              type="button"
-              onClick={() => onViewLogs(deployment.id)}
-              className="space-y-1 rounded-lg border bg-muted/30 p-3 text-left transition-colors hover:bg-accent"
-            >
-              <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                <GitCommit className="h-3.5 w-3.5" />
-                <span className="font-mono">
-                  {deployment.commit_sha
-                    ? deployment.commit_sha.slice(0, 7)
-                    : "pending"}
-                </span>
-              </div>
-              <p className="truncate text-sm font-medium text-foreground">
-                {deployment.commit_message ||
-                  deployment.error_message ||
-                  "Waiting for commit metadata"}
-              </p>
-            </button>
-
-            {/* Branch + duration + time */}
-            <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
-              <span className="flex items-center gap-1">
-                <GitBranch className="h-3.5 w-3.5" />
-                {deployment.branch}
-              </span>
-              {deployment.build_duration > 0 && (
-                <span className="flex items-center gap-1">
-                  <Clock className="h-3.5 w-3.5" />
-                  {deployment.build_duration}s
-                </span>
+      {deployment ? (
+        <>
+          {/* Status */}
+          <span className="flex shrink-0 items-center gap-1.5">
+            <span
+              className={cn(
+                "h-2 w-2 rounded-full",
+                isActive && "animate-pulse",
+                statusMeta?.dotClass ?? "bg-slate-500",
               )}
-              <span>{formatRelativeDate(deployment.created_at)}</span>
-            </div>
+            />
+            <span className="text-sm font-medium">
+              {statusMeta?.label ?? deployment.status}
+            </span>
+          </span>
 
-            {/* Primary domain */}
-            {primaryDomain && (
-              <a
-                href={`https://${primaryDomain.domain}`}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="mt-auto inline-flex items-center gap-1 text-sm text-muted-foreground transition-colors hover:text-foreground"
-              >
-                {primaryDomain.domain}
-                <ExternalLink className="h-3 w-3" />
-              </a>
-            )}
-          </>
-        ) : (
-          <div className="flex flex-1 items-center justify-center rounded-lg border border-dashed border-border/70 px-4 py-8 text-sm text-muted-foreground">
-            No deployment yet
-          </div>
-        )}
-      </CardContent>
-    </Card>
+          {/* Commit */}
+          <span className="flex shrink-0 items-center gap-1.5 text-muted-foreground">
+            <GitCommit className="h-3.5 w-3.5" />
+            <span className="font-mono text-xs">
+              {deployment.commit_sha
+                ? deployment.commit_sha.slice(0, 7)
+                : "pending"}
+            </span>
+          </span>
+
+          {/* Commit message */}
+          <span className="min-w-0 flex-1 truncate text-sm text-muted-foreground">
+            {deployment.commit_message ||
+              deployment.error_message ||
+              "Waiting for commit metadata"}
+          </span>
+
+          {/* Branch */}
+          <span className="hidden shrink-0 items-center gap-1 text-xs text-muted-foreground sm:flex">
+            <GitBranch className="h-3.5 w-3.5" />
+            {deployment.branch}
+          </span>
+
+          {/* Duration */}
+          {deployment.build_duration > 0 && (
+            <span className="hidden shrink-0 items-center gap-1 text-xs text-muted-foreground md:flex">
+              <Clock className="h-3.5 w-3.5" />
+              {deployment.build_duration}s
+            </span>
+          )}
+
+          {/* Time */}
+          <span className="shrink-0 text-xs text-muted-foreground">
+            {formatRelativeDate(deployment.created_at)}
+          </span>
+        </>
+      ) : (
+        <span className="flex-1 text-sm text-muted-foreground">
+          No deployment yet
+        </span>
+      )}
+    </button>
   );
 }

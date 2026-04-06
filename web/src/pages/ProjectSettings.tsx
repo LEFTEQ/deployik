@@ -51,7 +51,7 @@ export function ProjectSettings() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-8">
       <BuildSettingsSection project={project} />
       <div className="border-b" />
       <DangerZone
@@ -103,7 +103,7 @@ function BuildSettingsSection({
   });
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-6">
       <div>
         <h2 className="text-base font-semibold">Build Settings</h2>
         <p className="text-sm text-muted-foreground">
