@@ -24,11 +24,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   Card,
-  CardAction,
   CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
 } from "@/components/ui/card";
 import {
   Drawer,
@@ -116,41 +112,39 @@ export function ProjectDeployments() {
 
   return (
     <div className="space-y-4">
-      <Card className="@container/card">
-        <CardHeader>
-          <div>
-            <CardTitle className="text-base">Deployments</CardTitle>
-            <CardDescription>
-              Every deployment stays readable and row-clickable, with direct
-              access to logs and live endpoints.
-            </CardDescription>
-          </div>
-          <CardAction className="flex flex-wrap gap-2">
-            <Button
-              size="sm"
-              onClick={() =>
-                deploymentMutation.mutate({ environment: "preview" })
-              }
-              disabled={deploymentMutation.isPending}
-            >
-              <Rocket className="mr-1.5 h-3.5 w-3.5" />
-              Deploy Preview
-            </Button>
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => {
-                setReleaseTagName(buildReleaseTagName());
-                setReleaseSheetOpen(true);
-              }}
-              disabled={deploymentMutation.isPending}
-            >
-              <GlobeLock className="mr-1.5 h-3.5 w-3.5" />
-              Release
-            </Button>
-          </CardAction>
-        </CardHeader>
-      </Card>
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div>
+          <h2 className="text-base font-semibold">Deployments</h2>
+          <p className="text-sm text-muted-foreground">
+            Every deployment stays readable and row-clickable, with direct
+            access to logs and live endpoints.
+          </p>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <Button
+            size="sm"
+            onClick={() =>
+              deploymentMutation.mutate({ environment: "preview" })
+            }
+            disabled={deploymentMutation.isPending}
+          >
+            <Rocket className="mr-1.5 h-3.5 w-3.5" />
+            Deploy Preview
+          </Button>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => {
+              setReleaseTagName(buildReleaseTagName());
+              setReleaseSheetOpen(true);
+            }}
+            disabled={deploymentMutation.isPending}
+          >
+            <GlobeLock className="mr-1.5 h-3.5 w-3.5" />
+            Release
+          </Button>
+        </div>
+      </div>
 
       {isLoading ? (
         <LoadingState

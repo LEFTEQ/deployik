@@ -23,7 +23,6 @@ import { Button } from "@/components/ui/button";
 import {
   Card,
   CardContent,
-  CardDescription,
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
@@ -54,6 +53,7 @@ export function ProjectSettings() {
   return (
     <div className="space-y-6">
       <BuildSettingsSection project={project} />
+      <div className="border-b" />
       <DangerZone
         projectId={id}
         onDeleted={() => {
@@ -103,38 +103,36 @@ function BuildSettingsSection({
   });
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle className="text-base">Build Settings</CardTitle>
-        <CardDescription>
+    <div className="space-y-4">
+      <div>
+        <h2 className="text-base font-semibold">Build Settings</h2>
+        <p className="text-sm text-muted-foreground">
           Source control branch, framework defaults, and package/runtime
           behavior for this project.
-        </CardDescription>
-      </CardHeader>
-      <CardContent className="space-y-4">
-        <div className="space-y-2">
-          <Label>Workspace</Label>
-          <Input value={project.organization_name || "Personal"} disabled />
-        </div>
-        <div className="space-y-2">
-          <Label>Branch</Label>
-          <Input
-            value={branch}
-            onChange={(event) => setBranch(event.target.value)}
-          />
-        </div>
-        <BuildSettingsFields
-          value={buildSettings}
-          onChange={setBuildSettings}
+        </p>
+      </div>
+      <div className="space-y-2">
+        <Label>Workspace</Label>
+        <Input value={project.organization_name || "Personal"} disabled />
+      </div>
+      <div className="space-y-2">
+        <Label>Branch</Label>
+        <Input
+          value={branch}
+          onChange={(event) => setBranch(event.target.value)}
         />
-        <Button
-          onClick={() => updateMutation.mutate()}
-          disabled={updateMutation.isPending}
-        >
-          {updateMutation.isPending ? "Saving..." : "Save Settings"}
-        </Button>
-      </CardContent>
-    </Card>
+      </div>
+      <BuildSettingsFields
+        value={buildSettings}
+        onChange={setBuildSettings}
+      />
+      <Button
+        onClick={() => updateMutation.mutate()}
+        disabled={updateMutation.isPending}
+      >
+        {updateMutation.isPending ? "Saving..." : "Save Settings"}
+      </Button>
+    </div>
   );
 }
 

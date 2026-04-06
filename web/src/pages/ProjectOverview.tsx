@@ -113,49 +113,45 @@ export function ProjectOverview() {
   return (
     <div className="space-y-4">
       {/* Project Header */}
-      <Card>
-        <CardContent className="pt-5 pb-4">
-          <div className="space-y-3">
-            <div className="flex flex-wrap items-center gap-2">
-              <Badge
-                variant="outline"
-                className={cn(
-                  "border-white/10 bg-white/5 text-slate-200",
-                  project.status === "active" &&
-                    "border-emerald-400/25 bg-emerald-400/12 text-emerald-100",
-                )}
-              >
-                <CircleDot className="mr-1 size-3 fill-current" />
-                {project.status}
-              </Badge>
-              <Badge
-                variant="outline"
-                className="border-primary/20 bg-primary/10 font-mono text-primary"
-              >
-                {formatFrameworkLabel(project.framework)}
-              </Badge>
-            </div>
-            <h1 className="text-xl font-semibold tracking-tight sm:text-2xl">
-              {project.name}
-            </h1>
-            <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-muted-foreground">
-              <span className="truncate">
-                {project.github_owner}/{project.github_repo}
-              </span>
-              <span className="flex items-center gap-1">
-                <GitBranch className="h-3.5 w-3.5" />
-                {project.branch}
-              </span>
-              {project.organization_name ? (
-                <span className="flex items-center gap-1">
-                  <Building2 className="h-3.5 w-3.5" />
-                  {project.organization_name}
-                </span>
-              ) : null}
-            </div>
-          </div>
-        </CardContent>
-      </Card>
+      <div className="space-y-3 pb-2">
+        <div className="flex flex-wrap items-center gap-2">
+          <Badge
+            variant="outline"
+            className={cn(
+              "border-white/10 bg-white/5 text-slate-200",
+              project.status === "active" &&
+                "border-emerald-400/25 bg-emerald-400/12 text-emerald-100",
+            )}
+          >
+            <CircleDot className="mr-1 size-3 fill-current" />
+            {project.status}
+          </Badge>
+          <Badge
+            variant="outline"
+            className="border-primary/20 bg-primary/10 font-mono text-primary"
+          >
+            {formatFrameworkLabel(project.framework)}
+          </Badge>
+        </div>
+        <h1 className="text-xl font-semibold tracking-tight sm:text-2xl">
+          {project.name}
+        </h1>
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-muted-foreground">
+          <span className="truncate">
+            {project.github_owner}/{project.github_repo}
+          </span>
+          <span className="flex items-center gap-1">
+            <GitBranch className="h-3.5 w-3.5" />
+            {project.branch}
+          </span>
+          {project.organization_name ? (
+            <span className="flex items-center gap-1">
+              <Building2 className="h-3.5 w-3.5" />
+              {project.organization_name}
+            </span>
+          ) : null}
+        </div>
+      </div>
 
       {/* Domain Strip */}
       {readyDomains.length > 0 && (

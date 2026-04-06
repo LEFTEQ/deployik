@@ -83,12 +83,6 @@ export function Projects() {
     <div className="p-6">
       <div className="mb-6 flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
         <div>
-          <Badge
-            variant="outline"
-            className="mb-3 border-primary/25 bg-primary/10 text-primary"
-          >
-            Deploy faster
-          </Badge>
           <h1 className="text-2xl font-bold tracking-tight">Projects</h1>
           <p className="text-sm text-muted-foreground">
             {selectedOrganization

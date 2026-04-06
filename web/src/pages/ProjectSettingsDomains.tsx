@@ -15,13 +15,6 @@ import { ENVIRONMENT_META, isDomainReady } from "@/lib/deployment-helpers";
 import { DnsSetupGuide } from "@/components/projects/dns-setup-guide";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { LoadingState } from "@/components/ui/spinner";
 import {
@@ -78,15 +71,15 @@ export function ProjectSettingsDomains() {
   return (
     <div className="space-y-4">
       {/* Add domain form */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">Add Custom Domain</CardTitle>
-          <CardDescription>
+      <div className="space-y-3">
+        <div>
+          <h2 className="text-base font-semibold">Add Custom Domain</h2>
+          <p className="text-sm text-muted-foreground">
             Choose whether the domain should front preview or production.
             Production is usually the bought, customer-facing domain.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="grid gap-3 md:grid-cols-[minmax(0,1fr)_180px_auto]">
+          </p>
+        </div>
+        <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_180px_auto]">
           <Input
             placeholder="example.com"
             value={newDomain}
@@ -112,8 +105,8 @@ export function ProjectSettingsDomains() {
           >
             {addMutation.isPending ? "Adding..." : "Add domain"}
           </Button>
-        </CardContent>
-      </Card>
+        </div>
+      </div>
 
       {/* DNS setup guide */}
       <DnsSetupGuide
@@ -123,26 +116,26 @@ export function ProjectSettingsDomains() {
       />
 
       {/* Domain inventory */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">Domain Inventory</CardTitle>
-          <CardDescription>
+      <div className="space-y-3">
+        <div>
+          <h2 className="text-base font-semibold">Domain Inventory</h2>
+          <p className="text-sm text-muted-foreground">
             Verified domains become quick links automatically.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-3">
-          {isLoading ? (
-            <LoadingState
-              title="Loading domains..."
-              description="Fetching custom domains, verification, and SSL state."
-              className="min-h-[220px]"
-            />
-          ) : !domains?.length ? (
-            <div className="rounded-xl border border-dashed border-border/70 px-4 py-6 text-sm text-muted-foreground">
-              No domains yet.
-            </div>
-          ) : (
-            domains.map((domain) => {
+          </p>
+        </div>
+        {isLoading ? (
+          <LoadingState
+            title="Loading domains..."
+            description="Fetching custom domains, verification, and SSL state."
+            className="min-h-[220px]"
+          />
+        ) : !domains?.length ? (
+          <div className="rounded-lg border border-dashed border-border/70 px-4 py-6 text-sm text-muted-foreground">
+            No domains yet.
+          </div>
+        ) : (
+          <div className="divide-y rounded-lg border">
+            {domains.map((domain) => {
               const ready = isDomainReady(domain);
               const verifying =
                 verifyMutation.isPending &&
@@ -151,7 +144,7 @@ export function ProjectSettingsDomains() {
               return (
                 <div
                   key={domain.id}
-                  className="flex flex-col gap-4 rounded-xl border bg-muted/30 p-4 md:flex-row md:items-center md:justify-between"
+                  className="flex flex-col gap-4 px-4 py-3 md:flex-row md:items-center md:justify-between"
                 >
                   <div className="space-y-2">
                     <div className="flex flex-wrap items-center gap-2">
@@ -221,10 +214,10 @@ export function ProjectSettingsDomains() {
                   </div>
                 </div>
               );
-            })
-          )}
-        </CardContent>
-      </Card>
+            })}
+          </div>
+        )}
+      </div>
     </div>
   );
 }
