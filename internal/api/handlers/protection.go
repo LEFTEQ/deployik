@@ -184,12 +184,26 @@ func (h *ProtectionHandler) Verify(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Support both JSON (API) and form-encoded (auth page form)
 	var req verifyRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request body"})
-		return
+	isFormPost := strings.Contains(r.Header.Get("Content-Type"), "application/x-www-form-urlencoded")
+	if isFormPost {
+		if err := r.ParseForm(); err != nil {
+			http.Error(w, "invalid form", http.StatusBadRequest)
+			return
+		}
+		req.Password = r.FormValue("password")
+	} else {
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request body"})
+			return
+		}
 	}
 	if req.Password == "" {
+		if isFormPost {
+			http.Redirect(w, r, r.Header.Get("Referer")+"?error=1", http.StatusSeeOther)
+			return
+		}
 		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "invalid password"})
 		return
 	}
@@ -212,6 +226,14 @@ func (h *ProtectionHandler) Verify(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if !hmac.Equal([]byte(req.Password), []byte(plaintext)) {
+		if isFormPost {
+			referer := r.Header.Get("Referer")
+			if referer == "" {
+				referer = "/"
+			}
+			http.Redirect(w, r, referer+"?error=1", http.StatusSeeOther)
+			return
+		}
 		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "invalid password"})
 		return
 	}
@@ -230,6 +252,16 @@ func (h *ProtectionHandler) Verify(w http.ResponseWriter, r *http.Request) {
 		Secure:   isSecure,
 		SameSite: http.SameSiteLaxMode,
 	})
+
+	// If this is a form POST (not JSON fetch), redirect back to the site root
+	if r.Header.Get("Content-Type") == "application/x-www-form-urlencoded" {
+		redirectTo := r.Header.Get("Referer")
+		if redirectTo == "" {
+			redirectTo = "/"
+		}
+		http.Redirect(w, r, redirectTo, http.StatusSeeOther)
+		return
+	}
 
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }

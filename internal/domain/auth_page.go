@@ -136,9 +136,9 @@ const authPageHTML = `<!DOCTYPE html>
     <button class="access-toggle" onclick="toggleLogin()">Přístup</button>
 
     <div class="login-form" id="loginForm">
-      <form onsubmit="submitPassword(event)">
+      <form method="POST" action="/_deployik/verify" id="authForm">
         <div class="input-group">
-          <input type="password" id="passwordInput" placeholder="Heslo" autocomplete="current-password" />
+          <input type="password" name="password" id="passwordInput" placeholder="Heslo" autocomplete="current-password" />
           <button type="submit" id="submitBtn">Vstoupit</button>
         </div>
         <div class="error-msg" id="errorMsg">Nesprávné heslo. Zkuste to znovu.</div>
@@ -154,39 +154,10 @@ const authPageHTML = `<!DOCTYPE html>
         document.getElementById('passwordInput').focus();
       }
     }
-
-    async function submitPassword(e) {
-      e.preventDefault();
-      var password = document.getElementById('passwordInput').value;
-      var btn = document.getElementById('submitBtn');
-      var errMsg = document.getElementById('errorMsg');
-
-      if (!password) return;
-
-      btn.disabled = true;
-      errMsg.classList.remove('visible');
-
-      try {
-        var resp = await fetch('/_deployik/verify', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ password: password }),
-          credentials: 'same-origin'
-        });
-
-        if (resp.ok) {
-          window.location.reload();
-        } else {
-          errMsg.classList.add('visible');
-          document.getElementById('passwordInput').value = '';
-          document.getElementById('passwordInput').focus();
-        }
-      } catch (err) {
-        errMsg.textContent = 'Chyba připojení. Zkuste to znovu.';
-        errMsg.classList.add('visible');
-      } finally {
-        btn.disabled = false;
-      }
+    // Show error if redirected back with ?error=1
+    if (window.location.search.indexOf('error=1') !== -1) {
+      document.getElementById('loginForm').classList.add('visible');
+      document.getElementById('errorMsg').classList.add('visible');
     }
   </script>
 </body>
