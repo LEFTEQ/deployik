@@ -44,6 +44,12 @@ export interface Project {
   install_command: string;
   node_version: string;
   status: "active" | "paused" | "deleted";
+  latest_deployment_id: string | null;
+  latest_deployment_status: string | null;
+  latest_deployment_branch: string | null;
+  latest_deployment_commit_sha: string | null;
+  latest_deployment_commit_message: string | null;
+  latest_deployment_created_at: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -70,6 +76,9 @@ export interface Deployment {
   image_tag: string;
   build_duration: number;
   triggered_by: string;
+  trigger_source: "manual" | "webhook" | "api";
+  triggered_by_username: string;
+  screenshot_path: string | null;
   error_message?: string;
   created_at: string;
   finished_at: string | null;
@@ -228,4 +237,32 @@ export interface ProjectAnalyticsPayload {
   domains: AnalyticsDomainGroups;
   audience: AudienceAnalyticsPayload;
   runtime: RuntimeAnalyticsPayload;
+}
+
+// Auto-build configuration
+export interface AutoBuildConfig {
+  enabled: boolean;
+  production_branch: string;
+  preview_branches: string;
+  webhook_active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+// Deployment list query filters
+export interface DeploymentListFilters {
+  branch?: string;
+  environment?: "preview" | "production";
+  status?: string;
+  triggered_by?: string;
+  from?: string;
+  to?: string;
+  limit?: number;
+  offset?: number;
+}
+
+// Paginated deployment list response
+export interface DeploymentListResponse {
+  deployments: Deployment[];
+  total: number;
 }

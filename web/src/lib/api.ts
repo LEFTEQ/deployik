@@ -15,6 +15,9 @@ import type {
   AnalyticsEnvironmentFilter,
   AnalyticsRangePreset,
   ProjectAnalyticsPayload,
+  AutoBuildConfig,
+  DeploymentListFilters,
+  DeploymentListResponse,
 } from "@/types/api";
 
 const API_URL = import.meta.env.VITE_API_URL || "/api";
@@ -335,6 +338,58 @@ class ApiClient {
   // Build logs (Phase 9)
   async getBuildLogs(deploymentId: string): Promise<BuildLog[]> {
     return this.request(`/deployments/${deploymentId}/logs`);
+  }
+
+  // Filtered deployment listing
+  async listDeploymentsFiltered(
+    projectId: string,
+    filters: DeploymentListFilters,
+  ): Promise<DeploymentListResponse> {
+    const params = new URLSearchParams();
+    if (filters.branch) params.set("branch", filters.branch);
+    if (filters.environment) params.set("environment", filters.environment);
+    if (filters.status) params.set("status", filters.status);
+    if (filters.triggered_by) params.set("triggered_by", filters.triggered_by);
+    if (filters.from) params.set("from", filters.from);
+    if (filters.to) params.set("to", filters.to);
+    if (filters.limit) params.set("limit", String(filters.limit));
+    if (filters.offset) params.set("offset", String(filters.offset));
+    const query = params.toString();
+    return this.request<DeploymentListResponse>(
+      `/projects/${projectId}/deployments${query ? "?" + query : ""}`,
+    );
+  }
+
+  // Auto-build configuration
+  async getAutoBuildConfig(projectId: string): Promise<AutoBuildConfig> {
+    return this.request<AutoBuildConfig>(
+      `/projects/${projectId}/auto-build`,
+    );
+  }
+
+  async updateAutoBuildConfig(
+    projectId: string,
+    data: {
+      enabled: boolean;
+      production_branch: string;
+      preview_branches: string;
+    },
+  ): Promise<AutoBuildConfig> {
+    return this.request<AutoBuildConfig>(
+      `/projects/${projectId}/auto-build`,
+      { method: "PUT", body: JSON.stringify(data) },
+    );
+  }
+
+  async deleteAutoBuildConfig(projectId: string): Promise<void> {
+    return this.request(`/projects/${projectId}/auto-build`, {
+      method: "DELETE",
+    });
+  }
+
+  // Deployment screenshots
+  getDeploymentScreenshotUrl(deploymentId: string): string {
+    return `${API_URL}/deployments/${deploymentId}/screenshot`;
   }
 
   // WebSocket URL builder
