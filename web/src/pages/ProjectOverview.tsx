@@ -1,60 +1,49 @@
+import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link, useNavigate, useParams } from "@tanstack/react-router";
 import {
-  Activity,
-  BarChart3,
-  CircleDot,
-  Copy,
+  ChevronRight,
   ExternalLink,
   GitBranch,
   GitCommit,
-  Globe2,
-  GlobeLock,
-  Link2,
-  Rocket,
-  Building2,
+  Search,
 } from "lucide-react";
-import { toast } from "sonner";
 
 import { api } from "@/lib/api";
 import {
   ACTIVE_DEPLOYMENT_STATUSES,
   DEPLOYMENT_STATUS_META,
   ENVIRONMENT_META,
-  formatCompactNumber,
   formatRelativeDate,
-  getLatestEnvironmentDeployment,
   getLatestLiveEnvironmentDeployment,
   getPrimaryEnvironmentUrl,
   isDomainReady,
 } from "@/lib/deployment-helpers";
 import { formatFrameworkLabel } from "@/components/projects/build-settings";
-import { AUDIENCE_STATUS_META } from "@/components/projects/project-analytics-meta";
-import { OverviewStatCard } from "@/components/projects/overview-stat-card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   Card,
-  CardAction,
   CardContent,
-  CardDescription,
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
 import { LoadingState } from "@/components/ui/spinner";
 import { cn } from "@/lib/utils";
-import type { Deployment, Domain } from "@/types/api";
+import type { Deployment } from "@/types/api";
 
 export function ProjectOverview() {
   const { id } = useParams({ strict: false }) as { id: string };
   const navigate = useNavigate();
+  const [branchSearch, setBranchSearch] = useState("");
 
   const { data: project, isLoading } = useQuery({
     queryKey: ["project", id],
     queryFn: () => api.getProject(id),
   });
 
-  const { data: deployments, isLoading: deploymentsLoading } = useQuery({
+  const { data: deployments } = useQuery({
     queryKey: ["deployments", id],
     queryFn: () => api.listDeployments(id),
     refetchInterval: (query) => {
@@ -65,22 +54,14 @@ export function ProjectOverview() {
     },
   });
 
-  const { data: domains, isLoading: domainsLoading } = useQuery({
+  const { data: domains } = useQuery({
     queryKey: ["domains", id],
     queryFn: () => api.listDomains(id),
   });
 
-  const timezone =
-    Intl.DateTimeFormat().resolvedOptions().timeZone?.trim() || "UTC";
-
-  const { data: analytics, isLoading: analyticsLoading } = useQuery({
-    queryKey: ["project-overview-analytics", id, timezone],
-    queryFn: () =>
-      api.getProjectAnalytics(id, {
-        environment: "all",
-        range: "24h",
-        timezone,
-      }),
+  const { data: autoBuild } = useQuery({
+    queryKey: ["auto-build", id],
+    queryFn: () => api.getAutoBuildConfig(id).catch(() => null),
   });
 
   if (isLoading) {
@@ -104,431 +85,365 @@ export function ProjectOverview() {
     );
   }
 
-  const latestDeployment = deployments?.[0] ?? null;
-  const latestRelease = getLatestLiveEnvironmentDeployment(
+  const liveProduction = getLatestLiveEnvironmentDeployment(
     deployments,
     "production",
   );
-  const latestPreview = getLatestEnvironmentDeployment(deployments, "preview");
-  const latestProduction = getLatestEnvironmentDeployment(
-    deployments,
-    "production",
-  );
-  const previewUrl = getPrimaryEnvironmentUrl(domains, "preview");
   const productionUrl = getPrimaryEnvironmentUrl(domains, "production");
-  const readyDomainCount = (domains ?? []).filter(isDomainReady).length;
-
-  const overviewAudienceMeta = AUDIENCE_STATUS_META[
-    analytics?.audience.status ?? ""
-  ] ??
-    AUDIENCE_STATUS_META.ready_to_install ?? {
-      label: "Ready to install",
-      badgeClass: "border-primary/25 bg-primary/12 text-primary",
-      description:
-        "The website exists. Add the tracker to start collecting audience data.",
-    };
-
-  const copyUrl = async (value: string, label: string) => {
-    try {
-      await navigator.clipboard.writeText(value);
-      toast.success(`${label} copied`);
-    } catch {
-      toast.error(`Couldn't copy ${label.toLowerCase()}`);
-    }
-  };
+  const allDomains = domains ?? [];
+  const totalDomainCount = allDomains.length;
+  const pendingDomainCount = allDomains.filter((d) => !isDomainReady(d)).length;
 
   return (
     <div className="space-y-4">
-      {/* Project header card */}
-      <Card className="@container/card">
-        <CardHeader>
-          <div className="min-w-0 space-y-3">
-            <div className="flex flex-wrap items-center gap-2">
-              <Badge
-                variant="outline"
-                className={cn(
-                  "border-white/10 bg-white/5 text-slate-200",
-                  project.status === "active" &&
-                    "border-emerald-400/25 bg-emerald-400/12 text-emerald-100",
-                )}
-              >
-                <CircleDot className="mr-1 size-3 fill-current" />
-                {project.status}
-              </Badge>
-              <Badge
-                variant="outline"
-                className="border-primary/20 bg-primary/10 font-mono text-primary"
-              >
-                {formatFrameworkLabel(project.framework)}
-              </Badge>
-            </div>
-            <div className="min-w-0">
-              <CardTitle className="text-xl tracking-tight sm:text-2xl">
-                {project.name}
-              </CardTitle>
-              <CardDescription className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1">
-                <span className="min-w-0 truncate">
-                  {project.github_owner}/{project.github_repo}
-                </span>
-                <span className="flex items-center gap-1">
-                  <GitBranch className="h-3.5 w-3.5" />
-                  {project.branch}
-                </span>
-                {project.organization_name ? (
-                  <span className="flex items-center gap-1">
-                    <Building2 className="h-3.5 w-3.5" />
-                    {project.organization_name}
-                  </span>
-                ) : null}
-              </CardDescription>
-            </div>
-          </div>
-        </CardHeader>
-      </Card>
-
-      {/* Live endpoints */}
-      <Card className="@container/card">
-        <CardHeader>
-          <div className="flex flex-wrap items-center gap-2">
-            <CardTitle className="text-base">Live Endpoints</CardTitle>
-            <CardDescription>
-              Quick public links to the current preview and production endpoints.
-            </CardDescription>
-          </div>
-          <CardAction>
-            <Badge variant="outline" className="hidden sm:inline-flex">
-              {project.name}.preview.example.com
-            </Badge>
-          </CardAction>
-        </CardHeader>
-        <CardContent>
-          <div className="grid gap-3 md:grid-cols-2">
-            <LiveEndpointChip
-              environment="preview"
-              url={previewUrl}
-              deployment={latestPreview}
-              onCopy={copyUrl}
-            />
-            <LiveEndpointChip
-              environment="production"
-              url={productionUrl}
-              deployment={latestProduction}
-              onCopy={copyUrl}
-            />
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* Summary stat cards */}
-      <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
-        <OverviewStatCard
-          label="Preview Health"
-          value={
-            latestPreview
-              ? DEPLOYMENT_STATUS_META[latestPreview.status].label
-              : "Not deployed"
-          }
-          icon={<Globe2 className="h-4 w-4" />}
-          hint={
-            previewUrl
-              ? "Preview has an active public endpoint."
-              : "Deploy preview to create a public staging URL."
-          }
-        />
-        <OverviewStatCard
-          label="Production Health"
-          value={
-            latestProduction
-              ? DEPLOYMENT_STATUS_META[latestProduction.status].label
-              : "Not released"
-          }
-          icon={<GlobeLock className="h-4 w-4" />}
-          hint={
-            productionUrl
-              ? "Production has a verified domain."
-              : "Release once production domains are ready."
-          }
-        />
-        <OverviewStatCard
-          label="Latest Release"
-          value={latestRelease ? latestRelease.commit_sha.slice(0, 7) : "None"}
-          icon={<Rocket className="h-4 w-4" />}
-          hint={
-            latestRelease
-              ? `Released ${formatRelativeDate(latestRelease.created_at)}`
-              : "No successful production release yet."
-          }
-        />
-        <OverviewStatCard
-          label="Active Domains"
-          value={readyDomainCount.toString()}
-          icon={<Link2 className="h-4 w-4" />}
-          hint="Verified domains with active SSL."
-        />
-        <OverviewStatCard
-          label="Traffic"
-          value={
-            analyticsLoading
-              ? "--"
-              : formatCompactNumber(analytics?.runtime.summary.requests ?? 0)
-          }
-          icon={<Activity className="h-4 w-4" />}
-          hint="Requests over the last 24 hours."
-        />
-        <OverviewStatCard
-          label="Analytics Status"
-          value={analytics ? overviewAudienceMeta.label : "Loading"}
-          icon={<BarChart3 className="h-4 w-4" />}
-          hint={
-            analytics?.audience.status === "ready_to_install"
-              ? "Setup is still pending."
-              : "Audience analytics status from Umami."
-          }
-        />
-      </div>
-
-      {/* Latest deployment card */}
-      <Card className="@container/card overflow-hidden">
-        <CardHeader>
-          <div className="space-y-2">
-            <div className="flex flex-wrap items-center gap-2">
-              <Badge
-                variant="outline"
-                className={
-                  latestDeployment
-                    ? DEPLOYMENT_STATUS_META[latestDeployment.status].badgeClass
-                    : "border-white/10 bg-white/5 text-slate-200"
-                }
-              >
-                {latestDeployment
-                  ? DEPLOYMENT_STATUS_META[latestDeployment.status].label
-                  : "No deployments yet"}
-              </Badge>
-              {latestDeployment ? (
-                <Badge
-                  variant="outline"
-                  className={
-                    ENVIRONMENT_META[latestDeployment.environment].badgeClass
-                  }
+      {/* A: Production Deployment Hero Card */}
+      <Card>
+        <CardHeader className="pb-3">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <CardTitle className="text-base font-semibold">
+              Production Deployment
+            </CardTitle>
+            <div className="flex shrink-0 gap-2">
+              <Button asChild size="sm" variant="outline">
+                <a
+                  href={`https://github.com/${project.github_owner}/${project.github_repo}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
                 >
-                  {ENVIRONMENT_META[latestDeployment.environment].label}
-                </Badge>
+                  <ExternalLink className="mr-1.5 h-3.5 w-3.5" />
+                  Repository
+                </a>
+              </Button>
+              {productionUrl ? (
+                <Button asChild size="sm">
+                  <a
+                    href={productionUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  >
+                    <ExternalLink className="mr-1.5 h-3.5 w-3.5" />
+                    Visit
+                  </a>
+                </Button>
               ) : null}
             </div>
-            <CardTitle className="text-base">Latest Deployment</CardTitle>
-            <CardDescription>
-              The newest build is the fastest way to read the current state of
-              this project.
-            </CardDescription>
           </div>
-          <CardAction className="flex flex-wrap gap-2">
-            <Button
-              variant="outline"
-              onClick={() =>
-                navigate({
-                  to: "/projects/$id/deployments",
-                  params: { id },
-                })
-              }
-            >
-              See All
-            </Button>
-            {analytics?.audience.status === "ready_to_install" ? (
-              <Button
-                onClick={() =>
-                  navigate({
-                    to: "/projects/$id/integration",
-                    params: { id },
-                  })
-                }
-              >
-                Setup Analytics
-              </Button>
-            ) : null}
-          </CardAction>
         </CardHeader>
         <CardContent>
-          {deploymentsLoading || domainsLoading ? (
-            <LoadingState
-              title="Loading deployments..."
-              description="Preparing the latest deployment and endpoint activity."
-              className="min-h-[280px]"
-            />
-          ) : latestDeployment ? (
-            <div className="grid gap-4 xl:grid-cols-[minmax(0,1.1fr)_minmax(280px,0.9fr)]">
-              <div className="rounded-xl border bg-muted/30 p-5">
-                <div className="flex items-start justify-between gap-4">
-                  <div className="min-w-0">
-                    <div className="flex items-center gap-2 text-sm font-medium text-foreground">
-                      <GitCommit className="h-4 w-4 text-muted-foreground" />
-                      {latestDeployment.commit_sha
-                        ? latestDeployment.commit_sha.slice(0, 7)
-                        : "pending"}
-                    </div>
-                    <p
-                      className="mt-3 truncate text-lg font-semibold text-foreground"
-                      title={
-                        latestDeployment.commit_message ||
-                        latestDeployment.error_message
-                      }
-                    >
-                      {latestDeployment.commit_message ||
-                        latestDeployment.error_message ||
-                        "Waiting for commit metadata"}
-                    </p>
-                  </div>
+          {liveProduction ? (
+            <div className="grid gap-4 md:grid-cols-[280px_1fr]">
+              {/* Left: Framework icon placeholder */}
+              <div className="flex flex-col items-center justify-center gap-2 rounded-xl border bg-muted/30 px-6 py-8">
+                <div className="flex h-14 w-14 items-center justify-center rounded-xl border bg-background text-xl font-bold tracking-tight text-foreground">
+                  {formatFrameworkLabel(project.framework)
+                    .slice(0, 2)
+                    .toUpperCase()}
                 </div>
-                <div className="mt-5 grid gap-3 sm:grid-cols-3">
-                  <MiniMeta label="Branch" value={latestDeployment.branch} />
-                  <MiniMeta
-                    label="Started"
-                    value={formatRelativeDate(latestDeployment.created_at)}
-                  />
-                  <MiniMeta
-                    label="Duration"
-                    value={
-                      latestDeployment.build_duration > 0
-                        ? `${latestDeployment.build_duration}s`
-                        : "--"
-                    }
-                  />
-                </div>
+                <span className="text-sm font-medium text-muted-foreground">
+                  {formatFrameworkLabel(project.framework)}
+                </span>
               </div>
 
-              <div className="space-y-3">
-                <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
-                  Previous deployments
-                </p>
-                {(deployments ?? []).slice(1, 4).length ? (
-                  (deployments ?? []).slice(1, 4).map((deployment) => (
-                    <button
-                      type="button"
-                      key={deployment.id}
-                      onClick={() =>
-                        navigate({
-                          to: "/projects/$id/deployments/$did",
-                          params: { id, did: deployment.id },
-                        })
-                      }
-                      className="flex w-full items-center justify-between gap-3 rounded-xl border bg-muted/30 px-4 py-3 text-left transition-colors hover:bg-accent"
-                    >
-                      <div className="min-w-0">
-                        <p className="text-sm font-medium text-foreground">
-                          {deployment.commit_sha
-                            ? deployment.commit_sha.slice(0, 7)
-                            : deployment.id.slice(0, 8)}
-                        </p>
-                        <p className="truncate text-xs text-muted-foreground">
-                          {deployment.commit_message ||
-                            DEPLOYMENT_STATUS_META[deployment.status].label}
-                        </p>
-                      </div>
-                      <div className="text-right">
-                        <p className="text-xs text-muted-foreground">
-                          {ENVIRONMENT_META[deployment.environment].label}
-                        </p>
-                        <p className="mt-1 text-xs text-muted-foreground">
-                          {formatRelativeDate(deployment.created_at)}
-                        </p>
-                      </div>
-                    </button>
-                  ))
-                ) : (
-                  <div className="rounded-xl border border-dashed border-border/70 px-4 py-8 text-sm text-muted-foreground">
-                    No previous deployments yet.
+              {/* Right: Metadata */}
+              <div className="space-y-4">
+                <MetaRow label="Deployment ID">
+                  <span className="font-mono text-sm">
+                    {liveProduction.id.slice(0, 8)}
+                  </span>
+                </MetaRow>
+
+                <MetaRow label="Domains">
+                  <div className="flex flex-col gap-1">
+                    {allDomains
+                      .filter((d) => d.environment === "production")
+                      .map((d) => (
+                        <a
+                          key={d.id}
+                          href={`https://${d.domain}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex items-center gap-1 text-sm text-primary hover:underline"
+                        >
+                          {d.domain}
+                          <ExternalLink className="h-3 w-3" />
+                        </a>
+                      ))}
+                    {allDomains.filter((d) => d.environment === "production")
+                      .length === 0 ? (
+                      <span className="text-sm text-muted-foreground">
+                        No production domains
+                      </span>
+                    ) : null}
                   </div>
-                )}
+                </MetaRow>
+
+                <MetaRow label="Status">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Badge
+                      variant="outline"
+                      className={
+                        DEPLOYMENT_STATUS_META[liveProduction.status].badgeClass
+                      }
+                    >
+                      {DEPLOYMENT_STATUS_META[liveProduction.status].label}
+                    </Badge>
+                    <span className="text-sm text-muted-foreground">
+                      {formatRelativeDate(liveProduction.created_at)}
+                    </span>
+                  </div>
+                </MetaRow>
+
+                <MetaRow label="Source">
+                  <div className="space-y-1">
+                    <div className="flex items-center gap-1.5 text-sm text-foreground">
+                      <GitBranch className="h-3.5 w-3.5 text-muted-foreground" />
+                      {liveProduction.branch}
+                    </div>
+                    <div className="flex items-center gap-1.5 text-sm text-muted-foreground">
+                      <GitCommit className="h-3.5 w-3.5" />
+                      <span className="font-mono">
+                        {liveProduction.commit_sha
+                          ? liveProduction.commit_sha.slice(0, 7)
+                          : "—"}
+                      </span>
+                      {liveProduction.commit_message ? (
+                        <span className="truncate">
+                          {liveProduction.commit_message}
+                        </span>
+                      ) : null}
+                    </div>
+                  </div>
+                </MetaRow>
               </div>
             </div>
           ) : (
-            <div className="rounded-xl border border-dashed border-border/70 px-5 py-12 text-sm text-muted-foreground">
-              No deployments yet. Deploy a preview or release to production to
-              get started.
+            <div className="rounded-xl border border-dashed border-border/70 px-5 py-12 text-center text-sm text-muted-foreground">
+              No production deployment yet. Release to production to see it
+              here.
             </div>
           )}
         </CardContent>
       </Card>
+
+      {/* B: Info Banner */}
+      <div className="flex items-center justify-between gap-4 rounded-lg border bg-muted/30 px-4 py-3">
+        <p className="text-sm text-muted-foreground">
+          To update your Production Deployment, push to the{" "}
+          <span className="font-medium text-foreground">{project.branch}</span>{" "}
+          branch.
+        </p>
+        <Button
+          variant="outline"
+          size="sm"
+          className="shrink-0"
+          onClick={() =>
+            navigate({ to: "/projects/$id/deployments", params: { id } })
+          }
+        >
+          Deployments
+        </Button>
+      </div>
+
+      {/* C: Three Compact Summary Cards */}
+      <div className="grid gap-3 md:grid-cols-3">
+        {/* Domains card */}
+        <button
+          type="button"
+          className="group flex min-h-[120px] flex-col justify-between rounded-lg border bg-card px-4 py-3 text-left transition-colors hover:bg-accent"
+          onClick={() =>
+            navigate({ to: "/projects/$id/settings", params: { id } })
+          }
+        >
+          <div className="flex items-center justify-between">
+            <span className="text-sm font-medium text-foreground">Domains</span>
+            <ChevronRight className="h-4 w-4 text-muted-foreground transition-transform group-hover:translate-x-0.5" />
+          </div>
+          <div>
+            <p className="text-2xl font-semibold tabular-nums text-foreground">
+              {totalDomainCount}
+            </p>
+            <p className="mt-0.5 text-xs text-muted-foreground">
+              {pendingDomainCount === 0
+                ? "All verified"
+                : `${pendingDomainCount} pending`}
+            </p>
+          </div>
+        </button>
+
+        {/* Analytics card */}
+        <button
+          type="button"
+          className="group flex min-h-[120px] flex-col justify-between rounded-lg border bg-card px-4 py-3 text-left transition-colors hover:bg-accent"
+          onClick={() =>
+            navigate({ to: "/projects/$id/analytics", params: { id } })
+          }
+        >
+          <div className="flex items-center justify-between">
+            <span className="text-sm font-medium text-foreground">
+              Analytics
+            </span>
+            <ChevronRight className="h-4 w-4 text-muted-foreground transition-transform group-hover:translate-x-0.5" />
+          </div>
+          <div>
+            <p className="text-sm font-medium text-foreground">
+              Track visitors and page views
+            </p>
+            <p className="mt-0.5 text-xs text-primary">Enable</p>
+          </div>
+        </button>
+
+        {/* Auto-Build card */}
+        <button
+          type="button"
+          className="group flex min-h-[120px] flex-col justify-between rounded-lg border bg-card px-4 py-3 text-left transition-colors hover:bg-accent"
+          onClick={() =>
+            navigate({ to: "/projects/$id/settings", params: { id } })
+          }
+        >
+          <div className="flex items-center justify-between">
+            <span className="text-sm font-medium text-foreground">
+              Auto-Build
+            </span>
+            <ChevronRight className="h-4 w-4 text-muted-foreground transition-transform group-hover:translate-x-0.5" />
+          </div>
+          <div>
+            <p className="text-sm font-medium text-foreground">
+              {autoBuild?.enabled ? "Enabled" : "Disabled"}
+            </p>
+            <p className="mt-0.5 text-xs text-muted-foreground">
+              {autoBuild?.enabled
+                ? `Branch: ${autoBuild.production_branch || project.branch}`
+                : "Configure webhooks"}
+            </p>
+          </div>
+        </button>
+      </div>
+
+      {/* D: Active Branches */}
+      <ActiveBranches
+        deployments={deployments ?? []}
+        branchSearch={branchSearch}
+        onBranchSearchChange={setBranchSearch}
+        onNavigate={(did) =>
+          navigate({
+            to: "/projects/$id/deployments/$did",
+            params: { id, did },
+          })
+        }
+      />
     </div>
   );
 }
 
-function LiveEndpointChip({
-  environment,
-  url,
-  deployment,
-  onCopy,
+function MetaRow({
+  label,
+  children,
 }: {
-  environment: Domain["environment"];
-  url: string | null;
-  deployment: Deployment | undefined;
-  onCopy: (value: string, label: string) => void;
+  label: string;
+  children: React.ReactNode;
 }) {
-  const isLive = Boolean(url);
-
   return (
-    <div className="flex items-center justify-between gap-3 rounded-xl border bg-muted/30 px-4 py-3">
-      <div className="min-w-0">
-        <div className="flex items-center gap-2">
-          <span
-            className={cn(
-              "h-2.5 w-2.5 rounded-full",
-              isLive ? "bg-emerald-400" : "bg-slate-500",
-            )}
-          />
-          <p className="text-sm font-medium text-foreground">
-            {ENVIRONMENT_META[environment].label}
-          </p>
-        </div>
-        <p className="mt-1 truncate text-sm text-muted-foreground">
-          {url || "Not live yet"}
-        </p>
-        <p className="mt-1 text-xs text-muted-foreground">
-          {deployment
-            ? DEPLOYMENT_STATUS_META[deployment.status].label
-            : "No deployment yet"}
-        </p>
-      </div>
-      <div className="flex shrink-0 gap-2">
-        {url ? (
-          <>
-            <Button asChild size="sm" variant="ghost">
-              <a href={url} target="_blank" rel="noopener noreferrer">
-                <ExternalLink className="mr-1.5 h-3.5 w-3.5" />
-                Open
-              </a>
-            </Button>
-            <Button
-              size="sm"
-              variant="ghost"
-              onClick={() =>
-                onCopy(url, `${ENVIRONMENT_META[environment].label} URL`)
-              }
-            >
-              <Copy className="h-3.5 w-3.5" />
-            </Button>
-          </>
-        ) : (
-          <Badge
-            variant="outline"
-            className="border-white/10 bg-white/5 text-slate-200"
-          >
-            Pending
-          </Badge>
-        )}
-      </div>
+    <div className="flex flex-col gap-0.5 sm:flex-row sm:items-start sm:gap-4">
+      <span className="w-28 shrink-0 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+        {label}
+      </span>
+      <div className="min-w-0 flex-1">{children}</div>
     </div>
   );
 }
 
-function MiniMeta({ label, value }: { label: string; value: string }) {
+function ActiveBranches({
+  deployments,
+  branchSearch,
+  onBranchSearchChange,
+  onNavigate,
+}: {
+  deployments: Deployment[];
+  branchSearch: string;
+  onBranchSearchChange: (value: string) => void;
+  onNavigate: (did: string) => void;
+}) {
+  // Group by branch, keep latest per branch
+  const latestByBranch = useMemo(() => {
+    const map = new Map<string, Deployment>();
+    for (const d of deployments) {
+      if (!map.has(d.branch)) {
+        map.set(d.branch, d);
+      }
+    }
+    return Array.from(map.values());
+  }, [deployments]);
+
+  const filtered = useMemo(() => {
+    if (!branchSearch.trim()) return latestByBranch;
+    const q = branchSearch.toLowerCase();
+    return latestByBranch.filter((d) => d.branch.toLowerCase().includes(q));
+  }, [latestByBranch, branchSearch]);
+
   return (
-    <div className="rounded-xl border bg-background px-3 py-3">
-      <p className="text-[11px] uppercase tracking-[0.18em] text-muted-foreground">
-        {label}
-      </p>
-      <p className="mt-2 truncate text-sm font-medium text-foreground">
-        {value}
-      </p>
+    <div className="space-y-3">
+      <div className="flex items-center justify-between gap-3">
+        <h3 className="text-sm font-semibold text-foreground">
+          Active Branches
+        </h3>
+        <div className="relative">
+          <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            type="text"
+            placeholder="Search branches..."
+            value={branchSearch}
+            onChange={(e) => onBranchSearchChange(e.target.value)}
+            className="h-8 w-48 pl-8 text-sm"
+          />
+        </div>
+      </div>
+
+      {filtered.length === 0 ? (
+        <div className="rounded-lg border border-dashed border-border/70 px-5 py-10 text-center text-sm text-muted-foreground">
+          {deployments.length === 0
+            ? "No deployments yet."
+            : "No branches match your search."}
+        </div>
+      ) : (
+        <div className="divide-y divide-border rounded-lg border">
+          {filtered.map((deployment) => {
+            const meta = DEPLOYMENT_STATUS_META[deployment.status];
+            const envMeta = ENVIRONMENT_META[deployment.environment];
+            return (
+              <button
+                key={deployment.id}
+                type="button"
+                className="flex w-full items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-accent first:rounded-t-lg last:rounded-b-lg"
+                onClick={() => onNavigate(deployment.id)}
+              >
+                <span
+                  className={cn("h-2 w-2 shrink-0 rounded-full", meta.dotClass)}
+                />
+                <span className="min-w-0 flex-1">
+                  <span className="flex items-center gap-1.5 text-sm font-medium text-foreground">
+                    <GitBranch className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                    <span className="truncate">{deployment.branch}</span>
+                  </span>
+                  {deployment.commit_message ? (
+                    <span className="mt-0.5 block truncate text-xs text-muted-foreground">
+                      {deployment.commit_message}
+                    </span>
+                  ) : null}
+                </span>
+                <Badge
+                  variant="outline"
+                  className={cn("shrink-0 text-xs", envMeta.badgeClass)}
+                >
+                  {envMeta.label}
+                </Badge>
+                <span className="shrink-0 text-xs text-muted-foreground">
+                  {formatRelativeDate(deployment.created_at)}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }
