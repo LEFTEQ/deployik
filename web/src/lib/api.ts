@@ -260,6 +260,16 @@ class ApiClient {
     });
   }
 
+  async upsertEnvVar(
+    projectId: string,
+    data: { key: string; value: string; environment: string },
+  ): Promise<void> {
+    return this.request(`/projects/${projectId}/env`, {
+      method: "POST",
+      body: JSON.stringify(data),
+    });
+  }
+
   async deleteEnvVar(
     projectId: string,
     key: string,
@@ -289,6 +299,16 @@ class ApiClient {
   ): Promise<{ count: number }> {
     return this.request(`/projects/${projectId}/secrets`, {
       method: "PUT",
+      body: JSON.stringify(data),
+    });
+  }
+
+  async upsertSecret(
+    projectId: string,
+    data: { key: string; value: string; environment: string },
+  ): Promise<void> {
+    return this.request(`/projects/${projectId}/secrets`, {
+      method: "POST",
       body: JSON.stringify(data),
     });
   }

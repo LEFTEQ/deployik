@@ -262,6 +262,73 @@ func (h *VariableHandler) BulkSet(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// Upsert adds or updates a single variable in one scope and store.
+func (h *VariableHandler) Upsert(w http.ResponseWriter, r *http.Request) {
+	projectID := chi.URLParam(r, "id")
+	if _, _, ok := loadAuthorizedProject(w, r, h.DB, projectID); !ok {
+		return
+	}
+
+	var req struct {
+		Key         string `json:"key"`
+		Value       string `json:"value"`
+		Environment string `json:"environment"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request body"})
+		return
+	}
+
+	key := strings.TrimSpace(req.Key)
+	if err := h.validateVariableKey(key); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		return
+	}
+
+	environment, err := normalizeVariableEnvironment(req.Environment)
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		return
+	}
+
+	if err := h.ensureNoStoreConflicts(projectID, []string{key}); err != nil {
+		writeJSON(w, http.StatusConflict, map[string]string{"error": err.Error()})
+		return
+	}
+
+	encryptedValue, err := h.Encryptor.Encrypt(req.Value)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "encryption failed"})
+		return
+	}
+
+	v := &db.ProjectVariable{
+		ProjectID:   projectID,
+		Environment: environment,
+		Kind:        h.Kind,
+		Key:         key,
+		Value:       encryptedValue,
+	}
+	if err := h.DB.UpsertProjectVariable(v); err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": fmt.Sprintf("failed to save %s", h.storeLabel())})
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]string{"status": "saved", "key": key, "environment": environment})
+	claims := auth.GetClaims(r.Context())
+	h.Audit.Record(audit.Entry{
+		UserID:       claims.UserID,
+		Action:       string(h.Kind) + ".upsert",
+		ResourceType: string(h.Kind),
+		ResourceID:   key,
+		ProjectID:    projectID,
+		Metadata: map[string]any{
+			"environment": environment,
+			"key":         key,
+		},
+	})
+}
+
 // Delete removes a single project variable from one scope and store.
 func (h *VariableHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	projectID := chi.URLParam(r, "id")

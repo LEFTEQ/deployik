@@ -1,19 +1,47 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { LoaderCircle, Trash2 } from "lucide-react";
+import {
+  Copy,
+  Eye,
+  EyeOff,
+  FileUp,
+  LoaderCircle,
+  MoreHorizontal,
+  Pencil,
+  Plus,
+  Search,
+  Trash2,
+} from "lucide-react";
 import { toast } from "sonner";
-import { useEffect, useState } from "react";
+import { useState } from "react";
+
 import { api } from "@/lib/api";
 import { VARIABLE_SCOPE_META } from "@/lib/deployment-helpers";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Textarea } from "@/components/ui/textarea";
 import { LoadingState } from "@/components/ui/spinner";
 import type { VariableScope } from "@/types/api";
 
@@ -25,50 +53,79 @@ export interface VariableStoreProps {
 export function VariableStore({ projectId, kind }: VariableStoreProps) {
   const queryClient = useQueryClient();
   const [scope, setScope] = useState<VariableScope>("shared");
-  const [rows, setRows] = useState<{ key: string; value: string }[]>([
-    { key: "", value: "" },
-  ]);
+  const [search, setSearch] = useState("");
+  const [addDialogOpen, setAddDialogOpen] = useState(false);
+  const [importDialogOpen, setImportDialogOpen] = useState(false);
+  const [editingVariable, setEditingVariable] = useState<{
+    key: string;
+    environment: VariableScope;
+  } | null>(null);
+  const [revealedKeys, setRevealedKeys] = useState<Set<string>>(new Set());
 
-  useEffect(() => {
-    setRows([{ key: "", value: "" }]);
-  }, [kind, scope]);
+  // Form state for add/edit dialog
+  const [formKey, setFormKey] = useState("");
+  const [formValue, setFormValue] = useState("");
+  const [formEnvironment, setFormEnvironment] = useState<VariableScope>("shared");
+
+  // Import state
+  const [importText, setImportText] = useState("");
+  const [importEnvironment, setImportEnvironment] = useState<VariableScope>("shared");
 
   const isSecret = kind === "secret";
-  const storeTitle = isSecret ? "Secrets" : "Env Vars";
+  const storeTitle = isSecret ? "Secrets" : "Environment Variables";
   const storeDescription = isSecret
-    ? "Encrypted at rest, never exposed in the build, and injected only at runtime."
-    : "Configuration values for your app. Use NEXT_PUBLIC_* only for values that are safe to expose to the client bundle.";
-  const scopeDescription = isSecret
-    ? "Shared secrets apply to both preview and production. Scope-specific secrets override shared ones with the same key."
-    : "Shared env vars apply to both preview and production. Scope-specific env vars override shared ones with the same key.";
-  const emptyState = isSecret
-    ? "No secrets stored for this scope yet."
-    : "No environment variables stored for this scope yet.";
-  const replaceDescription = isSecret
-    ? "Saving here replaces all secrets for the selected scope."
-    : "Saving here replaces all env vars for the selected scope.";
+    ? "Encrypted at rest, never exposed during build, injected only at runtime."
+    : "Configuration for your app. NEXT_PUBLIC_* keys are baked into the build.";
 
-  const { data: existingVars, isLoading } = useQuery({
-    queryKey: ["project-variables", kind, projectId, scope],
+  const queryKey = ["project-variables", kind, projectId, scope];
+
+  const { data: variables, isLoading } = useQuery({
+    queryKey,
     queryFn: () =>
       isSecret
         ? api.listSecrets(projectId, scope)
         : api.listEnvVars(projectId, scope),
   });
 
-  const saveMutation = useMutation({
-    mutationFn: () => {
-      const variables = rows.filter((row) => row.key.trim() !== "");
-      return isSecret
-        ? api.bulkSetSecrets(projectId, { environment: scope, variables })
-        : api.bulkSetEnvVars(projectId, { environment: scope, variables });
+  const upsertMutation = useMutation({
+    mutationFn: (data: { key: string; value: string; environment: string }) =>
+      isSecret
+        ? api.upsertSecret(projectId, data)
+        : api.upsertEnvVar(projectId, data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({
+        queryKey: ["project-variables", kind, projectId],
+      });
+      closeAddDialog();
+      toast.success(
+        editingVariable ? "Variable updated" : "Variable added",
+      );
+    },
+    onError: (err) => toast.error(err.message),
+  });
+
+  const importMutation = useMutation({
+    mutationFn: async (entries: { key: string; value: string }[]) => {
+      const upsertFn = isSecret
+        ? (d: { key: string; value: string; environment: string }) =>
+            api.upsertSecret(projectId, d)
+        : (d: { key: string; value: string; environment: string }) =>
+            api.upsertEnvVar(projectId, d);
+      for (const entry of entries) {
+        await upsertFn({
+          key: entry.key,
+          value: entry.value,
+          environment: importEnvironment,
+        });
+      }
     },
     onSuccess: () => {
       queryClient.invalidateQueries({
         queryKey: ["project-variables", kind, projectId],
       });
-      toast.success(isSecret ? "Secrets saved" : "Environment variables saved");
-      setRows([{ key: "", value: "" }]);
+      setImportDialogOpen(false);
+      setImportText("");
+      toast.success("Variables imported");
     },
     onError: (err) => toast.error(err.message),
   });
@@ -82,175 +139,422 @@ export function VariableStore({ projectId, kind }: VariableStoreProps) {
       queryClient.invalidateQueries({
         queryKey: ["project-variables", kind, projectId],
       });
-      toast.success(
-        isSecret ? "Secret deleted" : "Environment variable deleted",
-      );
+      toast.success("Variable deleted");
     },
     onError: (err) => toast.error(err.message),
   });
 
-  const addRow = () => setRows([...rows, { key: "", value: "" }]);
-  const updateRow = (idx: number, field: "key" | "value", value: string) => {
-    const nextRows = [...rows];
-    nextRows[idx] = { ...nextRows[idx]!, [field]: value };
-    setRows(nextRows);
-  };
-  const removeRow = (idx: number) =>
-    setRows(rows.filter((_, index) => index !== idx));
+  const filteredVars = (variables ?? []).filter((v) =>
+    search ? v.key.toLowerCase().includes(search.toLowerCase()) : true,
+  );
+
+  function openAddDialog() {
+    setEditingVariable(null);
+    setFormKey("");
+    setFormValue("");
+    setFormEnvironment(scope);
+    setAddDialogOpen(true);
+  }
+
+  function openEditDialog(key: string, environment: VariableScope) {
+    setEditingVariable({ key, environment });
+    setFormKey(key);
+    setFormValue("");
+    setFormEnvironment(environment);
+    setAddDialogOpen(true);
+  }
+
+  function closeAddDialog() {
+    setAddDialogOpen(false);
+    setEditingVariable(null);
+    setFormKey("");
+    setFormValue("");
+  }
+
+  function handleSave() {
+    const trimmedKey = formKey.trim().toUpperCase();
+    if (!trimmedKey || !formValue) return;
+    upsertMutation.mutate({
+      key: trimmedKey,
+      value: formValue,
+      environment: formEnvironment,
+    });
+  }
+
+  function parseEnvText(text: string): { key: string; value: string }[] {
+    return text
+      .split("\n")
+      .map((line) => line.trim())
+      .filter((line) => line && !line.startsWith("#"))
+      .map((line) => {
+        const eqIndex = line.indexOf("=");
+        if (eqIndex === -1) return null;
+        const key = line.slice(0, eqIndex).trim();
+        let value = line.slice(eqIndex + 1).trim();
+        // Strip surrounding quotes
+        if (
+          (value.startsWith('"') && value.endsWith('"')) ||
+          (value.startsWith("'") && value.endsWith("'"))
+        ) {
+          value = value.slice(1, -1);
+        }
+        return key ? { key, value } : null;
+      })
+      .filter(Boolean) as { key: string; value: string }[];
+  }
+
+  function handleImport() {
+    const entries = parseEnvText(importText);
+    if (entries.length === 0) {
+      toast.error("No valid KEY=VALUE pairs found");
+      return;
+    }
+    importMutation.mutate(entries);
+  }
+
+  function toggleReveal(key: string) {
+    setRevealedKeys((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) {
+        next.delete(key);
+      } else {
+        next.add(key);
+      }
+      return next;
+    });
+  }
+
+  const parsedImportEntries = importText ? parseEnvText(importText) : [];
 
   return (
     <div className="space-y-6">
-      {/* Scope selector */}
-      <div className="space-y-3">
-        <h3 className="text-base font-semibold">{storeTitle}</h3>
-        <p className="text-sm text-muted-foreground">
-          {storeDescription} {scopeDescription}
-        </p>
-        <div className="flex flex-wrap gap-2">
-          {(Object.keys(VARIABLE_SCOPE_META) as VariableScope[]).map(
-            (value) => (
-              <Button
-                key={value}
-                size="sm"
-                variant={scope === value ? "default" : "outline"}
-                onClick={() => setScope(value)}
-              >
-                {VARIABLE_SCOPE_META[value].label}
-              </Button>
-            ),
-          )}
+      {/* Header */}
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+        <div className="space-y-1">
+          <h3 className="text-base font-semibold">{storeTitle}</h3>
+          <p className="text-sm text-muted-foreground">{storeDescription}</p>
         </div>
-        <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
-          <Badge
+        <div className="flex shrink-0 gap-2">
+          <Button
             variant="outline"
-            className={VARIABLE_SCOPE_META[scope].badgeClass}
+            size="sm"
+            onClick={() => {
+              setImportEnvironment(scope);
+              setImportDialogOpen(true);
+            }}
           >
-            {VARIABLE_SCOPE_META[scope].label}
-          </Badge>
-          <span>{VARIABLE_SCOPE_META[scope].description}</span>
+            <FileUp className="mr-1.5 h-3.5 w-3.5" />
+            Import .env
+          </Button>
+          <Button size="sm" onClick={openAddDialog}>
+            <Plus className="mr-1.5 h-3.5 w-3.5" />
+            Add Variable
+          </Button>
         </div>
       </div>
 
-      {/* Current variables */}
-      <div className="space-y-2">
-        <div className="flex flex-col gap-0.5">
-          <h3 className="text-base font-semibold">
-            Current {storeTitle} ({VARIABLE_SCOPE_META[scope].label})
-          </h3>
-          <p className="text-sm text-muted-foreground">
-            Values are masked after save. Delete a key here or replace the full
-            scope below.
-          </p>
-        </div>
-        {isLoading ? (
-          <LoadingState
-            title={`Loading ${storeTitle.toLowerCase()}...`}
-            description={`Fetching stored ${storeTitle.toLowerCase()} for the selected scope.`}
-            className="min-h-[220px]"
+      {/* Scope filter tabs */}
+      <div className="flex flex-wrap gap-1">
+        {(Object.keys(VARIABLE_SCOPE_META) as VariableScope[]).map((value) => (
+          <Button
+            key={value}
+            size="sm"
+            variant={scope === value ? "default" : "ghost"}
+            onClick={() => {
+              setScope(value);
+              setRevealedKeys(new Set());
+            }}
+          >
+            {VARIABLE_SCOPE_META[value].label}
+          </Button>
+        ))}
+      </div>
+
+      {/* Search */}
+      {(variables?.length ?? 0) > 0 && (
+        <div className="relative">
+          <Search className="absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            placeholder="Filter variables..."
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="pl-9 font-mono text-sm"
           />
-        ) : existingVars?.length ? (
-          <div className="divide-y rounded-lg border font-mono text-sm">
-            {existingVars.map((variable) => {
-              const deleting =
-                deleteMutation.isPending &&
-                deleteMutation.variables === variable.key;
+        </div>
+      )}
 
-              return (
-                <div
-                  key={variable.id}
-                  className="flex flex-col gap-3 px-4 py-3 md:flex-row md:items-center md:justify-between"
-                >
-                  <div className="space-y-1">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <span className="text-foreground">{variable.key}</span>
-                      <Badge
-                        variant="outline"
-                        className={
-                          VARIABLE_SCOPE_META[variable.environment].badgeClass
-                        }
-                      >
-                        {VARIABLE_SCOPE_META[variable.environment].label}
-                      </Badge>
-                    </div>
-                    <p className="text-xs text-muted-foreground">
-                      {variable.value}
-                    </p>
-                  </div>
+      {/* Variable list */}
+      {isLoading ? (
+        <LoadingState
+          title={`Loading ${storeTitle.toLowerCase()}...`}
+          description={`Fetching stored ${storeTitle.toLowerCase()} for ${VARIABLE_SCOPE_META[scope].label}.`}
+          className="min-h-[180px]"
+        />
+      ) : !filteredVars.length ? (
+        <div className="rounded-lg border border-dashed border-border/70 px-4 py-8 text-center text-sm text-muted-foreground">
+          {search
+            ? "No variables match your filter."
+            : `No ${storeTitle.toLowerCase()} for the ${VARIABLE_SCOPE_META[scope].label} scope yet.`}
+        </div>
+      ) : (
+        <div className="divide-y rounded-lg border">
+          {filteredVars.map((variable) => {
+            const isRevealed = revealedKeys.has(variable.key);
+            const deleting =
+              deleteMutation.isPending &&
+              deleteMutation.variables === variable.key;
 
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    onClick={() => deleteMutation.mutate(variable.key)}
-                    disabled={deleteMutation.isPending}
-                  >
-                    {deleting ? (
-                      <LoaderCircle className="h-4 w-4 animate-spin" />
-                    ) : (
-                      <Trash2 className="h-4 w-4" />
-                    )}
-                  </Button>
-                </div>
-              );
-            })}
-          </div>
-        ) : (
-          <p className="text-sm text-muted-foreground">{emptyState}</p>
-        )}
-      </div>
-
-      {/* Replace / bulk edit — keeps Card for visual separation */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">
-            Replace {storeTitle} ({VARIABLE_SCOPE_META[scope].label})
-          </CardTitle>
-          <CardDescription>{replaceDescription}</CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-2">
-          {rows.map((row, idx) => (
-            <div key={idx} className="flex gap-2">
-              <Input
-                placeholder="KEY"
-                value={row.key}
-                onChange={(e) =>
-                  updateRow(idx, "key", e.target.value.toUpperCase())
-                }
-                className="font-mono"
-              />
-              <Input
-                placeholder={isSecret ? "secret value" : "value"}
-                type={isSecret ? "password" : "text"}
-                value={row.value}
-                onChange={(e) => updateRow(idx, "value", e.target.value)}
-                className="font-mono"
-              />
-              <Button
-                variant="ghost"
-                size="icon"
-                onClick={() => removeRow(idx)}
+            return (
+              <div
+                key={variable.id}
+                className="flex items-center gap-3 px-4 py-3"
               >
-                <Trash2 className="h-4 w-4" />
-              </Button>
+                {/* Key + value */}
+                <div className="min-w-0 flex-1 space-y-1">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="font-mono text-sm text-foreground">
+                      {variable.key}
+                    </span>
+                    <Badge
+                      variant="outline"
+                      className={
+                        VARIABLE_SCOPE_META[variable.environment].badgeClass
+                      }
+                    >
+                      {VARIABLE_SCOPE_META[variable.environment].label}
+                    </Badge>
+                  </div>
+                  <p className="truncate font-mono text-xs text-muted-foreground">
+                    {isRevealed ? variable.value : "••••••••"}
+                  </p>
+                </div>
+
+                {/* Eye toggle */}
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-8 w-8 shrink-0"
+                  onClick={() => toggleReveal(variable.key)}
+                >
+                  {isRevealed ? (
+                    <EyeOff className="h-4 w-4" />
+                  ) : (
+                    <Eye className="h-4 w-4" />
+                  )}
+                </Button>
+
+                {/* Actions menu */}
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-8 w-8 shrink-0"
+                    >
+                      <MoreHorizontal className="h-4 w-4" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end">
+                    <DropdownMenuItem
+                      onClick={() =>
+                        openEditDialog(variable.key, variable.environment)
+                      }
+                    >
+                      <Pencil className="mr-2 h-3.5 w-3.5" />
+                      Edit Value
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      onClick={() => {
+                        navigator.clipboard.writeText(variable.key);
+                        toast.success("Key copied");
+                      }}
+                    >
+                      <Copy className="mr-2 h-3.5 w-3.5" />
+                      Copy Key
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      className="text-destructive focus:text-destructive"
+                      disabled={deleting}
+                      onClick={() => deleteMutation.mutate(variable.key)}
+                    >
+                      {deleting ? (
+                        <LoaderCircle className="mr-2 h-3.5 w-3.5 animate-spin" />
+                      ) : (
+                        <Trash2 className="mr-2 h-3.5 w-3.5" />
+                      )}
+                      Delete
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* Add / Edit Dialog */}
+      <Dialog open={addDialogOpen} onOpenChange={setAddDialogOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>
+              {editingVariable ? "Edit Variable" : "Add Variable"}
+            </DialogTitle>
+            <DialogDescription>
+              {editingVariable
+                ? `Update the value for ${editingVariable.key}.`
+                : `Add a new ${isSecret ? "secret" : "environment variable"}.`}
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="var-key">Key</Label>
+              <Input
+                id="var-key"
+                placeholder="MY_VARIABLE"
+                value={formKey}
+                onChange={(e) => setFormKey(e.target.value.toUpperCase())}
+                className="font-mono"
+                disabled={!!editingVariable}
+              />
             </div>
-          ))}
-          <div className="flex flex-wrap gap-2 pt-2">
-            <Button variant="outline" size="sm" onClick={addRow}>
-              Add Row
+            <div className="space-y-2">
+              <Label htmlFor="var-value">Value</Label>
+              <Textarea
+                id="var-value"
+                placeholder={isSecret ? "secret value" : "value"}
+                value={formValue}
+                onChange={(e) => setFormValue(e.target.value)}
+                className="min-h-[80px] font-mono text-sm"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>Environment</Label>
+              <Select
+                value={formEnvironment}
+                onValueChange={(v) => setFormEnvironment(v as VariableScope)}
+                disabled={!!editingVariable}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {(Object.keys(VARIABLE_SCOPE_META) as VariableScope[]).map(
+                    (s) => (
+                      <SelectItem key={s} value={s}>
+                        {VARIABLE_SCOPE_META[s].label}
+                      </SelectItem>
+                    ),
+                  )}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={closeAddDialog}>
+              Cancel
             </Button>
             <Button
-              size="sm"
-              onClick={() => saveMutation.mutate()}
-              disabled={saveMutation.isPending}
+              onClick={handleSave}
+              disabled={
+                !formKey.trim() || !formValue || upsertMutation.isPending
+              }
             >
-              {saveMutation.isPending
-                ? "Saving..."
-                : isSecret
-                  ? "Save Secrets"
-                  : "Save Env Vars"}
+              {upsertMutation.isPending ? (
+                <>
+                  <LoaderCircle className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+                  Saving...
+                </>
+              ) : editingVariable ? (
+                "Update"
+              ) : (
+                "Save"
+              )}
             </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Import Dialog */}
+      <Dialog open={importDialogOpen} onOpenChange={setImportDialogOpen}>
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Import Variables</DialogTitle>
+            <DialogDescription>
+              Paste KEY=VALUE pairs, one per line. Lines starting with # are
+              ignored. Existing variables with the same key will be overwritten.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label>Environment</Label>
+              <Select
+                value={importEnvironment}
+                onValueChange={(v) =>
+                  setImportEnvironment(v as VariableScope)
+                }
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {(Object.keys(VARIABLE_SCOPE_META) as VariableScope[]).map(
+                    (s) => (
+                      <SelectItem key={s} value={s}>
+                        {VARIABLE_SCOPE_META[s].label}
+                      </SelectItem>
+                    ),
+                  )}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label>Content</Label>
+              <Textarea
+                placeholder={`# Paste your .env content\nDATABASE_URL=postgres://...\nAPI_KEY=sk-...`}
+                value={importText}
+                onChange={(e) => setImportText(e.target.value)}
+                className="min-h-[160px] font-mono text-sm"
+              />
+            </div>
+            {parsedImportEntries.length > 0 && (
+              <p className="text-sm text-muted-foreground">
+                {parsedImportEntries.length} variable
+                {parsedImportEntries.length !== 1 ? "s" : ""} detected
+              </p>
+            )}
           </div>
-        </CardContent>
-      </Card>
+
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setImportDialogOpen(false);
+                setImportText("");
+              }}
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={handleImport}
+              disabled={
+                parsedImportEntries.length === 0 || importMutation.isPending
+              }
+            >
+              {importMutation.isPending ? (
+                <>
+                  <LoaderCircle className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+                  Importing...
+                </>
+              ) : (
+                `Import ${parsedImportEntries.length || ""} Variable${parsedImportEntries.length !== 1 ? "s" : ""}`
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

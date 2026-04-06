@@ -172,6 +172,7 @@ func NewRouter(cfg *RouterConfig) *chi.Mux {
 			}
 			r.Get("/projects/{id}/env", envHandler.List)
 			r.With(mutationLimiter.Middleware("env_bulk_set")).Put("/projects/{id}/env", envHandler.BulkSet)
+			r.With(mutationLimiter.Middleware("env_upsert")).Post("/projects/{id}/env", envHandler.Upsert)
 			r.With(mutationLimiter.Middleware("env_delete")).Delete("/projects/{id}/env/{key}", envHandler.Delete)
 
 			secretHandler := &handlers.VariableHandler{
@@ -182,6 +183,7 @@ func NewRouter(cfg *RouterConfig) *chi.Mux {
 			}
 			r.Get("/projects/{id}/secrets", secretHandler.List)
 			r.With(mutationLimiter.Middleware("secret_bulk_set")).Put("/projects/{id}/secrets", secretHandler.BulkSet)
+			r.With(mutationLimiter.Middleware("secret_upsert")).Post("/projects/{id}/secrets", secretHandler.Upsert)
 			r.With(mutationLimiter.Middleware("secret_delete")).Delete("/projects/{id}/secrets/{key}", secretHandler.Delete)
 		})
 	})

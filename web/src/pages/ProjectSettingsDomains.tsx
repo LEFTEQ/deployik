@@ -69,7 +69,7 @@ export function ProjectSettingsDomains() {
   });
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-10">
       {/* Add domain form */}
       <div className="space-y-3">
         <div>
