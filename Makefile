@@ -1,4 +1,4 @@
-.PHONY: dev-api dev-web build-web build run docker-build clean
+.PHONY: dev-api dev-web dev-seed build-web build run docker-build clean
 
 # Development
 dev-api:
@@ -6,6 +6,9 @@ dev-api:
 
 dev-web:
 	cd web && bun run dev
+
+dev-seed:
+	./scripts/seed-dev.sh
 
 # Build frontend
 build-web:
