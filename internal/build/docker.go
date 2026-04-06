@@ -128,10 +128,10 @@ func (d *DockerClient) RunContainer(ctx context.Context, name, imageTag string, 
 				CPUQuota:  100000, // 1.0 CPU
 				CPUPeriod: 100000,
 			},
-			SecurityOpt:    []string{"no-new-privileges=true"},
-			ReadonlyRootfs: true,
+			SecurityOpt: []string{"no-new-privileges=true"},
 			Tmpfs: map[string]string{
-				"/tmp": "size=64m,noexec,nosuid,nodev",
+				"/tmp":             "size=64m,noexec,nosuid,nodev",
+				"/app/.next/cache": "size=128m,nosuid,nodev",
 			},
 		},
 		&network.NetworkingConfig{},
