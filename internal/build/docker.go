@@ -123,6 +123,16 @@ func (d *DockerClient) RunContainer(ctx context.Context, name, imageTag string, 
 		},
 		&container.HostConfig{
 			RestartPolicy: container.RestartPolicy{Name: "unless-stopped"},
+			Resources: container.Resources{
+				Memory:    512 * 1024 * 1024, // 512MB
+				CPUQuota:  100000, // 1.0 CPU
+				CPUPeriod: 100000,
+			},
+			SecurityOpt:    []string{"no-new-privileges=true"},
+			ReadonlyRootfs: true,
+			Tmpfs: map[string]string{
+				"/tmp": "size=64m,noexec,nosuid,nodev",
+			},
 		},
 		&network.NetworkingConfig{},
 		nil,

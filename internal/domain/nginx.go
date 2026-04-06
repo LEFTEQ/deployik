@@ -80,6 +80,7 @@ server {
 
     location / {
         set $upstream {{.ContainerName}}:3000;
+        limit_req zone=deployik_preview burst=20 nodelay;
         proxy_pass http://$upstream;
 
         proxy_http_version 1.1;

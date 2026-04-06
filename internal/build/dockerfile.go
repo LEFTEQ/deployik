@@ -24,6 +24,7 @@ type DockerfileData struct {
 	HasBunLock       bool
 	HasPnpmLock      bool
 	HasYarnLock      bool
+	HasNpmLock       bool
 	UseBun           bool
 	UsePnpm          bool
 	UseYarn          bool
@@ -72,6 +73,8 @@ func GenerateDockerfile(repoDir string, data DockerfileData) (string, error) {
 		data.HasPnpmLock = true
 	} else if _, err := os.Stat(filepath.Join(installDirAbs, "yarn.lock")); err == nil {
 		data.HasYarnLock = true
+	} else if _, err := os.Stat(filepath.Join(installDirAbs, "package-lock.json")); err == nil {
+		data.HasNpmLock = true
 	}
 
 	effectiveManager := resolvePackageManager(data)
@@ -163,7 +166,8 @@ func generateNextJSDockerfile(data DockerfileData) string {
 	b.WriteString("FROM base AS runner\n")
 	b.WriteString("ENV NODE_ENV=production\n")
 	b.WriteString("RUN addgroup --system --gid 1001 nodejs\n")
-	b.WriteString("RUN adduser --system --uid 1001 nextjs\n\n")
+	b.WriteString("RUN adduser --system --uid 1001 nextjs\n")
+	b.WriteString("RUN apk --no-cache del wget curl 2>/dev/null; rm -rf /var/cache/apk/*\n\n")
 
 	b.WriteString("COPY --from=builder /tmp/deployik/public ./public\n")
 	b.WriteString(fmt.Sprintf("COPY --from=builder --chown=nextjs:nodejs %s/standalone ./\n", outputDir))
@@ -173,6 +177,8 @@ func generateNextJSDockerfile(data DockerfileData) string {
 	b.WriteString("EXPOSE 3000\n")
 	b.WriteString("ENV PORT=3000\n")
 	b.WriteString("ENV HOSTNAME=\"0.0.0.0\"\n")
+	b.WriteString("HEALTHCHECK --interval=30s --timeout=3s --start-period=10s --retries=3 \\\n")
+	b.WriteString("  CMD node -e \"require('http').get('http://localhost:3000/health',(r)=>{process.exit(r.statusCode===200?0:1)}).on('error',()=>process.exit(1))\"\n")
 	b.WriteString("CMD [\"node\", \"server.js\"]\n")
 
 	return b.String()
@@ -210,10 +216,12 @@ func generateStaticDockerfile(data DockerfileData) string {
 
 	b.WriteString("FROM base AS runner\n")
 	b.WriteString("ENV NODE_ENV=production\n")
-	b.WriteString("RUN npm i -g serve@14\n\n")
+	b.WriteString("RUN npm i -g serve@14 && apk --no-cache del wget curl 2>/dev/null; rm -rf /var/cache/apk/*\n\n")
 	b.WriteString(fmt.Sprintf("COPY --from=builder %s ./site\n\n", outputDir))
 	b.WriteString("EXPOSE 3000\n")
 	b.WriteString("ENV PORT=3000\n")
+	b.WriteString("HEALTHCHECK --interval=30s --timeout=3s --start-period=10s --retries=3 \\\n")
+	b.WriteString("  CMD node -e \"require('http').get('http://localhost:3000/',(r)=>{process.exit(r.statusCode===200?0:1)}).on('error',()=>process.exit(1))\"\n")
 	b.WriteString("CMD [\"serve\", \"-s\", \"site\", \"-l\", \"3000\"]\n")
 
 	return b.String()
@@ -288,6 +296,9 @@ func resolvePackageManager(data DockerfileData) string {
 	if data.HasYarnLock {
 		return projectconfig.PackageManagerYarn
 	}
+	if data.HasNpmLock {
+		return projectconfig.PackageManagerNpm
+	}
 
 	commandText := strings.ToLower(strings.TrimSpace(data.InstallCommand + " " + data.BuildCommand))
 	switch {
@@ -307,35 +318,11 @@ func isAutoPackageManager(value string) bool {
 }
 
 func isKnownInstallDefault(command string) bool {
-	trimmed := strings.TrimSpace(command)
-	for _, packageManager := range []string{
-		projectconfig.PackageManagerAuto,
-		projectconfig.PackageManagerBun,
-		projectconfig.PackageManagerPnpm,
-		projectconfig.PackageManagerNpm,
-		projectconfig.PackageManagerYarn,
-	} {
-		if trimmed == projectconfig.DefaultInstallCommand(packageManager) {
-			return true
-		}
-	}
-	return false
+	return projectconfig.IsKnownInstallDefault(command)
 }
 
 func isKnownBuildDefault(command string) bool {
-	trimmed := strings.TrimSpace(command)
-	for _, packageManager := range []string{
-		projectconfig.PackageManagerAuto,
-		projectconfig.PackageManagerBun,
-		projectconfig.PackageManagerPnpm,
-		projectconfig.PackageManagerNpm,
-		projectconfig.PackageManagerYarn,
-	} {
-		if trimmed == projectconfig.DefaultBuildCommand(packageManager) {
-			return true
-		}
-	}
-	return false
+	return projectconfig.IsKnownBuildDefault(command)
 }
 
 // ParseTemplateFile parses a Go template file (for future extensibility).
