@@ -44,3 +44,9 @@ Thumbs.db
 server
 .playwright-mcp/
 qa-screenshots/
+
+# Root MCP/tooling (shadcn MCP server)
+.mcp.json
+node_modules/
+package.json
+package-lock.json
