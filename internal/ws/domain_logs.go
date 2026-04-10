@@ -40,17 +40,17 @@ func DomainLogsHandler(hub *Hub, database *db.DB, jwtSecret string, allowedOrigi
 			return
 		}
 		if domain == nil {
-			http.Error(w, "domain not found", http.StatusNotFound)
+			http.Error(w, "not found", http.StatusNotFound)
 			return
 		}
 
 		project, err := authz.LoadProject(database, claims, domain.ProjectID)
 		if err != nil {
-			http.Error(w, "failed to load project", http.StatusInternalServerError)
+			http.Error(w, "not found", http.StatusNotFound)
 			return
 		}
 		if project == nil {
-			http.Error(w, "project not found", http.StatusNotFound)
+			http.Error(w, "not found", http.StatusNotFound)
 			return
 		}
 
