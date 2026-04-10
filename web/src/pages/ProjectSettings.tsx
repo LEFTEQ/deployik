@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate, useParams } from "@tanstack/react-router";
-import { Trash2 } from "lucide-react";
+import { GitBranch, Trash2, Webhook } from "lucide-react";
 import { toast } from "sonner";
 
 import { api } from "@/lib/api";
@@ -26,9 +26,11 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { LoadingState } from "@/components/ui/spinner";
+import { Switch } from "@/components/ui/switch";
 
 export function ProjectSettings() {
   const { id } = useParams({ strict: false }) as { id: string };
@@ -54,6 +56,7 @@ export function ProjectSettings() {
     <div className="space-y-8">
       <BuildSettingsSection project={project} />
       <div className="border-b" />
+      <AutoBuildSection projectId={id} defaultBranch={project.branch} />
       <div className="border-b" />
       <DangerZone
         projectId={id}
@@ -133,6 +136,140 @@ function BuildSettingsSection({
       >
         {updateMutation.isPending ? "Saving..." : "Save Settings"}
       </Button>
+    </div>
+  );
+}
+
+function AutoBuildSection({
+  projectId,
+  defaultBranch,
+}: {
+  projectId: string;
+  defaultBranch: string;
+}) {
+  const queryClient = useQueryClient();
+
+  const { data: config } = useQuery({
+    queryKey: ["auto-build", projectId],
+    queryFn: () => api.getAutoBuildConfig(projectId).catch(() => null),
+  });
+
+  const enabled = config?.enabled ?? false;
+
+  const [productionBranch, setProductionBranch] = useState(
+    config?.production_branch || defaultBranch || "main",
+  );
+  const [previewBranches, setPreviewBranches] = useState(
+    config?.preview_branches || "*",
+  );
+
+  const updateMutation = useMutation({
+    mutationFn: (data: {
+      enabled: boolean;
+      production_branch: string;
+      preview_branches: string;
+    }) => api.updateAutoBuildConfig(projectId, data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["auto-build", projectId] });
+      toast.success("Auto-build updated");
+    },
+    onError: (err) => {
+      const msg = err.message || String(err);
+      if (msg.includes("insufficient_scope")) {
+        toast.error(
+          "GitHub permissions required. Re-authorize with GitHub to enable auto-build.",
+        );
+      } else {
+        toast.error(msg);
+      }
+    },
+  });
+
+  const handleToggle = (checked: boolean) => {
+    updateMutation.mutate({
+      enabled: checked,
+      production_branch: productionBranch,
+      preview_branches: previewBranches,
+    });
+  };
+
+  const handleSave = () => {
+    updateMutation.mutate({
+      enabled: true,
+      production_branch: productionBranch,
+      preview_branches: previewBranches,
+    });
+  };
+
+  return (
+    <div className="space-y-6">
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <div className="flex items-center gap-2">
+            <Webhook className="h-4 w-4 text-muted-foreground" />
+            <h2 className="text-base font-semibold">Auto-Build on Push</h2>
+            {enabled && (
+              <Badge
+                variant="outline"
+                className="border-emerald-400/25 bg-emerald-400/12 text-emerald-100"
+              >
+                Active
+              </Badge>
+            )}
+          </div>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Automatically deploy when you push to GitHub. Configure which
+            branches trigger preview and production deployments.
+          </p>
+        </div>
+        <Switch
+          checked={enabled}
+          onCheckedChange={handleToggle}
+          disabled={updateMutation.isPending}
+        />
+      </div>
+
+      {enabled && (
+        <div className="space-y-4 rounded-lg border p-4">
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div className="space-y-2">
+              <Label className="flex items-center gap-1.5">
+                <GitBranch className="h-3.5 w-3.5" />
+                Production Branch
+              </Label>
+              <Input
+                value={productionBranch}
+                onChange={(e) => setProductionBranch(e.target.value)}
+                placeholder="main"
+              />
+              <p className="text-xs text-muted-foreground">
+                Pushes to this branch trigger a production deployment.
+              </p>
+            </div>
+            <div className="space-y-2">
+              <Label className="flex items-center gap-1.5">
+                <GitBranch className="h-3.5 w-3.5" />
+                Preview Branches
+              </Label>
+              <Input
+                value={previewBranches}
+                onChange={(e) => setPreviewBranches(e.target.value)}
+                placeholder="* (all other branches)"
+              />
+              <p className="text-xs text-muted-foreground">
+                Use * for all branches, or comma-separated names.
+              </p>
+            </div>
+          </div>
+          <Button
+            size="sm"
+            onClick={handleSave}
+            disabled={updateMutation.isPending}
+          >
+            {updateMutation.isPending ? "Saving..." : "Save Branch Config"}
+          </Button>
+        </div>
+      )}
     </div>
   );
 }
