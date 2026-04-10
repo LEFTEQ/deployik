@@ -43,7 +43,7 @@ type ProvisionConfig struct {
 }
 
 // ProvisionLogger emits structured log events during domain provisioning.
-// step: "dns"|"ssl"|"nginx"|"done", status: "running"|"success"|"error".
+// step: "dns"|"ssl"|"nginx", status: "running"|"success"|"error".
 type ProvisionLogger func(step, status, content string)
 
 type commandRunner interface {
