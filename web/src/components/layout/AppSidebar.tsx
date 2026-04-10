@@ -218,7 +218,7 @@ export function AppSidebar({ context, projectId, ...props }: AppSidebarProps) {
                   <Collapsible
                     key={item.label}
                     asChild
-                    defaultOpen={active}
+                    defaultOpen
                     className="group/collapsible"
                   >
                     <SidebarMenuItem>
