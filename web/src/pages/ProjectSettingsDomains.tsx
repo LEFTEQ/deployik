@@ -193,7 +193,10 @@ export function ProjectSettingsDomains() {
   useEffect(() => {
     if (verifyState === "success" || verifyState === "error") {
       queryClient.invalidateQueries({ queryKey: ["domains", id] });
-      const timer = setTimeout(() => setMinimized(true), 2000);
+      const timer = setTimeout(() => {
+        setMinimized(true);
+        setVerifyingDomainId(null);
+      }, 2000);
       return () => clearTimeout(timer);
     }
   }, [verifyState, queryClient, id]);

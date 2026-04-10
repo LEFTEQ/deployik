@@ -261,10 +261,6 @@ func (h *DomainHandler) Verify(w http.ResponseWriter, r *http.Request) {
 		h.DB.UpdateDomainDNS(domainID, true)
 
 		// SSL + Nginx provisioning via ProvisionDomain with logger
-		provisionLogger := func(step, status, content string) {
-			emit(step, status, content)
-		}
-
 		if err := h.Manager.ProvisionDomain(domain.ProvisionConfig{
 			ProjectID:      project.ID,
 			ProjectName:    project.Name,
@@ -273,7 +269,7 @@ func (h *DomainHandler) Verify(w http.ResponseWriter, r *http.Request) {
 			SSLDomains:     plan.AllDomains(),
 			Environment:    target.Environment,
 			ContainerName:  "deployik-" + project.Name + "-" + target.Environment,
-		}, false, provisionLogger); err != nil {
+		}, false, emit); err != nil {
 			log.Printf("SSL cert request failed for %s: %v", target.DomainName, err)
 			h.DB.UpdateDomainSSL(domainID, "error", target.SSLExpiresAt)
 			durationMs := time.Since(start).Milliseconds()
