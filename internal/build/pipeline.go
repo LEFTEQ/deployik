@@ -333,7 +333,7 @@ func (p *Pipeline) ensureEnvironmentDomains(project *db.Project, deployment *db.
 			Environment:       d.Environment,
 			ContainerName:     containerName,
 			PasswordProtected: passwordProtected,
-		}, false)
+		}, false, nil)
 		if err != nil {
 			_ = p.DB.UpdateDomainSSL(d.ID, "error", d.SSLExpiresAt)
 			return fmt.Errorf("%s: %w", d.DomainName, err)

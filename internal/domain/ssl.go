@@ -42,6 +42,10 @@ type ProvisionConfig struct {
 	PasswordProtected bool
 }
 
+// ProvisionLogger emits structured log events during domain provisioning.
+// step: "dns"|"ssl"|"nginx"|"done", status: "running"|"success"|"error".
+type ProvisionLogger func(step, status, content string)
+
 type commandRunner interface {
 	CombinedOutput(name string, args ...string) ([]byte, error)
 }
@@ -72,30 +76,49 @@ func (m *Manager) VerifyDomainDNS(domainName string) (bool, error) {
 	return VerifyDNS(domainName, m.VPSHost)
 }
 
-func (m *Manager) ProvisionDomain(cfg ProvisionConfig, requireDNS bool) error {
-	if requireDNS {
-		for _, domainName := range cfg.domainsToVerify() {
-			verified, err := m.VerifyDomainDNS(domainName)
-			if err != nil {
-				return err
-			}
-			if !verified {
-				return ErrDNSNotVerified
-			}
+func (m *Manager) ProvisionDomain(cfg ProvisionConfig, requireDNS bool, logger ProvisionLogger) error {
+	emit := func(step, status, content string) {
+		if logger != nil {
+			logger(step, status, content)
 		}
 	}
 
-	if err := m.RequestSSLCert(cfg.requestSSLDomains()...); err != nil {
-		return err
+	if requireDNS {
+		for _, domainName := range cfg.domainsToVerify() {
+			emit("dns", "running", fmt.Sprintf("Checking DNS for %s...", domainName))
+			verified, err := m.VerifyDomainDNS(domainName)
+			if err != nil {
+				emit("dns", "error", fmt.Sprintf("DNS lookup failed for %s: %v", domainName, err))
+				return err
+			}
+			if !verified {
+				emit("dns", "error", fmt.Sprintf("%s does not point to %s", domainName, m.VPSHost))
+				return ErrDNSNotVerified
+			}
+			emit("dns", "success", fmt.Sprintf("%s → %s", domainName, m.VPSHost))
+		}
 	}
 
+	sslDomains := cfg.requestSSLDomains()
+	emit("ssl", "running", fmt.Sprintf("Requesting SSL certificate for %s...", strings.Join(sslDomains, ", ")))
+	if err := m.RequestSSLCert(sslDomains...); err != nil {
+		emit("ssl", "error", fmt.Sprintf("SSL certificate request failed: %v", err))
+		return err
+	}
+	emit("ssl", "success", "SSL certificate issued successfully")
+
+	emit("nginx", "running", fmt.Sprintf("Writing nginx config for %s...", cfg.Domain))
 	if _, err := m.WriteNginxConfig(cfg); err != nil {
+		emit("nginx", "error", fmt.Sprintf("Nginx config write failed: %v", err))
 		return err
 	}
 
+	emit("nginx", "running", "Testing and reloading nginx...")
 	if err := m.ReloadNginx(); err != nil {
+		emit("nginx", "error", fmt.Sprintf("Nginx reload failed: %v", err))
 		return err
 	}
+	emit("nginx", "success", "Nginx reloaded successfully")
 
 	return nil
 }
