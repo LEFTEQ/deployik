@@ -6,6 +6,8 @@ import (
 	"log"
 	"net/http"
 	"strings"
+	"sync"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 
@@ -13,12 +15,16 @@ import (
 	"github.com/LEFTEQ/lovinka-deployik/internal/auth"
 	"github.com/LEFTEQ/lovinka-deployik/internal/db"
 	"github.com/LEFTEQ/lovinka-deployik/internal/domain"
+	"github.com/LEFTEQ/lovinka-deployik/internal/ws"
 )
 
 type DomainHandler struct {
 	DB      *db.DB
 	Manager *domain.Manager
+	Hub     *ws.Hub
 	Audit   *audit.Recorder
+	// verifying tracks in-flight domain verifications per project to prevent concurrent runs.
+	verifying sync.Map // map[projectID]domainID
 }
 
 type addDomainRequest struct {
@@ -184,102 +190,109 @@ func (h *DomainHandler) Verify(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Verify DNS
-	plan := domain.ResolveVariantPlan(target.DomainName, target.Environment)
-	var missing []string
-	for _, hostname := range plan.AllDomains() {
-		verified, err := h.Manager.VerifyDomainDNS(hostname)
-		if err != nil {
-			log.Printf("DNS verification error for %s: %v", hostname, err)
-		}
-		if !verified {
-			missing = append(missing, hostname)
-		}
-	}
-
-	verified := len(missing) == 0
-	h.DB.UpdateDomainDNS(domainID, verified)
-
-	if !verified {
-		h.DB.UpdateDomainSSL(domainID, "pending", target.SSLExpiresAt)
-		message := "DNS A record does not point to " + h.Manager.VPSHost
-		if len(missing) > 0 {
-			message = fmt.Sprintf(
-				"Point %s to %s before verifying SSL",
-				strings.Join(missing, ", "),
-				h.Manager.VPSHost,
-			)
-		}
-		writeJSON(w, http.StatusOK, map[string]interface{}{
-			"dns_verified": false,
-			"message":      message,
-		})
-		claims := auth.GetClaims(r.Context())
-		h.Audit.Record(audit.Entry{
-			UserID:       claims.UserID,
-			Action:       "domain.verify",
-			ResourceType: "domain",
-			ResourceID:   domainID,
-			ProjectID:    projectID,
-			Metadata: map[string]any{
-				"domain":       target.DomainName,
-				"dns_verified": false,
-				"ssl_status":   "pending",
-			},
+	// Prevent concurrent verifications per project
+	if _, loaded := h.verifying.LoadOrStore(projectID, domainID); loaded {
+		writeJSON(w, http.StatusConflict, map[string]string{
+			"error": "A domain verification is already in progress for this project",
 		})
 		return
 	}
 
-	if err := h.Manager.ProvisionDomain(domain.ProvisionConfig{
-		ProjectID:      project.ID,
-		ProjectName:    project.Name,
-		Domain:         plan.CanonicalDomain,
-		RedirectDomain: plan.RedirectDomain,
-		SSLDomains:     plan.AllDomains(),
-		Environment:    target.Environment,
-		ContainerName:  "deployik-" + project.Name + "-" + target.Environment,
-	}, false, nil); err != nil {
-		log.Printf("SSL cert request failed for %s: %v", target.DomainName, err)
-		h.DB.UpdateDomainSSL(domainID, "error", target.SSLExpiresAt)
-		writeJSON(w, http.StatusOK, map[string]interface{}{
-			"dns_verified": true,
-			"ssl_status":   "error",
-			"message":      "DNS verified but SSL cert issuance failed",
-		})
-		claims := auth.GetClaims(r.Context())
-		h.Audit.Record(audit.Entry{
-			UserID:       claims.UserID,
-			Action:       "domain.verify",
-			ResourceType: "domain",
-			ResourceID:   domainID,
-			ProjectID:    projectID,
-			Metadata: map[string]any{
-				"domain":       target.DomainName,
-				"dns_verified": true,
-				"ssl_status":   "error",
-			},
-		})
-		return
-	}
-
-	h.DB.UpdateDomainSSL(domainID, "active", target.SSLExpiresAt)
-
-	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"dns_verified": true,
-		"ssl_status":   "active",
-		"message":      "Domain verified and SSL cert active",
-	})
 	claims := auth.GetClaims(r.Context())
-	h.Audit.Record(audit.Entry{
-		UserID:       claims.UserID,
-		Action:       "domain.verify",
-		ResourceType: "domain",
-		ResourceID:   domainID,
-		ProjectID:    projectID,
-		Metadata: map[string]any{
-			"domain":       target.DomainName,
-			"dns_verified": true,
-			"ssl_status":   "active",
-		},
+
+	// Return immediately — provisioning runs in background
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"status":    "verifying",
+		"domain_id": domainID,
 	})
+
+	// Run provisioning in background goroutine
+	go func() {
+		defer h.verifying.Delete(projectID)
+
+		start := time.Now()
+		lineNum := 0
+		topic := "domain:" + domainID
+
+		emit := func(step, status, content string) {
+			lineNum++
+			h.Hub.Publish(ws.LogLine{
+				DeploymentID: topic,
+				LineNumber:   lineNum,
+				Content:      content,
+				Stream:       step + ":" + status,
+			})
+		}
+
+		// DNS verification
+		plan := domain.ResolveVariantPlan(target.DomainName, target.Environment)
+		var missing []string
+
+		for _, hostname := range plan.AllDomains() {
+			emit("dns", "running", fmt.Sprintf("Checking DNS for %s...", hostname))
+			verified, err := h.Manager.VerifyDomainDNS(hostname)
+			if err != nil {
+				log.Printf("DNS verification error for %s: %v", hostname, err)
+				emit("dns", "error", fmt.Sprintf("DNS lookup failed for %s: %v", hostname, err))
+				missing = append(missing, hostname)
+				continue
+			}
+			if !verified {
+				emit("dns", "error", fmt.Sprintf("%s does not point to %s", hostname, h.Manager.VPSHost))
+				missing = append(missing, hostname)
+			} else {
+				emit("dns", "success", fmt.Sprintf("%s → %s", hostname, h.Manager.VPSHost))
+			}
+		}
+
+		if len(missing) > 0 {
+			h.DB.UpdateDomainDNS(domainID, false)
+			h.DB.UpdateDomainSSL(domainID, "pending", target.SSLExpiresAt)
+			msg := fmt.Sprintf("Point %s to %s before verifying SSL", strings.Join(missing, ", "), h.Manager.VPSHost)
+			emit("done", "error", msg)
+			h.Audit.Record(audit.Entry{
+				UserID: claims.UserID, Action: "domain.verify", ResourceType: "domain",
+				ResourceID: domainID, ProjectID: projectID,
+				Metadata: map[string]any{"domain": target.DomainName, "dns_verified": false, "ssl_status": "pending"},
+			})
+			return
+		}
+
+		h.DB.UpdateDomainDNS(domainID, true)
+
+		// SSL + Nginx provisioning via ProvisionDomain with logger
+		provisionLogger := func(step, status, content string) {
+			emit(step, status, content)
+		}
+
+		if err := h.Manager.ProvisionDomain(domain.ProvisionConfig{
+			ProjectID:      project.ID,
+			ProjectName:    project.Name,
+			Domain:         plan.CanonicalDomain,
+			RedirectDomain: plan.RedirectDomain,
+			SSLDomains:     plan.AllDomains(),
+			Environment:    target.Environment,
+			ContainerName:  "deployik-" + project.Name + "-" + target.Environment,
+		}, false, provisionLogger); err != nil {
+			log.Printf("SSL cert request failed for %s: %v", target.DomainName, err)
+			h.DB.UpdateDomainSSL(domainID, "error", target.SSLExpiresAt)
+			durationMs := time.Since(start).Milliseconds()
+			emit("done", "error", fmt.Sprintf("DNS verified but SSL/nginx provisioning failed (took %dms)", durationMs))
+			h.Audit.Record(audit.Entry{
+				UserID: claims.UserID, Action: "domain.verify", ResourceType: "domain",
+				ResourceID: domainID, ProjectID: projectID,
+				Metadata: map[string]any{"domain": target.DomainName, "dns_verified": true, "ssl_status": "error"},
+			})
+			return
+		}
+
+		h.DB.UpdateDomainSSL(domainID, "active", target.SSLExpiresAt)
+		durationMs := time.Since(start).Milliseconds()
+		emit("done", "success", fmt.Sprintf("Domain verified and live (took %dms)", durationMs))
+		h.Audit.Record(audit.Entry{
+			UserID: claims.UserID, Action: "domain.verify", ResourceType: "domain",
+			ResourceID: domainID, ProjectID: projectID,
+			Metadata: map[string]any{"domain": target.DomainName, "dns_verified": true, "ssl_status": "active"},
+		})
+	}()
 }
