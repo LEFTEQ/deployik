@@ -96,6 +96,18 @@ export interface Domain {
   created_at: string;
 }
 
+export interface DomainLogEvent {
+  deployment_id: string; // actually "domain:{id}" topic key
+  line_number: number;
+  content: string;
+  stream: string; // "{step}:{status}" e.g. "dns:success", "ssl:running", "done:error"
+}
+
+export interface VerifyDomainResponse {
+  status: "verifying";
+  domain_id: string;
+}
+
 export type VariableScope = "shared" | "preview" | "production";
 
 export type ProjectVariableKind = "env" | "secret";

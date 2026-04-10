@@ -20,6 +20,7 @@ import type {
   DeploymentListResponse,
   ProtectionStatus,
   ProtectionUpdateResponse,
+  VerifyDomainResponse,
 } from "@/types/api";
 
 const API_URL = import.meta.env.VITE_API_URL || "/api";
@@ -233,7 +234,7 @@ class ApiClient {
   async verifyDomain(
     projectId: string,
     domainId: string,
-  ): Promise<{ dns_verified: boolean; ssl_status: string; message: string }> {
+  ): Promise<VerifyDomainResponse | { error: string }> {
     return this.request(`/projects/${projectId}/domains/${domainId}/verify`, {
       method: "POST",
     });

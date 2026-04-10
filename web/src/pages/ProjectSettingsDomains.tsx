@@ -65,9 +65,9 @@ export function ProjectSettingsDomains() {
 
   const verifyMutation = useMutation({
     mutationFn: (domainId: string) => api.verifyDomain(id, domainId),
-    onSuccess: (result) => {
+    onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["domains", id] });
-      toast.success(result.message);
+      toast.success("Verification started");
     },
     onError: (err) => toast.error(err.message),
   });
