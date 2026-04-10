@@ -28,6 +28,22 @@ func (db *DB) ListDomains(projectID string) ([]Domain, error) {
 	return domains, rows.Err()
 }
 
+func (db *DB) GetDomainByID(id string) (*Domain, error) {
+	d := &Domain{}
+	err := db.QueryRow(
+		`SELECT id, project_id, domain, environment, is_auto, dns_verified, ssl_status, ssl_expires_at, created_at
+		 FROM domains WHERE id = ?`, id,
+	).Scan(&d.ID, &d.ProjectID, &d.DomainName, &d.Environment,
+		&d.IsAuto, &d.DNSVerified, &d.SSLStatus, &d.SSLExpiresAt, &d.CreatedAt)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("get domain by id: %w", err)
+	}
+	return d, nil
+}
+
 func (db *DB) GetDomainByName(domain string) (*Domain, error) {
 	d := &Domain{}
 	err := db.QueryRow(

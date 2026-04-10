@@ -206,6 +206,7 @@ func NewRouter(cfg *RouterConfig) *chi.Mux {
 
 	// WebSocket routes
 	r.With(wsLimiter.Middleware("ws_logs")).Get("/ws/deployments/{did}/logs", ws.LogsHandler(cfg.WSHub, cfg.DB, cfg.JWTSecret, cfg.AllowedOrigins))
+	r.With(wsLimiter.Middleware("ws_domain_logs")).Get("/ws/domains/{did}/logs", ws.DomainLogsHandler(cfg.WSHub, cfg.DB, cfg.JWTSecret, cfg.AllowedOrigins))
 
 	// Serve embedded SPA for all non-API routes
 	r.NotFound(SPAHandler())
