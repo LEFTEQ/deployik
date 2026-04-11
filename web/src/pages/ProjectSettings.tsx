@@ -56,7 +56,12 @@ export function ProjectSettings() {
     <div className="space-y-8">
       <BuildSettingsSection project={project} />
       <div className="border-b" />
-      <AutoBuildSection projectId={id} defaultBranch={project.branch} />
+      <AutoBuildSection
+        projectId={id}
+        defaultBranch={project.branch}
+        githubOwner={project.github_owner}
+        githubRepo={project.github_repo}
+      />
       <div className="border-b" />
       <DangerZone
         projectId={id}
@@ -143,9 +148,13 @@ function BuildSettingsSection({
 function AutoBuildSection({
   projectId,
   defaultBranch,
+  githubOwner,
+  githubRepo,
 }: {
   projectId: string;
   defaultBranch: string;
+  githubOwner: string;
+  githubRepo: string;
 }) {
   const queryClient = useQueryClient();
   const [needsReauth, setNeedsReauth] = useState(false);
@@ -233,24 +242,42 @@ function AutoBuildSection({
       </div>
 
       {noAdminAccess && (
-        <div className="rounded-lg border border-rose-500/25 bg-rose-500/5 p-4">
+        <div className="rounded-lg border border-rose-500/25 bg-rose-500/5 p-4 space-y-2">
           <p className="text-sm font-medium text-rose-200">
-            No admin access to this repository
+            Cannot create webhook on{" "}
+            <span className="font-mono">{githubOwner}/{githubRepo}</span>
           </p>
-          <p className="mt-1 text-sm text-muted-foreground">
-            {noAdminAccess}
+          <p className="text-sm text-muted-foreground">
+            GitHub requires <strong>admin access</strong> to create webhooks.
+            Your account doesn't have admin permissions on this repository.
           </p>
+          <p className="text-sm text-muted-foreground">To fix this:</p>
+          <ul className="list-disc pl-5 text-sm text-muted-foreground space-y-1">
+            <li>
+              Ask the repo owner to add you as an{" "}
+              <strong>admin collaborator</strong> in{" "}
+              <a
+                href={`https://github.com/${githubOwner}/${githubRepo}/settings/access`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-primary hover:underline"
+              >
+                GitHub Settings → Collaborators
+              </a>
+            </li>
+            <li>Or have the repo owner log into Deployik and enable auto-build themselves</li>
+          </ul>
         </div>
       )}
 
       {needsReauth && (
-        <div className="rounded-lg border border-amber-500/25 bg-amber-500/5 p-4">
+        <div className="rounded-lg border border-amber-500/25 bg-amber-500/5 p-4 space-y-2">
           <p className="text-sm font-medium text-amber-200">
             GitHub permissions need updating
           </p>
-          <p className="mt-1 text-sm text-muted-foreground">
+          <p className="text-sm text-muted-foreground">
             Your account was authorized before webhook support was added.
-            Re-authorize to grant webhook permissions.
+            Re-authorize to grant the <strong>admin:repo_hook</strong> permission.
           </p>
           <Button size="sm" className="mt-3" asChild>
             <a href="/api/auth/github">Re-authorize with GitHub</a>
