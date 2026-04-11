@@ -134,10 +134,17 @@ func (h *AutoBuildHandler) Put(w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 			errMsg := err.Error()
 			log.Printf("Auto-build: webhook creation failed for %s/%s: %s", project.GithubOwner, project.GithubRepo, errMsg)
-			if strings.Contains(errMsg, "403") || strings.Contains(errMsg, "404") {
+			if strings.Contains(errMsg, "404") {
+				writeJSON(w, http.StatusForbidden, map[string]interface{}{
+					"error":   "no_admin_access",
+					"message": "You need admin access to " + project.GithubOwner + "/" + project.GithubRepo + " on GitHub to create webhooks. Ask the repo owner to add you as an admin collaborator.",
+				})
+				return
+			}
+			if strings.Contains(errMsg, "403") {
 				writeJSON(w, http.StatusForbidden, map[string]interface{}{
 					"error":   "insufficient_scope",
-					"message": "Re-authorize with GitHub to enable auto-build. GitHub returned: " + errMsg,
+					"message": "Re-authorize with GitHub to enable auto-build.",
 				})
 				return
 			}

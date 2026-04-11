@@ -149,6 +149,7 @@ function AutoBuildSection({
 }) {
   const queryClient = useQueryClient();
   const [needsReauth, setNeedsReauth] = useState(false);
+  const [noAdminAccess, setNoAdminAccess] = useState<string | null>(null);
 
   const { data: config } = useQuery({
     queryKey: ["auto-build", projectId],
@@ -179,6 +180,8 @@ function AutoBuildSection({
       const msg = err.message || String(err);
       if (msg.includes("insufficient_scope")) {
         setNeedsReauth(true);
+      } else if (msg.includes("no_admin_access") || msg.includes("admin access")) {
+        setNoAdminAccess(msg);
       } else {
         toast.error(msg);
       }
@@ -228,6 +231,17 @@ function AutoBuildSection({
           disabled={updateMutation.isPending}
         />
       </div>
+
+      {noAdminAccess && (
+        <div className="rounded-lg border border-rose-500/25 bg-rose-500/5 p-4">
+          <p className="text-sm font-medium text-rose-200">
+            No admin access to this repository
+          </p>
+          <p className="mt-1 text-sm text-muted-foreground">
+            {noAdminAccess}
+          </p>
+        </div>
+      )}
 
       {needsReauth && (
         <div className="rounded-lg border border-amber-500/25 bg-amber-500/5 p-4">
