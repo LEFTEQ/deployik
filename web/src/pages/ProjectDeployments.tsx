@@ -19,7 +19,6 @@ import {
   getPrimaryEnvironmentUrl,
 } from "@/lib/deployment-helpers";
 import { ReleasePanelContent } from "@/components/projects/release-panel";
-import { useIsMobile } from "@/hooks/use-mobile";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -27,22 +26,14 @@ import {
   CardContent,
 } from "@/components/ui/card";
 import {
-  Drawer,
-  DrawerContent,
-  DrawerDescription,
-  DrawerFooter,
-  DrawerHeader,
-  DrawerTitle,
-} from "@/components/ui/drawer";
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { LoadingState } from "@/components/ui/spinner";
-import {
-  Sheet,
-  SheetContent,
-  SheetDescription,
-  SheetFooter,
-  SheetHeader,
-  SheetTitle,
-} from "@/components/ui/sheet";
 import {
   Table,
   TableBody,
@@ -57,8 +48,8 @@ export function ProjectDeployments() {
   const { id } = useParams({ strict: false }) as { id: string };
   const navigate = useNavigate();
   const queryClient = useQueryClient();
-  const isMobile = useIsMobile();
-  const [releaseSheetOpen, setReleaseSheetOpen] = useState(false);
+  const [releaseDialogOpen, setReleaseDialogOpen] = useState(false);
+  const [createTag, setCreateTag] = useState(true);
   const [releaseTagName, setReleaseTagName] = useState(buildReleaseTagName());
 
   const { data: project } = useQuery({
@@ -97,7 +88,7 @@ export function ProjectDeployments() {
           : "Preview deployment queued",
       );
       if (variables.environment === "production") {
-        setReleaseSheetOpen(false);
+        setReleaseDialogOpen(false);
       }
     },
     onError: (err) => toast.error(err.message),
@@ -136,7 +127,8 @@ export function ProjectDeployments() {
             variant="outline"
             onClick={() => {
               setReleaseTagName(buildReleaseTagName());
-              setReleaseSheetOpen(true);
+              setCreateTag(true);
+              setReleaseDialogOpen(true);
             }}
             disabled={deploymentMutation.isPending}
           >
@@ -309,100 +301,58 @@ export function ProjectDeployments() {
         </Card>
       )}
 
-      {/* Release panel */}
-      {project &&
-        (isMobile ? (
-          <Drawer open={releaseSheetOpen} onOpenChange={setReleaseSheetOpen}>
-            <DrawerContent className="border-white/10 bg-[#0b1220]/98">
-              <DrawerHeader>
-                <DrawerTitle>Release to Production</DrawerTitle>
-                <DrawerDescription>
-                  Deployik will create a git tag and queue a production
-                  deployment from that tagged ref.
-                </DrawerDescription>
-              </DrawerHeader>
-              <ReleasePanelContent
-                project={project}
-                domains={domains}
-                releaseTagName={releaseTagName}
-                onReleaseTagChange={setReleaseTagName}
-              />
-              <DrawerFooter>
-                <Button
-                  variant="outline"
-                  onClick={() => setReleaseSheetOpen(false)}
-                  disabled={deploymentMutation.isPending}
-                >
-                  Cancel
-                </Button>
-                <Button
-                  onClick={() =>
-                    deploymentMutation.mutate({
-                      environment: "production",
-                      create_tag: true,
-                      tag_name: releaseTagName.trim(),
-                    })
-                  }
-                  disabled={
-                    !releaseTagName.trim() || deploymentMutation.isPending
-                  }
-                >
-                  <GlobeLock className="mr-1.5 h-3.5 w-3.5" />
-                  {deploymentMutation.isPending
-                    ? "Queueing release..."
-                    : "Release"}
-                </Button>
-              </DrawerFooter>
-            </DrawerContent>
-          </Drawer>
-        ) : (
-          <Sheet open={releaseSheetOpen} onOpenChange={setReleaseSheetOpen}>
-            <SheetContent
-              side="bottom"
-              className="mx-auto w-full max-w-3xl rounded-t-3xl border-white/10 bg-[#0b1220]/98 px-6 pb-6 pt-5 backdrop-blur-2xl"
-            >
-              <SheetHeader>
-                <SheetTitle>Release to Production</SheetTitle>
-                <SheetDescription>
-                  Deployik will create a git tag and queue a production
-                  deployment from that tagged ref.
-                </SheetDescription>
-              </SheetHeader>
-              <ReleasePanelContent
-                project={project}
-                domains={domains}
-                releaseTagName={releaseTagName}
-                onReleaseTagChange={setReleaseTagName}
-              />
-              <SheetFooter className="mt-6">
-                <Button
-                  variant="outline"
-                  onClick={() => setReleaseSheetOpen(false)}
-                  disabled={deploymentMutation.isPending}
-                >
-                  Cancel
-                </Button>
-                <Button
-                  onClick={() =>
-                    deploymentMutation.mutate({
-                      environment: "production",
-                      create_tag: true,
-                      tag_name: releaseTagName.trim(),
-                    })
-                  }
-                  disabled={
-                    !releaseTagName.trim() || deploymentMutation.isPending
-                  }
-                >
-                  <GlobeLock className="mr-1.5 h-3.5 w-3.5" />
-                  {deploymentMutation.isPending
-                    ? "Queueing release..."
-                    : "Release"}
-                </Button>
-              </SheetFooter>
-            </SheetContent>
-          </Sheet>
-        ))}
+      {/* Release dialog */}
+      {project && (
+        <Dialog open={releaseDialogOpen} onOpenChange={setReleaseDialogOpen}>
+          <DialogContent className="sm:max-w-lg">
+            <DialogHeader>
+              <DialogTitle>Release to Production</DialogTitle>
+              <DialogDescription>
+                Deploy the latest commit from{" "}
+                <span className="font-mono font-medium text-foreground">
+                  {project.branch}
+                </span>{" "}
+                to production.
+              </DialogDescription>
+            </DialogHeader>
+            <ReleasePanelContent
+              project={project}
+              domains={domains}
+              createTag={createTag}
+              onCreateTagChange={setCreateTag}
+              releaseTagName={releaseTagName}
+              onReleaseTagChange={setReleaseTagName}
+            />
+            <DialogFooter>
+              <Button
+                variant="outline"
+                onClick={() => setReleaseDialogOpen(false)}
+                disabled={deploymentMutation.isPending}
+              >
+                Cancel
+              </Button>
+              <Button
+                onClick={() =>
+                  deploymentMutation.mutate({
+                    environment: "production",
+                    create_tag: createTag,
+                    tag_name: createTag ? releaseTagName.trim() : undefined,
+                  })
+                }
+                disabled={
+                  (createTag && !releaseTagName.trim()) ||
+                  deploymentMutation.isPending
+                }
+              >
+                <GlobeLock className="mr-1.5 h-3.5 w-3.5" />
+                {deploymentMutation.isPending
+                  ? "Releasing..."
+                  : "Release"}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      )}
     </div>
   );
 }

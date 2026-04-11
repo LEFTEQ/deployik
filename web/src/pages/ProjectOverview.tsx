@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate, useParams } from "@tanstack/react-router";
 import {
@@ -19,13 +20,23 @@ import {
   ACTIVE_DEPLOYMENT_STATUSES,
   DEPLOYMENT_STATUS_META,
   ENVIRONMENT_META,
+  buildReleaseTagName,
   formatRelativeDate,
   getLatestEnvironmentDeployment,
   isDomainReady,
 } from "@/lib/deployment-helpers";
 import { formatFrameworkLabel } from "@/components/projects/build-settings";
+import { ReleasePanelContent } from "@/components/projects/release-panel";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { LoadingState } from "@/components/ui/spinner";
 import { cn } from "@/lib/utils";
 import type { Deployment } from "@/types/api";
@@ -34,6 +45,9 @@ export function ProjectOverview() {
   const { id } = useParams({ strict: false }) as { id: string };
   const navigate = useNavigate();
   const queryClient = useQueryClient();
+  const [releaseDialogOpen, setReleaseDialogOpen] = useState(false);
+  const [createTag, setCreateTag] = useState(true);
+  const [releaseTagName, setReleaseTagName] = useState(buildReleaseTagName());
 
   const { data: project, isLoading } = useQuery({
     queryKey: ["project", id],
@@ -60,12 +74,17 @@ export function ProjectOverview() {
     mutationFn: (payload: {
       environment: "preview" | "production";
       branch?: string;
+      create_tag?: boolean;
+      tag_name?: string;
     }) => api.triggerDeployment(id, payload),
-    onSuccess: (deployment) => {
+    onSuccess: (deployment, variables) => {
       queryClient.invalidateQueries({ queryKey: ["deployments", id] });
       toast.success(
         `${deployment.environment === "production" ? "Release" : "Preview deploy"} triggered`,
       );
+      if (variables.environment === "production") {
+        setReleaseDialogOpen(false);
+      }
     },
     onError: (err) => toast.error(err.message),
   });
@@ -200,9 +219,11 @@ export function ProjectOverview() {
             <Button
               size="sm"
               variant="outline"
-              onClick={() =>
-                deployMutation.mutate({ environment: "production" })
-              }
+              onClick={() => {
+                setReleaseTagName(buildReleaseTagName());
+                setCreateTag(true);
+                setReleaseDialogOpen(true);
+              }}
               disabled={deployMutation.isPending}
             >
               <GlobeLock className="mr-1.5 h-3.5 w-3.5" />
@@ -291,6 +312,55 @@ export function ProjectOverview() {
           </div>
         )}
       </div>
+
+      {/* Release dialog */}
+      <Dialog open={releaseDialogOpen} onOpenChange={setReleaseDialogOpen}>
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Release to Production</DialogTitle>
+            <DialogDescription>
+              Deploy the latest commit from{" "}
+              <span className="font-mono font-medium text-foreground">
+                {project.branch}
+              </span>{" "}
+              to production.
+            </DialogDescription>
+          </DialogHeader>
+          <ReleasePanelContent
+            project={project}
+            domains={domains}
+            createTag={createTag}
+            onCreateTagChange={setCreateTag}
+            releaseTagName={releaseTagName}
+            onReleaseTagChange={setReleaseTagName}
+          />
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setReleaseDialogOpen(false)}
+              disabled={deployMutation.isPending}
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={() =>
+                deployMutation.mutate({
+                  environment: "production",
+                  create_tag: createTag,
+                  tag_name: createTag ? releaseTagName.trim() : undefined,
+                })
+              }
+              disabled={
+                (createTag && !releaseTagName.trim()) ||
+                deployMutation.isPending
+              }
+            >
+              <GlobeLock className="mr-1.5 h-3.5 w-3.5" />
+              {deployMutation.isPending ? "Releasing..." : "Release"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

@@ -1,5 +1,7 @@
 import { Link, useRouterState } from "@tanstack/react-router";
+import { useQuery } from "@tanstack/react-query";
 import {
+  ArrowLeft,
   BarChart3,
   Building2,
   ChevronRight,
@@ -16,9 +18,11 @@ import {
   Wrench,
 } from "lucide-react";
 
+import { api } from "@/lib/api";
 import { useAuthStore } from "@/store/auth";
 import { useOrganizationStore } from "@/store/organization";
 import { useOrganizations } from "@/hooks/use-organizations";
+import { ProjectPicker } from "@/components/layout/ProjectPicker";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import {
   Collapsible,
@@ -162,10 +166,15 @@ export function AppSidebar({ context, projectId, ...props }: AppSidebarProps) {
   const { user, clearAuth } = useAuthStore();
   const {
     organizations,
-    selectedOrganization,
     selectedOrganizationId,
     setSelectedOrganizationId,
   } = useOrganizations();
+
+  const { data: project } = useQuery({
+    queryKey: ["project", projectId],
+    queryFn: () => api.getProject(projectId!),
+    enabled: context === "project" && !!projectId,
+  });
 
   const items =
     context === "project" && projectId
@@ -190,19 +199,26 @@ export function AppSidebar({ context, projectId, ...props }: AppSidebarProps) {
       <SidebarHeader>
         <SidebarMenu>
           <SidebarMenuItem>
-            <SidebarMenuButton size="lg" asChild>
-              <Link to="/">
-                <div className="flex aspect-square size-8 items-center justify-center rounded-lg bg-sidebar-primary text-sidebar-primary-foreground">
-                  <FolderKanban className="size-4" />
-                </div>
-                <div className="flex flex-col gap-0.5 leading-none">
-                  <span className="font-semibold">Deployik</span>
-                  <span className="text-xs">
-                    {selectedOrganization?.name ?? "Workspace"}
-                  </span>
-                </div>
-              </Link>
-            </SidebarMenuButton>
+            {context === "project" && projectId ? (
+              <ProjectPicker
+                currentProjectId={projectId}
+                currentProjectName={project?.name ?? "..."}
+              />
+            ) : (
+              <SidebarMenuButton size="lg" asChild>
+                <Link to="/">
+                  <div className="flex aspect-square size-8 items-center justify-center rounded-lg bg-sidebar-primary text-sidebar-primary-foreground">
+                    <FolderKanban className="size-4" />
+                  </div>
+                  <div className="flex flex-col gap-0.5 leading-none">
+                    <span className="font-semibold">Deployik</span>
+                    <span className="text-xs text-muted-foreground">
+                      Dashboard
+                    </span>
+                  </div>
+                </Link>
+              </SidebarMenuButton>
+            )}
           </SidebarMenuItem>
         </SidebarMenu>
       </SidebarHeader>
@@ -271,9 +287,19 @@ export function AppSidebar({ context, projectId, ...props }: AppSidebarProps) {
           </SidebarMenu>
         </SidebarGroup>
 
-        {/* Quick action */}
+        {/* Quick actions */}
         <SidebarGroup>
           <SidebarMenu>
+            {context === "project" && (
+              <SidebarMenuItem>
+                <SidebarMenuButton asChild tooltip="All Projects">
+                  <Link to="/">
+                    <ArrowLeft />
+                    <span>All Projects</span>
+                  </Link>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+            )}
             <SidebarMenuItem>
               <SidebarMenuButton asChild tooltip="New Project">
                 <Link to="/new">
@@ -307,9 +333,6 @@ export function AppSidebar({ context, projectId, ...props }: AppSidebarProps) {
                   <div className="grid flex-1 text-left text-sm leading-tight">
                     <span className="truncate font-medium">
                       {user?.username}
-                    </span>
-                    <span className="truncate text-xs text-muted-foreground">
-                      {selectedOrganization?.name ?? "Workspace"}
                     </span>
                   </div>
                 </SidebarMenuButton>

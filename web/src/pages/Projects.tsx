@@ -1,67 +1,43 @@
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
-import { Plus, GitBranch, Clock, Circle } from "lucide-react";
+import { ChevronRight, Plus } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { api } from "@/lib/api";
 import { useOrganizations } from "@/hooks/use-organizations";
 import { Button } from "@/components/ui/button";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
 import { LoadingState } from "@/components/ui/spinner";
+import { cn } from "@/lib/utils";
 import type { Project } from "@/types/api";
 
-function ProjectCard({ project }: { project: Project }) {
+function ProjectRow({ project }: { project: Project }) {
   return (
     <Link
       to="/projects/$id"
       params={{ id: project.id }}
+      className="flex items-center gap-4 border-b border-white/5 px-5 py-4 transition-colors last:border-b-0 hover:bg-muted/50"
     >
-      <Card className="transition-all hover:-translate-y-0.5 hover:border-primary/35">
-        <CardHeader className="pb-3">
-          <div className="flex items-start justify-between">
-            <div>
-              <CardTitle className="text-base">{project.name}</CardTitle>
-              <CardDescription className="mt-1">
-                {project.github_owner}/{project.github_repo}
-              </CardDescription>
-              {project.organization_name ? (
-                <Badge
-                  variant="outline"
-                  className="mt-2 border-white/10 bg-white/5 text-xs text-muted-foreground"
-                >
-                  {project.organization_name}
-                </Badge>
-              ) : null}
-            </div>
-            <Badge
-              variant={project.status === "active" ? "default" : "secondary"}
-            >
-              <Circle className="mr-1 h-2 w-2 fill-current" />
-              {project.status}
-            </Badge>
-          </div>
-        </CardHeader>
-        <CardContent>
-          <div className="flex items-center gap-4 text-sm text-muted-foreground">
-            <span className="flex items-center gap-1">
-              <GitBranch className="h-3.5 w-3.5" />
-              {project.branch}
-            </span>
-            <span className="flex items-center gap-1">
-              <Clock className="h-3.5 w-3.5" />
-              {formatDistanceToNow(new Date(project.updated_at), {
-                addSuffix: true,
-              })}
-            </span>
-          </div>
-        </CardContent>
-      </Card>
+      <span
+        className={cn(
+          "h-2.5 w-2.5 shrink-0 rounded-full",
+          project.status === "active" ? "bg-emerald-400" : "bg-slate-500",
+        )}
+      />
+      <span className="text-sm font-semibold text-foreground">
+        {project.name}
+      </span>
+      <span className="hidden text-sm text-muted-foreground sm:inline">
+        <span className="font-mono">
+          {project.github_owner}/{project.github_repo}
+        </span>
+        <span className="mx-1.5">·</span>
+        <span className="font-mono">{project.branch}</span>
+      </span>
+      <span className="ml-auto shrink-0 text-xs text-muted-foreground">
+        {formatDistanceToNow(new Date(project.updated_at), {
+          addSuffix: true,
+        })}
+      </span>
+      <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" />
     </Link>
   );
 }
@@ -105,14 +81,14 @@ export function Projects() {
           className="min-h-[360px]"
         />
       ) : !organizations.length ? (
-        <Card className="flex flex-col items-center justify-center py-16">
+        <div className="flex flex-col items-center justify-center rounded-lg border border-dashed border-white/10 py-16">
           <p className="text-lg font-medium">No workspaces found</p>
           <p className="mt-1 text-sm text-muted-foreground">
             Sign in again if your organization memberships were just changed.
           </p>
-        </Card>
+        </div>
       ) : !projects?.length ? (
-        <Card className="flex flex-col items-center justify-center py-16">
+        <div className="flex flex-col items-center justify-center rounded-lg border border-dashed border-white/10 py-16">
           <p className="text-lg font-medium">No projects in this workspace</p>
           <p className="mt-1 text-sm text-muted-foreground">
             Create a project in {selectedOrganization?.name ?? "this workspace"}{" "}
@@ -124,11 +100,11 @@ export function Projects() {
               New Project
             </Button>
           </Link>
-        </Card>
+        </div>
       ) : (
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        <div className="rounded-lg border border-white/5">
           {projects.map((project) => (
-            <ProjectCard key={project.id} project={project} />
+            <ProjectRow key={project.id} project={project} />
           ))}
         </div>
       )}

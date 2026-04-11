@@ -10,13 +10,6 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
-import {
   Select,
   SelectContent,
   SelectItem,
@@ -124,7 +117,7 @@ export function NewProject() {
           />
         </div>
 
-        <div className="mt-4 space-y-2">
+        <div className="mt-4">
           {reposLoading ? (
             <LoadingState
               title="Loading repositories…"
@@ -136,48 +129,48 @@ export function NewProject() {
               {search ? "No matching repositories" : "No repositories found"}
             </p>
           ) : (
-            filteredRepos.map((repo) => (
-              <Card
-                key={repo.id}
-                className="cursor-pointer transition-colors hover:border-primary/50"
-                onClick={() => {
-                  setSelectedRepo(repo);
-                  setName(repo.name.toLowerCase().replace(/[^a-z0-9-]/g, "-"));
-                  setBranch(repo.default_branch);
-                  setBuildSettings(getFrameworkDefaults("nextjs", "auto"));
-                }}
-              >
-                <CardContent className="flex items-center justify-between p-4">
-                  <div className="flex items-center gap-3">
-                    {repo.private ? (
-                      <Lock className="h-4 w-4 text-muted-foreground" />
-                    ) : (
-                      <Globe className="h-4 w-4 text-muted-foreground" />
-                    )}
-                    <div>
-                      <p className="text-sm font-medium">{repo.full_name}</p>
-                      <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                        <span className="flex items-center gap-1">
-                          <GitBranch className="h-3 w-3" />
-                          {repo.default_branch}
-                        </span>
-                        {repo.language && (
-                          <Badge
-                            variant="outline"
-                            className="text-xs px-1.5 py-0"
-                          >
-                            {repo.language}
-                          </Badge>
-                        )}
-                      </div>
+            <div className="rounded-lg border border-white/5">
+              {filteredRepos.map((repo) => (
+                <div
+                  key={repo.id}
+                  className="flex cursor-pointer items-center gap-3 border-b border-white/5 px-5 py-3.5 transition-colors last:border-b-0 hover:bg-muted/50"
+                  onClick={() => {
+                    setSelectedRepo(repo);
+                    setName(repo.name.toLowerCase().replace(/[^a-z0-9-]/g, "-"));
+                    setBranch(repo.default_branch);
+                    setBuildSettings(getFrameworkDefaults("nextjs", "auto"));
+                  }}
+                >
+                  {repo.private ? (
+                    <Lock className="h-4 w-4 shrink-0 text-muted-foreground" />
+                  ) : (
+                    <Globe className="h-4 w-4 shrink-0 text-muted-foreground" />
+                  )}
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate font-mono text-sm font-medium">
+                      {repo.full_name}
+                    </p>
+                    <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                      <span className="flex items-center gap-1 font-mono">
+                        <GitBranch className="h-3 w-3" />
+                        {repo.default_branch}
+                      </span>
+                      {repo.language && (
+                        <Badge
+                          variant="outline"
+                          className="px-1.5 py-0 text-xs"
+                        >
+                          {repo.language}
+                        </Badge>
+                      )}
                     </div>
                   </div>
                   <Button variant="outline" size="sm">
                     Import
                   </Button>
-                </CardContent>
-              </Card>
-            ))
+                </div>
+              ))}
+            </div>
           )}
         </div>
       </div>
@@ -196,18 +189,21 @@ export function NewProject() {
       </button>
 
       <h1 className="text-2xl font-bold tracking-tight">Configure Project</h1>
-      <p className="mt-1 text-sm text-muted-foreground">
+      <p className="mt-1 font-mono text-sm text-muted-foreground">
         {selectedRepo.owner.login}/{selectedRepo.name}
       </p>
 
-      <Card className="mt-6">
-        <CardHeader>
-          <CardTitle className="text-base">Project Settings</CardTitle>
-          <CardDescription>
+      <div className="mt-8 space-y-6">
+        <div>
+          <h3 className="border-b border-white/5 pb-2 text-sm font-semibold text-foreground">
+            Project Settings
+          </h3>
+          <p className="mt-3 text-sm text-muted-foreground">
             Configure how your project will be built and deployed
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
+          </p>
+        </div>
+
+        <div className="space-y-4">
           <div className="space-y-2">
             <Label htmlFor="organization">Workspace</Label>
             <Select
@@ -252,7 +248,7 @@ export function NewProject() {
             />
             <p className="text-xs text-muted-foreground">
               Used as subdomain:{" "}
-              <span className="font-medium">
+              <span className="font-mono font-medium">
                 {name || "my-app"}.preview.example.com
               </span>
             </p>
@@ -277,33 +273,33 @@ export function NewProject() {
               </SelectContent>
             </Select>
           </div>
+        </div>
 
-          <BuildSettingsFields
-            value={buildSettings}
-            onChange={setBuildSettings}
-          />
+        <BuildSettingsFields
+          value={buildSettings}
+          onChange={setBuildSettings}
+        />
 
-          <div className="flex justify-end gap-3 pt-4">
-            <Button variant="outline" onClick={() => setSelectedRepo(null)}>
-              Cancel
-            </Button>
-            <Button
-              onClick={() => createMutation.mutate()}
-              disabled={
-                !name ||
-                !selectedOrganizationId ||
-                createMutation.isPending ||
-                organizationsLoading
-              }
-            >
-              {createMutation.isPending ? (
-                <Spinner className="size-3.5" />
-              ) : null}
-              {createMutation.isPending ? "Creating…" : "Create Project"}
-            </Button>
-          </div>
-        </CardContent>
-      </Card>
+        <div className="flex justify-end gap-3 border-t border-white/5 pt-6">
+          <Button variant="outline" onClick={() => setSelectedRepo(null)}>
+            Cancel
+          </Button>
+          <Button
+            onClick={() => createMutation.mutate()}
+            disabled={
+              !name ||
+              !selectedOrganizationId ||
+              createMutation.isPending ||
+              organizationsLoading
+            }
+          >
+            {createMutation.isPending ? (
+              <Spinner className="size-3.5" />
+            ) : null}
+            {createMutation.isPending ? "Creating…" : "Create Project"}
+          </Button>
+        </div>
+      </div>
     </div>
   );
 }

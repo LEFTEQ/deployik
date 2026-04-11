@@ -30,6 +30,7 @@ type ProjectHandler struct {
 	Encryptor *crypto.Encryptor
 	Audit     *audit.Recorder
 	Analytics *analytics.Service
+	DevMode   bool
 }
 
 var slugRegex = regexp.MustCompile(`^[a-z0-9]([a-z0-9-]*[a-z0-9])?$`)
@@ -403,6 +404,12 @@ func (h *ProjectHandler) ListGithubRepos(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
+	// In dev mode with no GitHub token, return mock repos
+	if h.DevMode && user.GithubToken == "" {
+		writeJSON(w, http.StatusOK, devMockRepos(user.Username))
+		return
+	}
+
 	// Decrypt GitHub token
 	token, err := h.Encryptor.Decrypt(user.GithubToken)
 	if err != nil {
@@ -437,6 +444,12 @@ func (h *ProjectHandler) ListGithubBranches(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
+	// In dev mode with no GitHub token, return mock branches
+	if h.DevMode && user.GithubToken == "" {
+		writeJSON(w, http.StatusOK, devMockBranches())
+		return
+	}
+
 	token, err := h.Encryptor.Decrypt(user.GithubToken)
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to decrypt token"})
@@ -451,4 +464,66 @@ func (h *ProjectHandler) ListGithubBranches(w http.ResponseWriter, r *http.Reque
 	}
 
 	writeJSON(w, http.StatusOK, branches)
+}
+
+func devMockRepos(username string) []github.Repo {
+	return []github.Repo{
+		{
+			ID:            1,
+			FullName:      username + "/my-portfolio",
+			Name:          "my-portfolio",
+			Owner:         github.Owner{Login: username, AvatarURL: "https://github.com/identicons/" + username + ".png"},
+			Private:       false,
+			DefaultBranch: "main",
+			Language:      "TypeScript",
+			UpdatedAt:     time.Now().Add(-2 * time.Hour).Format(time.RFC3339),
+		},
+		{
+			ID:            2,
+			FullName:      username + "/landing-page",
+			Name:          "landing-page",
+			Owner:         github.Owner{Login: username, AvatarURL: "https://github.com/identicons/" + username + ".png"},
+			Private:       false,
+			DefaultBranch: "main",
+			Language:      "JavaScript",
+			UpdatedAt:     time.Now().Add(-24 * time.Hour).Format(time.RFC3339),
+		},
+		{
+			ID:            3,
+			FullName:      username + "/api-service",
+			Name:          "api-service",
+			Owner:         github.Owner{Login: username, AvatarURL: "https://github.com/identicons/" + username + ".png"},
+			Private:       true,
+			DefaultBranch: "develop",
+			Language:      "Go",
+			UpdatedAt:     time.Now().Add(-72 * time.Hour).Format(time.RFC3339),
+		},
+		{
+			ID:            4,
+			FullName:      username + "/docs-site",
+			Name:          "docs-site",
+			Owner:         github.Owner{Login: username, AvatarURL: "https://github.com/identicons/" + username + ".png"},
+			Private:       false,
+			DefaultBranch: "main",
+			Language:      "MDX",
+			UpdatedAt:     time.Now().Add(-168 * time.Hour).Format(time.RFC3339),
+		},
+	}
+}
+
+func devMockBranches() []github.Branch {
+	return []github.Branch{
+		{Name: "main", Commit: struct {
+			SHA string `json:"sha"`
+		}{SHA: "abc1234567890def"}},
+		{Name: "develop", Commit: struct {
+			SHA string `json:"sha"`
+		}{SHA: "def4567890abc123"}},
+		{Name: "feature/auth", Commit: struct {
+			SHA string `json:"sha"`
+		}{SHA: "fea7890abcdef456"}},
+		{Name: "fix/styling", Commit: struct {
+			SHA string `json:"sha"`
+		}{SHA: "f1x234567890abcd"}},
+	}
 }

@@ -122,6 +122,7 @@ func NewRouter(cfg *RouterConfig) *chi.Mux {
 				Encryptor: cfg.Encryptor,
 				Audit:     auditRecorder,
 				Analytics: cfg.Analytics,
+				DevMode:   cfg.DevMode,
 			}
 			r.Get("/github/repos", projectHandler.ListGithubRepos)
 			r.Get("/github/branches", projectHandler.ListGithubBranches)
