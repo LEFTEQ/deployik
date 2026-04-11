@@ -129,13 +129,15 @@ func (h *AutoBuildHandler) Put(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
+		log.Printf("Auto-build: creating webhook for %s/%s, url=%s", project.GithubOwner, project.GithubRepo, h.WebhookURL)
 		id, err := ghclient.NewClient(token).CreateWebhook(project.GithubOwner, project.GithubRepo, h.WebhookURL, rawSecret)
 		if err != nil {
 			errMsg := err.Error()
+			log.Printf("Auto-build: webhook creation failed for %s/%s: %s", project.GithubOwner, project.GithubRepo, errMsg)
 			if strings.Contains(errMsg, "403") || strings.Contains(errMsg, "404") {
 				writeJSON(w, http.StatusForbidden, map[string]interface{}{
 					"error":   "insufficient_scope",
-					"message": "Re-authorize with GitHub to enable auto-build",
+					"message": "Re-authorize with GitHub to enable auto-build. GitHub returned: " + errMsg,
 				})
 				return
 			}

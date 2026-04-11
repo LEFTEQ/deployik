@@ -56,6 +56,8 @@ func (h *AuthHandler) GithubCallback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	log.Printf("OAuth token granted with scope: %q", tokenResp.Scope)
+
 	// Get GitHub user
 	ghUser, err := github.GetUser(tokenResp.AccessToken)
 	if err != nil {
