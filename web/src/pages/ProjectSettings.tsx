@@ -148,6 +148,7 @@ function AutoBuildSection({
   defaultBranch: string;
 }) {
   const queryClient = useQueryClient();
+  const [needsReauth, setNeedsReauth] = useState(false);
 
   const { data: config } = useQuery({
     queryKey: ["auto-build", projectId],
@@ -171,14 +172,13 @@ function AutoBuildSection({
     }) => api.updateAutoBuildConfig(projectId, data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["auto-build", projectId] });
+      setNeedsReauth(false);
       toast.success("Auto-build updated");
     },
     onError: (err) => {
       const msg = err.message || String(err);
       if (msg.includes("insufficient_scope")) {
-        toast.error(
-          "GitHub permissions required. Re-authorize with GitHub to enable auto-build.",
-        );
+        setNeedsReauth(true);
       } else {
         toast.error(msg);
       }
@@ -228,6 +228,21 @@ function AutoBuildSection({
           disabled={updateMutation.isPending}
         />
       </div>
+
+      {needsReauth && (
+        <div className="rounded-lg border border-amber-500/25 bg-amber-500/5 p-4">
+          <p className="text-sm font-medium text-amber-200">
+            GitHub permissions need updating
+          </p>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Your account was authorized before webhook support was added.
+            Re-authorize to grant webhook permissions.
+          </p>
+          <Button size="sm" className="mt-3" asChild>
+            <a href="/api/auth/github">Re-authorize with GitHub</a>
+          </Button>
+        </div>
+      )}
 
       {enabled && (
         <div className="space-y-4 rounded-lg border p-4">
