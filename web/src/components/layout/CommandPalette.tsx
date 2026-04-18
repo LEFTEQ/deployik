@@ -6,6 +6,7 @@ import { Building2, FolderKanban, LogOut, Plus, Search } from "lucide-react";
 
 import { useOrganizations } from "@/hooks/use-organizations";
 import { api } from "@/lib/api";
+import { queryKeys } from "@/lib/queryKeys";
 import { useAuthStore } from "@/store/auth";
 import { useOrganizationStore } from "@/store/organization";
 import { Button } from "@/components/ui/button";
@@ -33,7 +34,7 @@ export function CommandPalette({ compact = false }: { compact?: boolean }) {
   const [open, setOpen] = React.useState(false);
 
   const { data: projects } = useQuery({
-    queryKey: ["command-projects", selectedOrganizationId ?? "all"],
+    queryKey: queryKeys.commandProjects(selectedOrganizationId),
     queryFn: () => api.listProjects(selectedOrganizationId ?? undefined),
   });
 

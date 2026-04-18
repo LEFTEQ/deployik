@@ -67,12 +67,20 @@ func (h *DomainHandler) Add(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Validate BEFORE any normalization writes into templates (nginx config,
+	// logs, SSL requests). Rejects CRLF, semicolons, wildcards, etc.
+	cleanDomain, err := domain.ValidateHostname(req.Domain)
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		return
+	}
+
 	env := req.Environment
 	if env == "" {
 		env = "production"
 	}
 
-	plan := domain.ResolveVariantPlan(req.Domain, env)
+	plan := domain.ResolveVariantPlan(cleanDomain, env)
 	if plan.CanonicalDomain == "" {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "domain is required"})
 		return

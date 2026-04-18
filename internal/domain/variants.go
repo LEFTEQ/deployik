@@ -1,10 +1,59 @@
 package domain
 
 import (
+	"errors"
+	"fmt"
+	"regexp"
 	"strings"
 
 	"golang.org/x/net/publicsuffix"
 )
+
+// hostnameLabel matches a single DNS label: alphanumeric start/end, internal
+// hyphens allowed, 1-63 chars. No underscores (illegal per RFC 1123 for hostnames).
+var hostnameLabel = regexp.MustCompile(`^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$`)
+
+// ErrInvalidHostname is returned when a user-supplied domain name fails validation.
+var ErrInvalidHostname = errors.New("invalid hostname")
+
+// ValidateHostname ensures the input is a syntactically legal DNS hostname
+// (RFC 1123) consisting of at least two labels, with no wildcards, IP literals,
+// underscores, whitespace, or shell/nginx metacharacters. It returns a
+// lower-cased, trimmed hostname on success.
+//
+// This is the hard boundary between user input and the nginx config writer —
+// any injection (newlines, semicolons, braces) must be rejected here.
+func ValidateHostname(value string) (string, error) {
+	normalized := normalizeHostname(value)
+	if normalized == "" {
+		return "", fmt.Errorf("%w: empty", ErrInvalidHostname)
+	}
+	if len(normalized) > 253 {
+		return "", fmt.Errorf("%w: exceeds 253 characters", ErrInvalidHostname)
+	}
+	labels := strings.Split(normalized, ".")
+	if len(labels) < 2 {
+		return "", fmt.Errorf("%w: must contain at least two labels", ErrInvalidHostname)
+	}
+	for _, label := range labels {
+		if !hostnameLabel.MatchString(label) {
+			return "", fmt.Errorf("%w: label %q is not RFC 1123 compliant", ErrInvalidHostname, label)
+		}
+	}
+	// Reject numeric-only TLDs (IPv4 literals slip through the label regex).
+	tld := labels[len(labels)-1]
+	allDigits := true
+	for _, r := range tld {
+		if r < '0' || r > '9' {
+			allDigits = false
+			break
+		}
+	}
+	if allDigits {
+		return "", fmt.Errorf("%w: numeric TLDs are not allowed", ErrInvalidHostname)
+	}
+	return normalized, nil
+}
 
 type VariantPlan struct {
 	CanonicalDomain string

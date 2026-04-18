@@ -14,6 +14,7 @@ import {
 import { CodePanel } from "@/components/ui/code-panel";
 import { LoadingState, Spinner } from "@/components/ui/spinner";
 import { api } from "@/lib/api";
+import { queryKeys } from "@/lib/queryKeys";
 import { cn } from "@/lib/utils";
 
 export function ProjectIntegrationTab({ projectId }: { projectId: string }) {
@@ -22,7 +23,7 @@ export function ProjectIntegrationTab({ projectId }: { projectId: string }) {
     Intl.DateTimeFormat().resolvedOptions().timeZone?.trim() || "UTC";
 
   const { data, isLoading, error } = useQuery({
-    queryKey: ["project-analytics-integration", projectId, timezone],
+    queryKey: queryKeys.projectAnalyticsIntegration(projectId, timezone),
     queryFn: () =>
       api.getProjectAnalytics(projectId, {
         environment: "all",

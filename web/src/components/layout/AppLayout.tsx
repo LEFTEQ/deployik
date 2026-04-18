@@ -1,5 +1,7 @@
+import { Suspense } from "react";
 import { Outlet } from "@tanstack/react-router";
 
+import { LoadingState } from "@/components/ui/spinner";
 import { SidebarProvider } from "@/components/ui/sidebar";
 
 export function AppLayout() {
@@ -12,7 +14,9 @@ export function AppLayout() {
         } as React.CSSProperties
       }
     >
-      <Outlet />
+      <Suspense fallback={<LoadingState title="Loading…" />}>
+        <Outlet />
+      </Suspense>
     </SidebarProvider>
   );
 }

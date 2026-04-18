@@ -19,6 +19,7 @@ import {
 } from "lucide-react";
 
 import { api } from "@/lib/api";
+import { queryKeys } from "@/lib/queryKeys";
 import { useAuthStore } from "@/store/auth";
 import { useOrganizationStore } from "@/store/organization";
 import { useOrganizations } from "@/hooks/use-organizations";
@@ -171,7 +172,7 @@ export function AppSidebar({ context, projectId, ...props }: AppSidebarProps) {
   } = useOrganizations();
 
   const { data: project } = useQuery({
-    queryKey: ["project", projectId],
+    queryKey: queryKeys.project(projectId ?? ""),
     queryFn: () => api.getProject(projectId!),
     enabled: context === "project" && !!projectId,
   });

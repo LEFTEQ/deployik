@@ -15,6 +15,7 @@ import {
 import { toast } from "sonner";
 
 import { api } from "@/lib/api";
+import { queryKeys, staleTimes } from "@/lib/queryKeys";
 import { ENVIRONMENT_META, isDomainReady } from "@/lib/deployment-helpers";
 import { useDomainVerification, parseStream } from "@/hooks/useDomainVerification";
 import type { VerificationState } from "@/hooks/useDomainVerification";
@@ -154,13 +155,14 @@ export function ProjectSettingsDomains() {
   const { logs, state: verifyState, summary, clearLogs } = useDomainVerification(verifyingDomainId);
 
   const { data: domains, isLoading } = useQuery({
-    queryKey: ["domains", id],
+    queryKey: queryKeys.domains(id),
     queryFn: () => api.listDomains(id),
   });
 
   const { data: platform } = useQuery({
-    queryKey: ["platform"],
+    queryKey: queryKeys.platform(),
     queryFn: () => api.getPlatformInfo(),
+    staleTime: staleTimes.platform,
   });
 
   const addMutation = useMutation({
@@ -170,7 +172,7 @@ export function ProjectSettingsDomains() {
         environment: newDomainEnvironment,
       }),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["domains", id] });
+      queryClient.invalidateQueries({ queryKey: queryKeys.domains(id) });
       setNewDomain("");
       setNewDomainEnvironment("production");
       setShowAddForm(false);
@@ -192,7 +194,7 @@ export function ProjectSettingsDomains() {
 
   useEffect(() => {
     if (verifyState === "success" || verifyState === "error") {
-      queryClient.invalidateQueries({ queryKey: ["domains", id] });
+      queryClient.invalidateQueries({ queryKey: queryKeys.domains(id) });
       const timer = setTimeout(() => {
         setMinimized(true);
         setVerifyingDomainId(null);

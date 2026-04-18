@@ -5,6 +5,7 @@ import { Search, Lock, Globe, GitBranch, ArrowLeft } from "lucide-react";
 import { Link } from "@tanstack/react-router";
 import { toast } from "sonner";
 import { api } from "@/lib/api";
+import { queryKeys, staleTimes } from "@/lib/queryKeys";
 import { useOrganizations } from "@/hooks/use-organizations";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -43,19 +44,20 @@ export function NewProject() {
   );
 
   const { data: repos, isLoading: reposLoading } = useQuery({
-    queryKey: ["github-repos"],
+    queryKey: queryKeys.githubRepos(),
     queryFn: () => api.listGithubRepos(),
+    staleTime: staleTimes.github,
   });
 
   const { data: branches } = useQuery({
-    queryKey: [
-      "github-branches",
-      selectedRepo?.owner.login,
-      selectedRepo?.name,
-    ],
+    queryKey: queryKeys.githubBranches(
+      selectedRepo?.owner.login ?? "",
+      selectedRepo?.name ?? "",
+    ),
     queryFn: () =>
       api.listGithubBranches(selectedRepo!.owner.login, selectedRepo!.name),
     enabled: !!selectedRepo,
+    staleTime: staleTimes.github,
   });
 
   const createMutation = useMutation({
@@ -75,7 +77,7 @@ export function NewProject() {
         node_version: buildSettings.nodeVersion,
       }),
     onSuccess: (project) => {
-      queryClient.invalidateQueries({ queryKey: ["projects"] });
+      queryClient.invalidateQueries({ queryKey: ["projects"] }); // invalidate all org scopes
       toast.success("Project created");
       navigate({
         to: "/projects/$id",

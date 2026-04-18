@@ -3,6 +3,7 @@ import { useParams, Link } from "@tanstack/react-router";
 import { ArrowLeft, Clock, GitBranch, GitCommit } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { api } from "@/lib/api";
+import { queryKeys, staleTimes } from "@/lib/queryKeys";
 import { useBuildLogs } from "@/hooks/useBuildLogs";
 import { BuildLog } from "@/components/BuildLog";
 import { Badge } from "@/components/ui/badge";
@@ -26,8 +27,9 @@ export function DeploymentDetail() {
   };
 
   const { data: deployment, isLoading } = useQuery({
-    queryKey: ["deployment", did],
+    queryKey: queryKeys.deployment(did),
     queryFn: () => api.getDeployment(id, did),
+    staleTime: staleTimes.activeDeployments,
     refetchInterval: (query) => {
       const status = query.state.data?.status;
       if (
@@ -41,7 +43,7 @@ export function DeploymentDetail() {
   });
 
   const { data: historicalLogs } = useQuery({
-    queryKey: ["build-logs", did],
+    queryKey: queryKeys.buildLogs(did),
     queryFn: () => api.getBuildLogs(did),
     enabled: !!deployment,
   });

@@ -6,6 +6,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"sync"
 	"time"
 
 	"github.com/LEFTEQ/lovinka-deployik/internal/crypto"
@@ -14,6 +15,9 @@ import (
 	"github.com/LEFTEQ/lovinka-deployik/internal/projectconfig"
 	"github.com/LEFTEQ/lovinka-deployik/internal/ws"
 )
+
+// defaultMaxBuildDuration caps a single deployment when MaxBuildDuration is unset.
+const defaultMaxBuildDuration = 15 * time.Minute
 
 // Pipeline orchestrates the full deploy flow.
 type Pipeline struct {
@@ -26,6 +30,50 @@ type Pipeline struct {
 	ProxyNetwork  string // Docker network name (e.g., "proxy")
 	Hub           *ws.Hub
 	ScreenshotDir string // Directory to store deployment screenshots
+
+	// Ctx is the pipeline-level parent context. When cancelled, in-flight deploys
+	// abort cleanly. Handler goroutines derive per-deploy contexts from this.
+	Ctx context.Context
+	// Wg tracks active deploy + screenshot goroutines so the server can drain
+	// cleanly on shutdown.
+	Wg *sync.WaitGroup
+	// MaxBuildDuration is the per-deploy wall-clock cap. Zero means defaultMaxBuildDuration.
+	MaxBuildDuration time.Duration
+}
+
+// Dispatch starts a deployment asynchronously. Returns immediately; the deploy
+// runs on a pipeline-owned goroutine that participates in the WaitGroup and
+// respects the pipeline context.
+func (p *Pipeline) Dispatch(project *db.Project, deployment *db.Deployment, githubToken string, onLog LogCallback) {
+	if p.Wg != nil {
+		p.Wg.Add(1)
+	}
+	go func() {
+		if p.Wg != nil {
+			defer p.Wg.Done()
+		}
+		defer func() {
+			if rec := recover(); rec != nil {
+				log.Printf("Pipeline panic for deployment %s: %v", deployment.ID, rec)
+				if err := p.DB.UpdateDeploymentStatus(deployment.ID, "failed", "internal error"); err != nil {
+					log.Printf("Failed to mark deployment %s failed after panic: %v", deployment.ID, err)
+				}
+			}
+		}()
+
+		parent := p.Ctx
+		if parent == nil {
+			parent = context.Background()
+		}
+		duration := p.MaxBuildDuration
+		if duration <= 0 {
+			duration = defaultMaxBuildDuration
+		}
+		ctx, cancel := context.WithTimeout(parent, duration)
+		defer cancel()
+
+		p.Deploy(ctx, project, deployment, githubToken, onLog)
+	}()
 }
 
 // LogCallback is called for each build log line.
@@ -250,10 +298,29 @@ func (p *Pipeline) Deploy(ctx context.Context, project *db.Project, deployment *
 
 	emit(fmt.Sprintf("Deployment live! (%ds)", duration))
 
-	// Step 11: Capture screenshot asynchronously
+	// Step 11: Capture screenshot asynchronously. Participates in the pipeline
+	// WaitGroup and honors pipeline-level cancellation.
 	if p.ScreenshotDir != "" && p.Docker != nil {
+		if p.Wg != nil {
+			p.Wg.Add(1)
+		}
 		go func() {
-			time.Sleep(5 * time.Second)
+			if p.Wg != nil {
+				defer p.Wg.Done()
+			}
+			parent := p.Ctx
+			if parent == nil {
+				parent = context.Background()
+			}
+			screenshotCtx, cancel := context.WithTimeout(parent, 90*time.Second)
+			defer cancel()
+
+			select {
+			case <-screenshotCtx.Done():
+				return
+			case <-time.After(5 * time.Second):
+			}
+
 			domains, err := p.DB.ListDomains(project.ID)
 			if err != nil {
 				log.Printf("Screenshot: failed to list domains for %s: %v", deployment.ID, err)
@@ -270,7 +337,7 @@ func (p *Pipeline) Deploy(ctx context.Context, project *db.Project, deployment *
 				log.Printf("Screenshot: no active domain for deployment %s", deployment.ID)
 				return
 			}
-			path, err := CaptureScreenshot(context.Background(), p.Docker, screenshotURL, deployment.ID, p.ScreenshotDir, p.ProxyNetwork)
+			path, err := CaptureScreenshot(screenshotCtx, p.Docker, screenshotURL, deployment.ID, p.ScreenshotDir, p.ProxyNetwork)
 			if err != nil {
 				log.Printf("Screenshot capture failed for %s: %v", deployment.ID, err)
 				return

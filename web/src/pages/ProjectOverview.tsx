@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useOptimistic, useState, useTransition } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate, useParams } from "@tanstack/react-router";
 import {
@@ -16,6 +16,7 @@ import {
 import { toast } from "sonner";
 
 import { api } from "@/lib/api";
+import { queryKeys, staleTimes } from "@/lib/queryKeys";
 import {
   ACTIVE_DEPLOYMENT_STATUSES,
   DEPLOYMENT_STATUS_META,
@@ -39,24 +40,57 @@ import {
 } from "@/components/ui/dialog";
 import { LoadingState } from "@/components/ui/spinner";
 import { cn } from "@/lib/utils";
+import { useAuthStore } from "@/store/auth";
 import type { Deployment } from "@/types/api";
+
+function buildOptimisticDeployment(args: {
+  projectId: string;
+  environment: "preview" | "production";
+  branch: string;
+  username: string;
+  commitMessage?: string;
+}): Deployment {
+  return {
+    id: `optimistic-${Date.now()}`,
+    project_id: args.projectId,
+    environment: args.environment,
+    commit_sha: "",
+    commit_message: args.commitMessage ?? "",
+    branch: args.branch,
+    status: "queued",
+    container_id: "",
+    container_name: "",
+    image_tag: "",
+    build_duration: 0,
+    triggered_by: "",
+    trigger_source: "manual",
+    triggered_by_username: args.username,
+    screenshot_path: null,
+    error_message: undefined,
+    created_at: new Date().toISOString(),
+    finished_at: null,
+  };
+}
 
 export function ProjectOverview() {
   const { id } = useParams({ strict: false }) as { id: string };
   const navigate = useNavigate();
   const queryClient = useQueryClient();
+  const currentUser = useAuthStore((state) => state.user);
   const [releaseDialogOpen, setReleaseDialogOpen] = useState(false);
   const [createTag, setCreateTag] = useState(true);
   const [releaseTagName, setReleaseTagName] = useState(buildReleaseTagName());
+  const [, startTransition] = useTransition();
 
   const { data: project, isLoading } = useQuery({
-    queryKey: ["project", id],
+    queryKey: queryKeys.project(id),
     queryFn: () => api.getProject(id),
   });
 
   const { data: deployments } = useQuery({
-    queryKey: ["deployments", id],
+    queryKey: queryKeys.deployments(id),
     queryFn: () => api.listDeployments(id),
+    staleTime: staleTimes.activeDeployments,
     refetchInterval: (query) => {
       const items = query.state.data ?? [];
       return items.some((d) => ACTIVE_DEPLOYMENT_STATUSES.has(d.status))
@@ -66,9 +100,17 @@ export function ProjectOverview() {
   });
 
   const { data: domains } = useQuery({
-    queryKey: ["domains", id],
+    queryKey: queryKeys.domains(id),
     queryFn: () => api.listDomains(id),
   });
+
+  // Optimistically render the new deployment at the top of the list so the
+  // "Recent deployments" section reflects the click instantly. Resets when the
+  // server list refreshes after the mutation resolves.
+  const [optimisticDeployments, addOptimistic] = useOptimistic<
+    Deployment[],
+    Deployment
+  >(deployments ?? [], (state, pending) => [pending, ...state]);
 
   const deployMutation = useMutation({
     mutationFn: (payload: {
@@ -78,7 +120,7 @@ export function ProjectOverview() {
       tag_name?: string;
     }) => api.triggerDeployment(id, payload),
     onSuccess: (deployment, variables) => {
-      queryClient.invalidateQueries({ queryKey: ["deployments", id] });
+      queryClient.invalidateQueries({ queryKey: queryKeys.deployments(id) });
       toast.success(
         `${deployment.environment === "production" ? "Release" : "Preview deploy"} triggered`,
       );
@@ -116,13 +158,38 @@ export function ProjectOverview() {
   const visibleDomains = readyDomains.slice(0, maxDomainsShown);
   const extraDomainCount = readyDomains.length - visibleDomains.length;
 
-  const latestPreview = getLatestEnvironmentDeployment(deployments, "preview");
+  const latestPreview = getLatestEnvironmentDeployment(
+    optimisticDeployments,
+    "preview",
+  );
   const latestProduction = getLatestEnvironmentDeployment(
-    deployments,
+    optimisticDeployments,
     "production",
   );
 
-  const recentDeployments = (deployments ?? []).slice(0, 6);
+  const recentDeployments = optimisticDeployments.slice(0, 6);
+
+  const triggerDeploy = (payload: {
+    environment: "preview" | "production";
+    branch?: string;
+    create_tag?: boolean;
+    tag_name?: string;
+  }) => {
+    startTransition(() => {
+      addOptimistic(
+        buildOptimisticDeployment({
+          projectId: id,
+          environment: payload.environment,
+          branch: payload.branch ?? project.branch,
+          username: currentUser?.username ?? "",
+          commitMessage: payload.tag_name
+            ? `Release ${payload.tag_name}`
+            : undefined,
+        }),
+      );
+      deployMutation.mutate(payload);
+    });
+  };
 
   return (
     <div className="space-y-8">
@@ -210,7 +277,7 @@ export function ProjectOverview() {
             <Button
               size="sm"
               variant="outline"
-              onClick={() => deployMutation.mutate({ environment: "preview" })}
+              onClick={() => triggerDeploy({ environment: "preview" })}
               disabled={deployMutation.isPending}
             >
               <Rocket className="mr-1.5 h-3.5 w-3.5" />
@@ -344,7 +411,7 @@ export function ProjectOverview() {
             </Button>
             <Button
               onClick={() =>
-                deployMutation.mutate({
+                triggerDeploy({
                   environment: "production",
                   create_tag: createTag,
                   tag_name: createTag ? releaseTagName.trim() : undefined,

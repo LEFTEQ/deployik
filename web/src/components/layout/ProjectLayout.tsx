@@ -1,10 +1,14 @@
+import { Suspense } from "react";
 import { Link, Outlet, useParams, useRouterState } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { FolderKanban } from "lucide-react";
 
 import { api } from "@/lib/api";
+import { queryKeys } from "@/lib/queryKeys";
 import { AppSidebar } from "@/components/layout/AppSidebar";
 import { CommandPalette } from "@/components/layout/CommandPalette";
+import { ErrorBoundary } from "@/components/layout/ErrorBoundary";
+import { LoadingState } from "@/components/ui/spinner";
 import { useAuthStore } from "@/store/auth";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Separator } from "@/components/ui/separator";
@@ -25,7 +29,7 @@ export function ProjectLayout() {
   const { user } = useAuthStore();
 
   const { data: project } = useQuery({
-    queryKey: ["project", id],
+    queryKey: queryKeys.project(id),
     queryFn: () => api.getProject(id),
   });
 
@@ -82,7 +86,18 @@ export function ProjectLayout() {
         </header>
         <div className="flex flex-1 flex-col gap-4 p-4">
           <div className="mx-auto w-full max-w-[1400px]">
-            <Outlet />
+            <ErrorBoundary scope="project">
+              <Suspense
+                fallback={
+                  <LoadingState
+                    title="Loading…"
+                    className="min-h-[320px]"
+                  />
+                }
+              >
+                <Outlet />
+              </Suspense>
+            </ErrorBoundary>
           </div>
         </div>
       </SidebarInset>

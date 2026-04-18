@@ -2,6 +2,7 @@ import { useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
 
 import { api } from "@/lib/api";
+import { queryKeys } from "@/lib/queryKeys";
 import { useOrganizationStore } from "@/store/organization";
 
 export function useOrganizations() {
@@ -12,7 +13,7 @@ export function useOrganizations() {
   } = useOrganizationStore();
 
   const query = useQuery({
-    queryKey: ["organizations"],
+    queryKey: queryKeys.organizations(),
     queryFn: () => api.listOrganizations(),
   });
 

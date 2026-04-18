@@ -3,6 +3,7 @@ import { Link } from "@tanstack/react-router";
 import { ChevronRight, Plus } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { api } from "@/lib/api";
+import { queryKeys } from "@/lib/queryKeys";
 import { useOrganizations } from "@/hooks/use-organizations";
 import { Button } from "@/components/ui/button";
 import { LoadingState } from "@/components/ui/spinner";
@@ -50,7 +51,7 @@ export function Projects() {
     isLoading: organizationsLoading,
   } = useOrganizations();
   const { data: projects, isLoading } = useQuery({
-    queryKey: ["projects", selectedOrganizationId ?? "all"],
+    queryKey: queryKeys.projects(selectedOrganizationId),
     queryFn: () => api.listProjects(selectedOrganizationId ?? undefined),
     enabled: !organizationsLoading,
   });

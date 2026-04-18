@@ -15,6 +15,7 @@ import { toast } from "sonner";
 import { useState } from "react";
 
 import { api } from "@/lib/api";
+import { queryKeys } from "@/lib/queryKeys";
 import { VARIABLE_SCOPE_META } from "@/lib/deployment-helpers";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -77,15 +78,18 @@ export function VariableStore({ projectId, kind }: VariableStoreProps) {
     ? "Encrypted at rest, never exposed during build, injected only at runtime."
     : "Configuration for your app. NEXT_PUBLIC_* keys are baked into the build.";
 
-  const queryKey = ["project-variables", kind, projectId, scope];
-
   const { data: variables, isLoading } = useQuery({
-    queryKey,
+    queryKey: queryKeys.projectVariables(kind, projectId, scope),
     queryFn: () =>
       isSecret
         ? api.listSecrets(projectId, scope)
         : api.listEnvVars(projectId, scope),
   });
+
+  const invalidateVariables = () =>
+    queryClient.invalidateQueries({
+      queryKey: queryKeys.projectVariables(kind, projectId),
+    });
 
   const upsertMutation = useMutation({
     mutationFn: (data: { key: string; value: string; environment: string }) =>
@@ -93,9 +97,7 @@ export function VariableStore({ projectId, kind }: VariableStoreProps) {
         ? api.upsertSecret(projectId, data)
         : api.upsertEnvVar(projectId, data),
     onSuccess: () => {
-      queryClient.invalidateQueries({
-        queryKey: ["project-variables", kind, projectId],
-      });
+      invalidateVariables();
       closeAddDialog();
       toast.success(
         editingVariable ? "Variable updated" : "Variable added",
@@ -106,23 +108,29 @@ export function VariableStore({ projectId, kind }: VariableStoreProps) {
 
   const importMutation = useMutation({
     mutationFn: async (entries: { key: string; value: string }[]) => {
-      const upsertFn = isSecret
-        ? (d: { key: string; value: string; environment: string }) =>
-            api.upsertSecret(projectId, d)
-        : (d: { key: string; value: string; environment: string }) =>
-            api.upsertEnvVar(projectId, d);
-      for (const entry of entries) {
-        await upsertFn({
-          key: entry.key,
-          value: entry.value,
-          environment: importEnvironment,
-        });
+      // Parallelize upserts rather than awaiting sequentially — the server
+      // accepts each as an additive POST, so order doesn't matter. For a
+      // typical .env import (10-50 vars) this cuts wall-clock latency from
+      // O(n × round-trip) to a single round-trip.
+      const upsertFn = isSecret ? api.upsertSecret : api.upsertEnvVar;
+      const results = await Promise.allSettled(
+        entries.map((entry) =>
+          upsertFn.call(api, projectId, {
+            key: entry.key,
+            value: entry.value,
+            environment: importEnvironment,
+          }),
+        ),
+      );
+      const failures = results.filter((r) => r.status === "rejected");
+      if (failures.length > 0) {
+        throw new Error(
+          `${failures.length} of ${entries.length} variables failed to import`,
+        );
       }
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({
-        queryKey: ["project-variables", kind, projectId],
-      });
+      invalidateVariables();
       setImportDialogOpen(false);
       setImportText("");
       toast.success("Variables imported");
@@ -136,9 +144,7 @@ export function VariableStore({ projectId, kind }: VariableStoreProps) {
         ? api.deleteSecret(projectId, key, scope)
         : api.deleteEnvVar(projectId, key, scope),
     onSuccess: () => {
-      queryClient.invalidateQueries({
-        queryKey: ["project-variables", kind, projectId],
-      });
+      invalidateVariables();
       toast.success("Variable deleted");
     },
     onError: (err) => toast.error(err.message),

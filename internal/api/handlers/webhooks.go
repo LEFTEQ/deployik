@@ -1,7 +1,6 @@
 package handlers
 
 import (
-	"context"
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/hex"
@@ -202,18 +201,9 @@ func (h *WebhookHandler) HandleGithub(w http.ResponseWriter, r *http.Request) {
 			Status:           "processed",
 		})
 
-		go func(p *db.Project, d *db.Deployment, token string) {
-			defer func() {
-				if r := recover(); r != nil {
-					log.Printf("Pipeline panic for webhook deployment %s: %v", d.ID, r)
-					h.DB.UpdateDeploymentStatus(d.ID, "failed", "internal error")
-				}
-			}()
-
-			h.Pipeline.Deploy(context.Background(), p, d, token, func(line string, stream string) {
-				log.Printf("[webhook-deploy:%s] %s", d.ID[:8], line)
-			})
-		}(project, deployment, githubToken)
+		h.Pipeline.Dispatch(project, deployment, githubToken, func(line string, stream string) {
+			log.Printf("[webhook-deploy:%s] %s", deployment.ID[:8], line)
+		})
 	}
 
 	w.WriteHeader(http.StatusOK)

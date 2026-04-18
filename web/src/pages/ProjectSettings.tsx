@@ -5,6 +5,7 @@ import { GitBranch, Trash2, Webhook } from "lucide-react";
 import { toast } from "sonner";
 
 import { api } from "@/lib/api";
+import { queryKeys } from "@/lib/queryKeys";
 import {
   BuildSettingsFields,
 } from "@/components/projects/build-settings";
@@ -38,7 +39,7 @@ export function ProjectSettings() {
   const queryClient = useQueryClient();
 
   const { data: project, isLoading } = useQuery({
-    queryKey: ["project", id],
+    queryKey: queryKeys.project(id),
     queryFn: () => api.getProject(id),
   });
 
@@ -105,7 +106,7 @@ function BuildSettingsSection({
         node_version: buildSettings.nodeVersion,
       }),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["project", project.id] });
+      queryClient.invalidateQueries({ queryKey: queryKeys.project(project.id) });
       toast.success("Settings updated");
     },
     onError: (err) => toast.error(err.message),
@@ -161,7 +162,7 @@ function AutoBuildSection({
   const [noAdminAccess, setNoAdminAccess] = useState<string | null>(null);
 
   const { data: config } = useQuery({
-    queryKey: ["auto-build", projectId],
+    queryKey: queryKeys.autoBuild(projectId),
     queryFn: () => api.getAutoBuildConfig(projectId).catch(() => null),
   });
 
@@ -181,7 +182,7 @@ function AutoBuildSection({
       preview_branches: string;
     }) => api.updateAutoBuildConfig(projectId, data),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["auto-build", projectId] });
+      queryClient.invalidateQueries({ queryKey: queryKeys.autoBuild(projectId) });
       setNeedsReauth(false);
       toast.success("Auto-build updated");
     },

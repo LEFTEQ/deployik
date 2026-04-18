@@ -3,6 +3,7 @@ import { FolderKanban } from "lucide-react";
 
 import { AppSidebar } from "@/components/layout/AppSidebar";
 import { CommandPalette } from "@/components/layout/CommandPalette";
+import { ErrorBoundary } from "@/components/layout/ErrorBoundary";
 import { useAuthStore } from "@/store/auth";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Separator } from "@/components/ui/separator";
@@ -36,7 +37,9 @@ export function WorkspaceLayout() {
         </header>
         <div className="flex flex-1 flex-col gap-4 p-4">
           <div className="mx-auto w-full max-w-[1600px]">
-            <Outlet />
+            <ErrorBoundary scope="workspace">
+              <Outlet />
+            </ErrorBoundary>
           </div>
         </div>
       </SidebarInset>

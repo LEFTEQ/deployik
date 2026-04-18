@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useOptimistic, useState, useTransition } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate, useParams } from "@tanstack/react-router";
 import {
@@ -10,6 +10,8 @@ import {
 import { toast } from "sonner";
 
 import { api } from "@/lib/api";
+import { queryKeys, staleTimes } from "@/lib/queryKeys";
+import { useAuthStore } from "@/store/auth";
 import {
   ACTIVE_DEPLOYMENT_STATUSES,
   DEPLOYMENT_STATUS_META,
@@ -43,23 +45,57 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { cn } from "@/lib/utils";
+import type { Deployment } from "@/types/api";
+
+function buildOptimisticDeployment(args: {
+  projectId: string;
+  environment: "preview" | "production";
+  branch: string;
+  username: string;
+  commitSha?: string;
+  commitMessage?: string;
+}): Deployment {
+  return {
+    id: `optimistic-${Date.now()}`,
+    project_id: args.projectId,
+    environment: args.environment,
+    commit_sha: args.commitSha ?? "",
+    commit_message: args.commitMessage ?? "",
+    branch: args.branch,
+    status: "queued",
+    container_id: "",
+    container_name: "",
+    image_tag: "",
+    build_duration: 0,
+    triggered_by: "",
+    trigger_source: "manual",
+    triggered_by_username: args.username,
+    screenshot_path: null,
+    error_message: undefined,
+    created_at: new Date().toISOString(),
+    finished_at: null,
+  };
+}
 
 export function ProjectDeployments() {
   const { id } = useParams({ strict: false }) as { id: string };
   const navigate = useNavigate();
   const queryClient = useQueryClient();
+  const currentUser = useAuthStore((state) => state.user);
   const [releaseDialogOpen, setReleaseDialogOpen] = useState(false);
   const [createTag, setCreateTag] = useState(true);
   const [releaseTagName, setReleaseTagName] = useState(buildReleaseTagName());
+  const [, startTransition] = useTransition();
 
   const { data: project } = useQuery({
-    queryKey: ["project", id],
+    queryKey: queryKeys.project(id),
     queryFn: () => api.getProject(id),
   });
 
   const { data: deployments, isLoading } = useQuery({
-    queryKey: ["deployments", id],
+    queryKey: queryKeys.deployments(id),
     queryFn: () => api.listDeployments(id),
+    staleTime: staleTimes.activeDeployments,
     refetchInterval: (query) => {
       const items = query.state.data ?? [];
       return items.some((d) => ACTIVE_DEPLOYMENT_STATUSES.has(d.status))
@@ -68,8 +104,16 @@ export function ProjectDeployments() {
     },
   });
 
+  // Optimistic deployment list: the user sees a "queued" card the instant they
+  // click Deploy, even before the API confirms. React 19 resets this automatically
+  // when `deployments` (the server source of truth) updates after mutation success.
+  const [optimisticDeployments, addOptimistic] = useOptimistic<
+    Deployment[],
+    Deployment
+  >(deployments ?? [], (state, pending) => [pending, ...state]);
+
   const { data: domains } = useQuery({
-    queryKey: ["domains", id],
+    queryKey: queryKeys.domains(id),
     queryFn: () => api.listDomains(id),
   });
 
@@ -81,7 +125,7 @@ export function ProjectDeployments() {
       tag_name?: string;
     }) => api.triggerDeployment(id, payload),
     onSuccess: (_data, variables) => {
-      queryClient.invalidateQueries({ queryKey: ["deployments", id] });
+      queryClient.invalidateQueries({ queryKey: queryKeys.deployments(id) });
       toast.success(
         variables.environment === "production"
           ? "Release queued"
@@ -101,6 +145,28 @@ export function ProjectDeployments() {
     });
   };
 
+  const triggerDeploy = (payload: {
+    environment: "preview" | "production";
+    branch?: string;
+    create_tag?: boolean;
+    tag_name?: string;
+  }) => {
+    startTransition(() => {
+      addOptimistic(
+        buildOptimisticDeployment({
+          projectId: id,
+          environment: payload.environment,
+          branch: payload.branch ?? project?.branch ?? "main",
+          username: currentUser?.username ?? "",
+          commitMessage: payload.tag_name
+            ? `Release ${payload.tag_name}`
+            : undefined,
+        }),
+      );
+      deploymentMutation.mutate(payload);
+    });
+  };
+
   return (
     <div className="space-y-8">
       <div className="flex flex-wrap items-start justify-between gap-4">
@@ -114,9 +180,7 @@ export function ProjectDeployments() {
         <div className="flex flex-wrap gap-2">
           <Button
             size="sm"
-            onClick={() =>
-              deploymentMutation.mutate({ environment: "preview" })
-            }
+            onClick={() => triggerDeploy({ environment: "preview" })}
             disabled={deploymentMutation.isPending}
           >
             <Rocket className="mr-1.5 h-3.5 w-3.5" />
@@ -143,7 +207,7 @@ export function ProjectDeployments() {
           title="Loading deployments..."
           description="Fetching recent preview and production build history."
         />
-      ) : !deployments?.length ? (
+      ) : !optimisticDeployments.length ? (
         <Card>
           <CardContent className="py-12 text-center">
             <p className="text-sm text-muted-foreground">
@@ -168,7 +232,7 @@ export function ProjectDeployments() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {deployments.map((deployment) => {
+                {optimisticDeployments.map((deployment) => {
                   const liveUrl =
                     deployment.status === "live"
                       ? getPrimaryEnvironmentUrl(
@@ -333,7 +397,7 @@ export function ProjectDeployments() {
               </Button>
               <Button
                 onClick={() =>
-                  deploymentMutation.mutate({
+                  triggerDeploy({
                     environment: "production",
                     create_tag: createTag,
                     tag_name: createTag ? releaseTagName.trim() : undefined,

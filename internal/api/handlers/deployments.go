@@ -1,7 +1,6 @@
 package handlers
 
 import (
-	"context"
 	"encoding/json"
 	"log"
 	"net/http"
@@ -169,20 +168,11 @@ func (h *DeploymentHandler) Trigger(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Run pipeline in background
-	go func() {
-		defer func() {
-			if r := recover(); r != nil {
-				log.Printf("Pipeline panic for deployment %s: %v", deployment.ID, r)
-				h.DB.UpdateDeploymentStatus(deployment.ID, "failed", "internal error")
-			}
-		}()
-
-		h.Pipeline.Deploy(context.Background(), project, deployment, githubToken, func(line string, stream string) {
-			log.Printf("[deploy:%s] %s", deployment.ID[:8], line)
-			// Build log stored by pipeline; WebSocket streaming in Phase 9
-		})
-	}()
+	// Hand off to the pipeline, which manages goroutine lifecycle, timeouts,
+	// graceful shutdown, and panic recovery.
+	h.Pipeline.Dispatch(project, deployment, githubToken, func(line string, stream string) {
+		log.Printf("[deploy:%s] %s", deployment.ID[:8], line)
+	})
 
 	writeJSON(w, http.StatusAccepted, deployment)
 	h.Audit.Record(audit.Entry{

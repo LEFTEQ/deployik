@@ -30,6 +30,7 @@ import { LoadingState, Spinner } from "@/components/ui/spinner";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { cn } from "@/lib/utils";
 import { api } from "@/lib/api";
+import { queryKeys, staleTimes } from "@/lib/queryKeys";
 import type {
   AnalyticsBreakdownItem,
   AnalyticsEnvironmentFilter,
@@ -66,13 +67,14 @@ export function ProjectAnalyticsTab({
     Intl.DateTimeFormat().resolvedOptions().timeZone?.trim() || "UTC";
 
   const { data, isLoading, error } = useQuery({
-    queryKey: ["project-analytics", projectId, environment, range, timezone],
+    queryKey: queryKeys.projectAnalytics(projectId, environment, range, timezone),
     queryFn: () =>
       api.getProjectAnalytics(projectId, {
         environment,
         range,
         timezone,
       }),
+    staleTime: staleTimes.analytics,
   });
 
   const verifyMutation = useMutation({

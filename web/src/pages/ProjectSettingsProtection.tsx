@@ -5,6 +5,7 @@ import { Check, Copy } from "lucide-react";
 import { toast } from "sonner";
 
 import { api } from "@/lib/api";
+import { queryKeys } from "@/lib/queryKeys";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -26,7 +27,7 @@ export function ProjectSettingsProtection() {
   const [copied, setCopied] = useState(false);
 
   const { data: protection, isLoading } = useQuery({
-    queryKey: ["protection", id],
+    queryKey: queryKeys.protection(id),
     queryFn: () => api.getProtectionStatus(id),
   });
 
@@ -34,7 +35,7 @@ export function ProjectSettingsProtection() {
     mutationFn: (data: { environment: string; enabled: boolean }) =>
       api.updateProtection(id, data),
     onSuccess: (result) => {
-      queryClient.invalidateQueries({ queryKey: ["protection", id] });
+      queryClient.invalidateQueries({ queryKey: queryKeys.protection(id) });
       if (result.password) {
         setPasswordToShow(result.password);
       }
@@ -49,7 +50,7 @@ export function ProjectSettingsProtection() {
     mutationFn: (data: { environment: string }) =>
       api.regeneratePassword(id, data),
     onSuccess: (result) => {
-      queryClient.invalidateQueries({ queryKey: ["protection", id] });
+      queryClient.invalidateQueries({ queryKey: queryKeys.protection(id) });
       if (result.password) {
         setPasswordToShow(result.password);
       }

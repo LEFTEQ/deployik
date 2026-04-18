@@ -1,3 +1,4 @@
+import { lazy } from "react";
 import {
   createRootRoute,
   createRoute,
@@ -10,19 +11,52 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { useAuthStore } from "@/store/auth";
+// Hot paths stay eager so the initial render is a single network round-trip.
 import { Login } from "@/pages/Login";
 import { AuthCallback } from "@/pages/AuthCallback";
 import { Projects } from "@/pages/Projects";
-import { NewProject } from "@/pages/NewProject";
 import { ProjectOverview } from "@/pages/ProjectOverview";
 import { ProjectDeployments } from "@/pages/ProjectDeployments";
-import { ProjectAnalytics } from "@/pages/ProjectAnalytics";
-import { ProjectIntegration } from "@/pages/ProjectIntegration";
-import { ProjectSettings } from "@/pages/ProjectSettings";
-import { ProjectSettingsDomains } from "@/pages/ProjectSettingsDomains";
-import { ProjectSettingsEnv } from "@/pages/ProjectSettingsEnv";
-import { ProjectSettingsProtection } from "@/pages/ProjectSettingsProtection";
-import { DeploymentDetail } from "@/pages/DeploymentDetail";
+// Heavy or less-visited routes are code-split so charts, form primitives,
+// and log-streaming hooks don't block the main bundle on first paint.
+const NewProject = lazy(() =>
+  import("@/pages/NewProject").then((m) => ({ default: m.NewProject })),
+);
+const ProjectAnalytics = lazy(() =>
+  import("@/pages/ProjectAnalytics").then((m) => ({
+    default: m.ProjectAnalytics,
+  })),
+);
+const ProjectIntegration = lazy(() =>
+  import("@/pages/ProjectIntegration").then((m) => ({
+    default: m.ProjectIntegration,
+  })),
+);
+const ProjectSettings = lazy(() =>
+  import("@/pages/ProjectSettings").then((m) => ({
+    default: m.ProjectSettings,
+  })),
+);
+const ProjectSettingsDomains = lazy(() =>
+  import("@/pages/ProjectSettingsDomains").then((m) => ({
+    default: m.ProjectSettingsDomains,
+  })),
+);
+const ProjectSettingsEnv = lazy(() =>
+  import("@/pages/ProjectSettingsEnv").then((m) => ({
+    default: m.ProjectSettingsEnv,
+  })),
+);
+const ProjectSettingsProtection = lazy(() =>
+  import("@/pages/ProjectSettingsProtection").then((m) => ({
+    default: m.ProjectSettingsProtection,
+  })),
+);
+const DeploymentDetail = lazy(() =>
+  import("@/pages/DeploymentDetail").then((m) => ({
+    default: m.DeploymentDetail,
+  })),
+);
 import { AppLayout } from "@/components/layout/AppLayout";
 import { WorkspaceLayout } from "@/components/layout/WorkspaceLayout";
 import { ProjectLayout } from "@/components/layout/ProjectLayout";

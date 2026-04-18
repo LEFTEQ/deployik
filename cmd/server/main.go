@@ -1,12 +1,18 @@
 package main
 
 import (
+	"context"
 	"embed"
+	"errors"
 	"fmt"
 	"io/fs"
 	"log"
 	"net/http"
 	"os"
+	"os/signal"
+	"sync"
+	"syscall"
+	"time"
 
 	"github.com/LEFTEQ/lovinka-deployik/internal/analytics"
 	"github.com/LEFTEQ/lovinka-deployik/internal/api"
@@ -90,17 +96,27 @@ func main() {
 		analytics.NewLokiClient(cfg.AnalyticsLokiURL),
 	)
 
+	// Pipeline lifecycle: a long-lived context that graceful shutdown can cancel,
+	// plus a WaitGroup that tracks deploy + screenshot goroutines so the drain
+	// phase can wait for them to finish before the process exits.
+	pipelineCtx, cancelPipeline := context.WithCancel(context.Background())
+	defer cancelPipeline()
+	var pipelineWg sync.WaitGroup
+
 	maxBuilds := 1
 	pipeline := &build.Pipeline{
-		DB:            database,
-		Docker:        dockerClient,
-		Encryptor:     encryptor,
-		Semaphore:     build.NewSemaphore(maxBuilds),
-		DomainManager: domainManager,
-		BuildDir:      cfg.BuildDir,
-		ProxyNetwork:  "proxy",
-		Hub:           wsHub,
-		ScreenshotDir: cfg.ScreenshotDir,
+		DB:               database,
+		Docker:           dockerClient,
+		Encryptor:        encryptor,
+		Semaphore:        build.NewSemaphore(maxBuilds),
+		DomainManager:    domainManager,
+		BuildDir:         cfg.BuildDir,
+		ProxyNetwork:     "proxy",
+		Hub:              wsHub,
+		ScreenshotDir:    cfg.ScreenshotDir,
+		Ctx:              pipelineCtx,
+		Wg:               &pipelineWg,
+		MaxBuildDuration: 15 * time.Minute,
 	}
 
 	// Write the auth page HTML for password-protected sites
@@ -143,9 +159,57 @@ func main() {
 	})
 
 	addr := fmt.Sprintf(":%s", cfg.Port)
-	log.Printf("Deployik starting on %s", addr)
+	server := &http.Server{
+		Addr:              addr,
+		Handler:           router,
+		ReadHeaderTimeout: 10 * time.Second,
+		ReadTimeout:       30 * time.Second,
+		// WriteTimeout intentionally left at zero: WebSocket endpoints (build logs,
+		// domain verification logs) hold the response open for minutes. The WS
+		// handlers set their own read/write deadlines to catch stalls.
+		IdleTimeout: 120 * time.Second,
+	}
 
-	if err := http.ListenAndServe(addr, router); err != nil {
-		log.Fatalf("Server failed: %v", err)
+	sigCtx, stopSignals := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer stopSignals()
+
+	serverErr := make(chan error, 1)
+	go func() {
+		log.Printf("Deployik listening on %s", addr)
+		if err := server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			serverErr <- err
+			return
+		}
+		serverErr <- nil
+	}()
+
+	select {
+	case err := <-serverErr:
+		if err != nil {
+			log.Fatalf("Server failed: %v", err)
+		}
+	case <-sigCtx.Done():
+		log.Println("Shutdown signal received; draining...")
+	}
+
+	// Give in-flight HTTP requests time to finish.
+	shutdownCtx, cancelShutdown := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancelShutdown()
+	if err := server.Shutdown(shutdownCtx); err != nil {
+		log.Printf("Server shutdown error: %v", err)
+	}
+
+	// Cancel live deploys and wait for pipeline goroutines to finish, bounded.
+	cancelPipeline()
+	done := make(chan struct{})
+	go func() {
+		pipelineWg.Wait()
+		close(done)
+	}()
+	select {
+	case <-done:
+		log.Println("Pipeline drained")
+	case <-time.After(60 * time.Second):
+		log.Println("Pipeline drain timed out; forcing exit")
 	}
 }

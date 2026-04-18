@@ -12,6 +12,7 @@ import { useAuthStore } from "@/store/auth";
 import { useOrganizationStore } from "@/store/organization";
 import { useOrganizations } from "@/hooks/use-organizations";
 import { api } from "@/lib/api";
+import { queryKeys } from "@/lib/queryKeys";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { CommandPalette } from "@/components/layout/CommandPalette";
@@ -47,7 +48,7 @@ export function TopBar() {
 
   // Fetch project name when on a project route
   const { data: project } = useQuery({
-    queryKey: ["project", projectId],
+    queryKey: queryKeys.project(projectId ?? ""),
     queryFn: () => api.getProject(projectId!),
     enabled: !!isProjectRoute,
   });

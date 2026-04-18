@@ -4,6 +4,7 @@ import { useNavigate } from "@tanstack/react-router";
 import { Check, ChevronsUpDown, FolderKanban } from "lucide-react";
 
 import { api } from "@/lib/api";
+import { queryKeys } from "@/lib/queryKeys";
 import { useOrganizations } from "@/hooks/use-organizations";
 import {
   Command,
@@ -35,7 +36,7 @@ export function ProjectPicker({
   const { selectedOrganizationId } = useOrganizations();
 
   const { data: projects } = useQuery({
-    queryKey: ["projects", selectedOrganizationId ?? "all"],
+    queryKey: queryKeys.projects(selectedOrganizationId),
     queryFn: () => api.listProjects(selectedOrganizationId ?? undefined),
   });
 

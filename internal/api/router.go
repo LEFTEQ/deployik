@@ -45,8 +45,9 @@ func NewRouter(cfg *RouterConfig) *chi.Mux {
 	r.Use(chimw.Logger)
 	r.Use(chimw.Recoverer)
 	r.Use(chimw.RequestID)
-	r.Use(chimw.RealIP)
+	r.Use(middleware.TrustedProxyRealIP())
 	r.Use(middleware.CORS(cfg.AllowedOrigins))
+	r.Use(middleware.BodyLimit(middleware.DefaultBodyLimit))
 
 	auditRecorder := &audit.Recorder{DB: cfg.DB}
 	oauthLimiter := middleware.NewRateLimiter(20, time.Minute)
