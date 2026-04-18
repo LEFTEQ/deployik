@@ -1,16 +1,28 @@
 package domain
 
 import (
+	"context"
 	"errors"
 	"fmt"
+	"log"
 	"strings"
 
 	"github.com/LEFTEQ/lovinka-deployik/internal/db"
 )
 
-// ReconcileActiveConfigs rewrites nginx configs for already-active domains and reloads nginx once.
-func ReconcileActiveConfigs(manager *Manager, targets []db.DomainProvisionTarget) error {
-	if manager == nil || manager.NginxConfDir == "" || manager.ProxyContainer == "" || len(targets) == 0 {
+// DockerInspector is used by reconcile to inspect running containers for host-port mode.
+type DockerInspector interface {
+	ContainerExists(ctx context.Context, name string) (string, bool)
+	GetHostPort(ctx context.Context, containerID string) (string, error)
+}
+
+// ReconcileActiveConfigs rewrites proxy configs for already-active domains and reloads once.
+func ReconcileActiveConfigs(manager *Manager, targets []db.DomainProvisionTarget, docker DockerInspector) error {
+	if manager == nil || manager.NginxConfDir == "" || len(targets) == 0 {
+		return nil
+	}
+	// In docker mode, also require a proxy container to reload
+	if manager.ProxyType != "host-port" && manager.ProxyContainer == "" {
 		return nil
 	}
 
@@ -18,30 +30,91 @@ func ReconcileActiveConfigs(manager *Manager, targets []db.DomainProvisionTarget
 	wroteConfig := false
 	for _, target := range targets {
 		plan := ResolveVariantPlan(target.DomainName, target.Environment)
-		if plan.RedirectDomain != "" {
+
+		// Skip certbot if we have a wildcard cert configured
+		if manager.ProxySSLCert == "" && plan.RedirectDomain != "" {
 			if err := manager.RequestSSLCert(plan.AllDomains()...); err != nil {
 				errs = append(errs, fmt.Sprintf("ensure ssl for %s: %v", target.DomainName, err))
 				continue
 			}
 		}
-		if _, err := manager.WriteNginxConfig(ProvisionConfig{
+
+		containerName := fmt.Sprintf("deployik-%s-%s", target.ProjectName, target.Environment)
+		upstream := containerName + ":3000"
+
+		// In host-port mode, the proxy lives on the host and talks to
+		// 127.0.0.1:<random>. We must look up the live port from Docker — if
+		// the container isn't running (e.g. first boot before any deploy), the
+		// container-name upstream would be unresolvable and produce a broken
+		// vhost. Skip the target in that case so we don't write a 502 machine.
+		if manager.ProxyType == "host-port" {
+			if docker == nil {
+				log.Printf("reconcile: skipping %s — host-port mode requires a Docker inspector", target.DomainName)
+				continue
+			}
+			containerID, exists := docker.ContainerExists(context.Background(), containerName)
+			if !exists {
+				log.Printf("reconcile: skipping %s — container %s not running yet", target.DomainName, containerName)
+				continue
+			}
+			port, err := docker.GetHostPort(context.Background(), containerID)
+			if err != nil {
+				errs = append(errs, fmt.Sprintf("host port lookup for %s: %v", target.DomainName, err))
+				continue
+			}
+			upstream = "127.0.0.1:" + port
+		}
+
+		cfg := ProvisionConfig{
 			ProjectID:         target.ProjectID,
 			ProjectName:       target.ProjectName,
 			Domain:            plan.CanonicalDomain,
 			RedirectDomain:    plan.RedirectDomain,
 			Environment:       target.Environment,
-			ContainerName:     fmt.Sprintf("deployik-%s-%s", target.ProjectName, target.Environment),
+			ContainerName:     containerName,
+			ContainerUpstream: upstream,
 			PasswordProtected: target.PasswordProtected,
-		}); err != nil {
-			errs = append(errs, fmt.Sprintf("reconcile domain %s: %v", target.DomainName, err))
-			continue
+		}
+
+		if manager.ProxyConfigFormat == "apache" {
+			certFile := manager.ProxySSLCert
+			if certFile == "" {
+				certFile = fmt.Sprintf("/etc/letsencrypt/live/%s/fullchain.pem", cfg.sslDomain())
+			}
+			keyFile := manager.ProxySSLKey
+			if keyFile == "" {
+				keyFile = fmt.Sprintf("/etc/letsencrypt/live/%s/privkey.pem", cfg.sslDomain())
+			}
+			if _, err := GenerateApacheConfig(manager.NginxConfDir, ApacheConfig{
+				NginxConfig: NginxConfig{
+					ProjectID:         cfg.ProjectID,
+					ProjectName:       cfg.ProjectName,
+					Domain:            cfg.Domain,
+					RedirectDomain:    cfg.RedirectDomain,
+					Environment:       cfg.Environment,
+					SSLDomain:         cfg.sslDomain(),
+					ContainerName:     cfg.ContainerName,
+					ContainerUpstream: cfg.ContainerUpstream,
+					PasswordProtected: cfg.PasswordProtected,
+				},
+				CertFile: certFile,
+				KeyFile:  keyFile,
+			}); err != nil {
+				errs = append(errs, fmt.Sprintf("reconcile domain %s: %v", target.DomainName, err))
+				continue
+			}
+		} else {
+			if _, err := manager.WriteNginxConfig(cfg); err != nil {
+				errs = append(errs, fmt.Sprintf("reconcile domain %s: %v", target.DomainName, err))
+				continue
+			}
 		}
 		wroteConfig = true
 	}
 
 	if wroteConfig {
-		if err := manager.ReloadNginx(); err != nil {
-			errs = append(errs, fmt.Sprintf("reload nginx after reconcile: %v", err))
+		if err := manager.ReloadProxy(); err != nil {
+			errs = append(errs, fmt.Sprintf("reload proxy after reconcile: %v", err))
 		}
 	}
 

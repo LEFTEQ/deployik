@@ -12,7 +12,8 @@ func (db *DB) ListProjects(userID, organizationID string) ([]Project, error) {
 		       COALESCE(p.organization_id, ''), COALESCE(o.name, ''), p.framework, p.package_manager,
 		       p.root_directory, p.output_directory, p.build_command, p.install_command, p.node_version,
 		       p.status, COALESCE(p.preview_password, ''), COALESCE(p.production_password, ''),
-		       p.created_at, p.updated_at
+		       p.created_at, p.updated_at,
+		       p.host_network_access, p.data_volume_enabled, COALESCE(p.data_mount_path, '/app/data')
 		FROM projects p
 		LEFT JOIN organizations o ON o.id = p.organization_id
 		WHERE p.status != 'deleted'
@@ -44,7 +45,8 @@ func (db *DB) ListProjects(userID, organizationID string) ([]Project, error) {
 		if err := rows.Scan(&p.ID, &p.Name, &p.GithubRepo, &p.GithubOwner, &p.Branch,
 			&p.UserID, &p.OrganizationID, &p.OrganizationName, &p.Framework, &p.PackageManager, &p.RootDirectory, &p.OutputDirectory, &p.BuildCommand, &p.InstallCommand, &p.NodeVersion,
 			&p.Status, &p.PreviewPassword, &p.ProductionPassword,
-			&p.CreatedAt, &p.UpdatedAt); err != nil {
+			&p.CreatedAt, &p.UpdatedAt,
+			&p.HostNetworkAccess, &p.DataVolumeEnabled, &p.DataMountPath); err != nil {
 			return nil, fmt.Errorf("scan project: %w", err)
 		}
 		projects = append(projects, p)
@@ -59,14 +61,16 @@ func (db *DB) GetProject(id string) (*Project, error) {
 		        COALESCE(p.organization_id, ''), COALESCE(o.name, ''), p.framework, p.package_manager,
 		        p.root_directory, p.output_directory, p.build_command, p.install_command, p.node_version, p.status,
 		        COALESCE(p.preview_password, ''), COALESCE(p.production_password, ''),
-		        p.created_at, p.updated_at
+		        p.created_at, p.updated_at,
+		        p.host_network_access, p.data_volume_enabled, COALESCE(p.data_mount_path, '/app/data')
 		 FROM projects p
 		 LEFT JOIN organizations o ON o.id = p.organization_id
 		 WHERE p.id = ?`, id,
 	).Scan(&p.ID, &p.Name, &p.GithubRepo, &p.GithubOwner, &p.Branch,
 		&p.UserID, &p.OrganizationID, &p.OrganizationName, &p.Framework, &p.PackageManager, &p.RootDirectory, &p.OutputDirectory, &p.BuildCommand, &p.InstallCommand, &p.NodeVersion,
 		&p.Status, &p.PreviewPassword, &p.ProductionPassword,
-		&p.CreatedAt, &p.UpdatedAt)
+		&p.CreatedAt, &p.UpdatedAt,
+		&p.HostNetworkAccess, &p.DataVolumeEnabled, &p.DataMountPath)
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}
@@ -83,7 +87,8 @@ func (db *DB) GetProjectForUser(id, userID string) (*Project, error) {
 		        COALESCE(p.organization_id, ''), COALESCE(o.name, ''), p.framework, p.package_manager,
 		        p.root_directory, p.output_directory, p.build_command, p.install_command, p.node_version, p.status,
 		        COALESCE(p.preview_password, ''), COALESCE(p.production_password, ''),
-		        p.created_at, p.updated_at
+		        p.created_at, p.updated_at,
+		        p.host_network_access, p.data_volume_enabled, COALESCE(p.data_mount_path, '/app/data')
 		 FROM projects p
 		 LEFT JOIN organizations o ON o.id = p.organization_id
 		 WHERE p.id = ?
@@ -98,7 +103,8 @@ func (db *DB) GetProjectForUser(id, userID string) (*Project, error) {
 	).Scan(&p.ID, &p.Name, &p.GithubRepo, &p.GithubOwner, &p.Branch,
 		&p.UserID, &p.OrganizationID, &p.OrganizationName, &p.Framework, &p.PackageManager, &p.RootDirectory, &p.OutputDirectory, &p.BuildCommand, &p.InstallCommand, &p.NodeVersion,
 		&p.Status, &p.PreviewPassword, &p.ProductionPassword,
-		&p.CreatedAt, &p.UpdatedAt)
+		&p.CreatedAt, &p.UpdatedAt,
+		&p.HostNetworkAccess, &p.DataVolumeEnabled, &p.DataMountPath)
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}
@@ -113,10 +119,12 @@ func (db *DB) CreateProject(p *Project) error {
 	packageManager := normalizeStoredPackageManager(p.PackageManager)
 	_, err := db.Exec(
 		`INSERT INTO projects (id, name, github_repo, github_owner, branch, user_id, organization_id, framework, package_manager,
-		                       root_directory, output_directory, build_command, install_command, node_version, status)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		                       root_directory, output_directory, build_command, install_command, node_version, status,
+		                       host_network_access, data_volume_enabled, data_mount_path)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		p.ID, p.Name, p.GithubRepo, p.GithubOwner, p.Branch, p.UserID, nullableString(p.OrganizationID), p.Framework, packageManager,
 		p.RootDirectory, p.OutputDirectory, p.BuildCommand, p.InstallCommand, p.NodeVersion, p.Status,
+		p.HostNetworkAccess, p.DataVolumeEnabled, p.DataMountPath,
 	)
 	if err != nil {
 		return fmt.Errorf("create project: %w", err)
@@ -129,10 +137,13 @@ func (db *DB) UpdateProject(p *Project) error {
 	packageManager := normalizeStoredPackageManager(p.PackageManager)
 	_, err := db.Exec(
 		`UPDATE projects SET name = ?, branch = ?, framework = ?, package_manager = ?, root_directory = ?, output_directory = ?, build_command = ?,
-		        install_command = ?, node_version = ?, status = ?, updated_at = datetime('now')
+		        install_command = ?, node_version = ?, status = ?,
+		        host_network_access = ?, data_volume_enabled = ?, data_mount_path = ?,
+		        updated_at = datetime('now')
 		 WHERE id = ?`,
 		p.Name, p.Branch, p.Framework, packageManager, p.RootDirectory, p.OutputDirectory, p.BuildCommand, p.InstallCommand,
-		p.NodeVersion, p.Status, p.ID,
+		p.NodeVersion, p.Status,
+		p.HostNetworkAccess, p.DataVolumeEnabled, p.DataMountPath, p.ID,
 	)
 	if err != nil {
 		return fmt.Errorf("update project: %w", err)
@@ -166,6 +177,7 @@ func (db *DB) ListProjectsWithLatestDeployment(userID, orgID string) ([]ProjectW
 		       p.root_directory, p.output_directory, p.build_command, p.install_command, p.node_version,
 		       p.status, COALESCE(p.preview_password, ''), COALESCE(p.production_password, ''),
 		       p.created_at, p.updated_at,
+		       p.host_network_access, p.data_volume_enabled, COALESCE(p.data_mount_path, '/app/data'),
 		       ld.id, ld.status, ld.branch, ld.commit_sha, ld.commit_message, ld.created_at
 		FROM projects p
 		LEFT JOIN organizations o ON o.id = p.organization_id
@@ -213,6 +225,7 @@ func (db *DB) ListProjectsWithLatestDeployment(userID, orgID string) ([]ProjectW
 			&p.RootDirectory, &p.OutputDirectory, &p.BuildCommand, &p.InstallCommand, &p.NodeVersion,
 			&p.Status, &p.PreviewPassword, &p.ProductionPassword,
 			&p.CreatedAt, &p.UpdatedAt,
+			&p.HostNetworkAccess, &p.DataVolumeEnabled, &p.DataMountPath,
 			&ldID, &ldStatus, &ldBranch, &ldCommitSHA, &ldCommitMsg, &ldCreatedAt,
 		); err != nil {
 			return nil, fmt.Errorf("scan project with latest deployment: %w", err)

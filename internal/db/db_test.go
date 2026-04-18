@@ -831,3 +831,79 @@ func TestDomainCRUD(t *testing.T) {
 		t.Errorf("got %d domains after delete, want 1 (auto should remain)", len(domains))
 	}
 }
+
+func TestProjectNewFields(t *testing.T) {
+	db := newTestDB(t)
+
+	db.Exec(`INSERT INTO users (id, github_id, username) VALUES ('user1', 1, 'tester')`)
+	db.Exec(`INSERT INTO organizations (id, name, slug, is_personal, personal_owner_user_id) VALUES ('org1', 'tester', 'tester', 1, 'user1')`)
+	db.Exec(`INSERT INTO organization_memberships (organization_id, user_id, role) VALUES ('org1', 'user1', 'owner')`)
+
+	p := &Project{
+		Name:              "testapp",
+		GithubRepo:        "repo",
+		GithubOwner:       "owner",
+		Branch:            "main",
+		UserID:            "user1",
+		OrganizationID:    "org1",
+		Framework:         "nextjs",
+		PackageManager:    "auto",
+		Status:            "active",
+		HostNetworkAccess: true,
+		DataVolumeEnabled: true,
+		DataMountPath:     "/app/storage",
+	}
+	if err := db.CreateProject(p); err != nil {
+		t.Fatalf("CreateProject: %v", err)
+	}
+
+	got, err := db.GetProject(p.ID)
+	if err != nil {
+		t.Fatalf("GetProject: %v", err)
+	}
+	if !got.HostNetworkAccess {
+		t.Error("expected host_network_access=true")
+	}
+	if !got.DataVolumeEnabled {
+		t.Error("expected data_volume_enabled=true")
+	}
+	if got.DataMountPath != "/app/storage" {
+		t.Errorf("expected data_mount_path=/app/storage, got %s", got.DataMountPath)
+	}
+
+	// Also verify via GetProjectForUser
+	got2, err := db.GetProjectForUser(p.ID, "user1")
+	if err != nil {
+		t.Fatalf("GetProjectForUser: %v", err)
+	}
+	if !got2.HostNetworkAccess || !got2.DataVolumeEnabled {
+		t.Error("GetProjectForUser: expected new fields to round-trip")
+	}
+
+	// Update
+	got.HostNetworkAccess = false
+	got.DataVolumeEnabled = false
+	got.DataMountPath = "/app/data"
+	if err := db.UpdateProject(got); err != nil {
+		t.Fatalf("UpdateProject: %v", err)
+	}
+	got3, _ := db.GetProject(p.ID)
+	if got3.HostNetworkAccess || got3.DataVolumeEnabled {
+		t.Error("expected both flags false after update")
+	}
+	if got3.DataMountPath != "/app/data" {
+		t.Errorf("expected data_mount_path=/app/data after update, got %s", got3.DataMountPath)
+	}
+
+	// Verify ListProjectsWithLatestDeployment includes new fields
+	projects, err := db.ListProjectsWithLatestDeployment("user1", "")
+	if err != nil {
+		t.Fatalf("ListProjectsWithLatestDeployment: %v", err)
+	}
+	if len(projects) == 0 {
+		t.Fatal("expected at least 1 project in list")
+	}
+	if projects[0].DataMountPath != "/app/data" {
+		t.Errorf("list: expected data_mount_path=/app/data, got %s", projects[0].DataMountPath)
+	}
+}

@@ -111,7 +111,7 @@ server {
 {{- end }}
 
     location / {
-        set $upstream {{.ContainerName}}:3000;
+        set $upstream {{.ContainerUpstream}};
         limit_req zone=deployik_preview burst=20 nodelay;
 {{- if .PasswordProtected }}
         auth_request /_deployik/auth-check;
@@ -142,11 +142,16 @@ type NginxConfig struct {
 	Environment       string
 	SSLDomain         string // may differ for wildcard certs
 	ContainerName     string
+	ContainerUpstream string // "host:port" — preferred; falls back to ContainerName:3000
 	PasswordProtected bool
 }
 
 // GenerateNginxConfig creates an nginx config file for a domain.
 func GenerateNginxConfig(confDir string, cfg NginxConfig) (string, error) {
+	if cfg.ContainerUpstream == "" {
+		cfg.ContainerUpstream = cfg.ContainerName + ":3000"
+	}
+
 	tmpl, err := template.New("nginx").Parse(nginxProjectTemplate)
 	if err != nil {
 		return "", fmt.Errorf("parse nginx template: %w", err)

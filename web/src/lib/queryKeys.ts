@@ -30,6 +30,9 @@ export const queryKeys = {
   // Password protection
   protection: (projectId: string) => ["protection", projectId] as const,
 
+  // Data volumes (preview + production rows for one project)
+  volumes: (projectId: string) => ["volumes", projectId] as const,
+
   // Variables (env + secrets). Kind is "env" | "secret"; scope is
   // "shared" | "preview" | "production" | undefined.
   projectVariables: (

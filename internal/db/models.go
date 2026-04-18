@@ -79,7 +79,10 @@ type Project struct {
 	OutputDirectory  string    `json:"output_directory"`
 	BuildCommand     string    `json:"build_command"`
 	InstallCommand   string    `json:"install_command"`
-	NodeVersion      string    `json:"node_version"`
+	NodeVersion       string    `json:"node_version"`
+	HostNetworkAccess bool      `json:"host_network_access"`
+	DataVolumeEnabled bool      `json:"data_volume_enabled"`
+	DataMountPath     string    `json:"data_mount_path"`
 	Status              string    `json:"status"`
 	PreviewPassword     string    `json:"-"` // encrypted, never expose in JSON
 	ProductionPassword  string    `json:"-"` // encrypted, never expose in JSON

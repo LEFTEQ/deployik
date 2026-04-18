@@ -1,0 +1,1 @@
+ALTER TABLE projects ADD COLUMN host_network_access BOOLEAN NOT NULL DEFAULT 0;

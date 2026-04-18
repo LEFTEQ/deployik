@@ -174,6 +174,12 @@ func NewRouter(cfg *RouterConfig) *chi.Mux {
 			screenshotHandler := &handlers.ScreenshotHandler{DB: cfg.DB}
 			r.Get("/deployments/{did}/screenshot", screenshotHandler.Get)
 
+			// Volumes
+			volumeHandler := &handlers.VolumeHandler{DB: cfg.DB, Docker: dockerClient, Audit: auditRecorder}
+			r.Get("/projects/{id}/volumes", volumeHandler.List)
+			r.With(mutationLimiter.Middleware("volume_delete")).Delete("/projects/{id}/volumes/{env}", volumeHandler.Delete)
+			r.With(mutationLimiter.Middleware("volume_recreate")).Post("/projects/{id}/volumes/{env}/recreate", volumeHandler.Recreate)
+
 			// Domains
 			domainHandler := &handlers.DomainHandler{DB: cfg.DB, Manager: cfg.DomainManager, Hub: cfg.WSHub, Audit: auditRecorder}
 			r.Get("/projects/{id}/domains", domainHandler.List)

@@ -12,22 +12,32 @@ import (
 var ErrDNSNotVerified = errors.New("dns record does not point to the configured VPS host")
 
 type ManagerConfig struct {
-	NginxConfDir   string
-	ProxyContainer string
-	ProxyCertsDir  string
-	ProxyHTMLDir   string
-	VPSHost        string
-	SSLEmail       string
+	NginxConfDir      string
+	ProxyContainer    string
+	ProxyCertsDir     string
+	ProxyHTMLDir      string
+	VPSHost           string
+	SSLEmail          string
+	ProxyType         string // "docker" | "host-port"
+	ProxyConfigFormat string // "nginx" | "apache"
+	ProxyReloadCmd    string
+	ProxySSLCert      string
+	ProxySSLKey       string
 }
 
 type Manager struct {
-	NginxConfDir   string
-	ProxyContainer string
-	ProxyCertsDir  string
-	ProxyHTMLDir   string
-	VPSHost        string
-	SSLEmail       string
-	runner         commandRunner
+	NginxConfDir      string
+	ProxyContainer    string
+	ProxyCertsDir     string
+	ProxyHTMLDir      string
+	VPSHost           string
+	SSLEmail          string
+	ProxyType         string
+	ProxyConfigFormat string
+	ProxyReloadCmd    string
+	ProxySSLCert      string
+	ProxySSLKey       string
+	runner            commandRunner
 }
 
 type ProvisionConfig struct {
@@ -39,6 +49,7 @@ type ProvisionConfig struct {
 	SSLDomains        []string
 	RedirectDomain    string
 	ContainerName     string
+	ContainerUpstream string // "host:port"; falls back to ContainerName:3000
 	PasswordProtected bool
 }
 
@@ -58,13 +69,18 @@ func (execRunner) CombinedOutput(name string, args ...string) ([]byte, error) {
 
 func NewManager(cfg ManagerConfig) *Manager {
 	return &Manager{
-		NginxConfDir:   cfg.NginxConfDir,
-		ProxyContainer: cfg.ProxyContainer,
-		ProxyCertsDir:  cfg.ProxyCertsDir,
-		ProxyHTMLDir:   cfg.ProxyHTMLDir,
-		VPSHost:        cfg.VPSHost,
-		SSLEmail:       cfg.SSLEmail,
-		runner:         execRunner{},
+		NginxConfDir:      cfg.NginxConfDir,
+		ProxyContainer:    cfg.ProxyContainer,
+		ProxyCertsDir:     cfg.ProxyCertsDir,
+		ProxyHTMLDir:      cfg.ProxyHTMLDir,
+		VPSHost:           cfg.VPSHost,
+		SSLEmail:          cfg.SSLEmail,
+		ProxyType:         cfg.ProxyType,
+		ProxyConfigFormat: cfg.ProxyConfigFormat,
+		ProxyReloadCmd:    cfg.ProxyReloadCmd,
+		ProxySSLCert:      cfg.ProxySSLCert,
+		ProxySSLKey:       cfg.ProxySSLKey,
+		runner:            execRunner{},
 	}
 }
 
@@ -99,28 +115,95 @@ func (m *Manager) ProvisionDomain(cfg ProvisionConfig, requireDNS bool, logger P
 		}
 	}
 
-	sslDomains := cfg.requestSSLDomains()
-	emit("ssl", "running", fmt.Sprintf("Requesting SSL certificate for %s...", strings.Join(sslDomains, ", ")))
-	if err := m.RequestSSLCert(sslDomains...); err != nil {
-		emit("ssl", "error", fmt.Sprintf("SSL certificate request failed: %v", err))
-		return err
+	// Skip certbot when a wildcard cert is configured — we'll reuse it for
+	// every vhost and don't need a per-domain Let's Encrypt challenge.
+	if m.ProxySSLCert == "" {
+		sslDomains := cfg.requestSSLDomains()
+		emit("ssl", "running", fmt.Sprintf("Requesting SSL certificate for %s...", strings.Join(sslDomains, ", ")))
+		if err := m.RequestSSLCert(sslDomains...); err != nil {
+			emit("ssl", "error", fmt.Sprintf("SSL certificate request failed: %v", err))
+			return err
+		}
+		emit("ssl", "success", "SSL certificate issued successfully")
+	} else {
+		emit("ssl", "success", "Using configured wildcard certificate")
 	}
-	emit("ssl", "success", "SSL certificate issued successfully")
 
-	emit("nginx", "running", fmt.Sprintf("Writing nginx config for %s...", cfg.Domain))
-	if _, err := m.WriteNginxConfig(cfg); err != nil {
-		emit("nginx", "error", fmt.Sprintf("Nginx config write failed: %v", err))
-		return err
+	// Write the proxy config in whichever format the operator chose. The
+	// per-format branch keeps the hot path simple — nginx mode writes a
+	// server block, apache mode writes a VirtualHost with the same data.
+	proxyStep := "nginx"
+	if m.ProxyConfigFormat == "apache" {
+		proxyStep = "apache"
+		certFile := m.ProxySSLCert
+		if certFile == "" {
+			certFile = fmt.Sprintf("/etc/letsencrypt/live/%s/fullchain.pem", cfg.sslDomain())
+		}
+		keyFile := m.ProxySSLKey
+		if keyFile == "" {
+			keyFile = fmt.Sprintf("/etc/letsencrypt/live/%s/privkey.pem", cfg.sslDomain())
+		}
+		emit(proxyStep, "running", fmt.Sprintf("Writing Apache vhost for %s...", cfg.Domain))
+		if _, err := GenerateApacheConfig(m.NginxConfDir, ApacheConfig{
+			NginxConfig: NginxConfig{
+				ProjectID:         cfg.ProjectID,
+				ProjectName:       cfg.ProjectName,
+				Domain:            cfg.Domain,
+				RedirectDomain:    cfg.RedirectDomain,
+				Environment:       cfg.Environment,
+				SSLDomain:         cfg.sslDomain(),
+				ContainerName:     cfg.ContainerName,
+				ContainerUpstream: cfg.ContainerUpstream,
+				PasswordProtected: cfg.PasswordProtected,
+			},
+			CertFile: certFile,
+			KeyFile:  keyFile,
+		}); err != nil {
+			emit(proxyStep, "error", fmt.Sprintf("Apache vhost write failed: %v", err))
+			return err
+		}
+	} else {
+		emit(proxyStep, "running", fmt.Sprintf("Writing nginx config for %s...", cfg.Domain))
+		if _, err := m.WriteNginxConfig(cfg); err != nil {
+			emit(proxyStep, "error", fmt.Sprintf("Nginx config write failed: %v", err))
+			return err
+		}
 	}
 
-	emit("nginx", "running", "Testing and reloading nginx...")
-	if err := m.ReloadNginx(); err != nil {
-		emit("nginx", "error", fmt.Sprintf("Nginx reload failed: %v", err))
+	emit(proxyStep, "running", "Testing and reloading proxy...")
+	if err := m.ReloadProxy(); err != nil {
+		emit(proxyStep, "error", fmt.Sprintf("Proxy reload failed: %v", err))
 		return err
 	}
-	emit("nginx", "success", "Nginx reloaded successfully")
+	emit(proxyStep, "success", "Proxy reloaded successfully")
 
 	return nil
+}
+
+// ReloadProxy reloads the proxy using the configured method.
+//
+// In host-port mode, PROXY_RELOAD_CMD is passed to `sh -c`, so the operator
+// can use the full shell vocabulary (quoted args, pipes, &&, env vars, etc.).
+// Examples that all work:
+//
+//	apachectl graceful
+//	sudo -n systemctl reload nginx
+//	nsenter -t 1 -m -- apachectl graceful
+//	bash -c 'apachectl configtest && apachectl graceful'
+func (m *Manager) ReloadProxy() error {
+	if m.ProxyType == "host-port" {
+		cmd := strings.TrimSpace(m.ProxyReloadCmd)
+		if cmd == "" {
+			return fmt.Errorf("PROXY_RELOAD_CMD not configured for host-port proxy mode")
+		}
+		output, err := m.runner.CombinedOutput("sh", "-c", cmd)
+		if err != nil {
+			return fmt.Errorf("proxy reload failed: %w\nOutput: %s", err, string(output))
+		}
+		log.Printf("Proxy reloaded via: %s", cmd)
+		return nil
+	}
+	return m.ReloadNginx()
 }
 
 func (m *Manager) RequestSSLCert(domainNames ...string) error {
@@ -172,6 +255,10 @@ func (m *Manager) WriteNginxConfig(cfg ProvisionConfig) (string, error) {
 		return "", fmt.Errorf("nginx conf directory is not configured")
 	}
 
+	upstream := cfg.ContainerUpstream
+	if upstream == "" {
+		upstream = cfg.ContainerName + ":3000"
+	}
 	return GenerateNginxConfig(m.NginxConfDir, NginxConfig{
 		ProjectID:         cfg.ProjectID,
 		ProjectName:       cfg.ProjectName,
@@ -180,6 +267,7 @@ func (m *Manager) WriteNginxConfig(cfg ProvisionConfig) (string, error) {
 		Environment:       cfg.Environment,
 		SSLDomain:         cfg.sslDomain(),
 		ContainerName:     cfg.ContainerName,
+		ContainerUpstream: upstream,
 		PasswordProtected: cfg.PasswordProtected,
 	})
 }

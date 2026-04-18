@@ -358,7 +358,7 @@ func (h *ProtectionHandler) regenerateNginxForEnvironment(project *db.Project, e
 	}
 
 	if wroteConfig {
-		_ = h.Manager.ReloadNginx()
+		_ = h.Manager.ReloadProxy()
 	}
 }
 

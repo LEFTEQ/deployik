@@ -1,0 +1,31 @@
+# Example systemd unit for running Deployik directly on the host.
+# Use this when PROXY_TYPE=host-port so the Go binary can run `apachectl graceful`
+# and write proxy configs to host paths without crossing a container boundary.
+#
+# Before installing, replace every @DEPLOYIK_HOME@ with the directory where you
+# checked out and built deployik. Example:
+#
+#   sed 's|@DEPLOYIK_HOME@|/opt/deployik|g; s|@DEPLOYIK_USER@|deploy|g' \
+#     scripts/examples/deployik.service \
+#     > /etc/systemd/system/deployik.service
+#   systemctl daemon-reload && systemctl enable --now deployik
+#
+# @DEPLOYIK_USER@ should be a user in the `docker` group (not root) unless you
+# have a specific reason. Dropping privileges is recommended.
+
+[Unit]
+Description=Deployik deployment platform
+After=network.target docker.service
+Requires=docker.service
+
+[Service]
+Type=simple
+User=@DEPLOYIK_USER@
+WorkingDirectory=@DEPLOYIK_HOME@
+EnvironmentFile=@DEPLOYIK_HOME@/.env
+ExecStart=@DEPLOYIK_HOME@/bin/deployik
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

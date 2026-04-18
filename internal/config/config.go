@@ -33,6 +33,11 @@ type Config struct {
 	AnalyticsUmamiUsername  string
 	AnalyticsUmamiPassword  string
 	AnalyticsLokiURL        string
+	ProxyType               string
+	ProxyConfigFormat       string
+	ProxyReloadCmd          string
+	ProxySSLCert            string
+	ProxySSLKey             string
 	WebhookURL              string
 	ScreenshotDir           string
 }
@@ -60,6 +65,11 @@ func Load() (*Config, error) {
 		AnalyticsUmamiUsername:  strings.TrimSpace(os.Getenv("ANALYTICS_UMAMI_USERNAME")),
 		AnalyticsUmamiPassword:  os.Getenv("ANALYTICS_UMAMI_PASSWORD"),
 		AnalyticsLokiURL:        strings.TrimRight(strings.TrimSpace(os.Getenv("ANALYTICS_LOKI_URL")), "/"),
+		ProxyType:               getEnv("PROXY_TYPE", "docker"),
+		ProxyConfigFormat:       getEnv("PROXY_CONFIG_FORMAT", "nginx"),
+		ProxyReloadCmd:          os.Getenv("PROXY_RELOAD_CMD"),
+		ProxySSLCert:            os.Getenv("PROXY_SSL_CERT"),
+		ProxySSLKey:             os.Getenv("PROXY_SSL_KEY"),
 	}
 
 	if cfg.AnalyticsUmamiPublicURL == "" {

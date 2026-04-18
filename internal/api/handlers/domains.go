@@ -155,8 +155,8 @@ func (h *DomainHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	if domainName != "" && h.Manager != nil {
 		if err := h.Manager.RemoveDomain(domainName); err != nil {
 			log.Printf("Warning: failed to remove nginx config for %s: %v", domainName, err)
-		} else if err := h.Manager.ReloadNginx(); err != nil {
-			log.Printf("Warning: failed to reload nginx after removing %s: %v", domainName, err)
+		} else if err := h.Manager.ReloadProxy(); err != nil {
+			log.Printf("Warning: failed to reload proxy after removing %s: %v", domainName, err)
 		}
 	}
 

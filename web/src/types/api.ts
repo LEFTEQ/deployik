@@ -43,6 +43,9 @@ export interface Project {
   build_command: string;
   install_command: string;
   node_version: string;
+  host_network_access: boolean;
+  data_volume_enabled: boolean;
+  data_mount_path: string;
   status: "active" | "paused" | "deleted";
   latest_deployment_id: string | null;
   latest_deployment_status: string | null;
@@ -288,4 +291,15 @@ export interface DeploymentListFilters {
 export interface DeploymentListResponse {
   deployments: Deployment[];
   total: number;
+}
+
+// Volume info
+export interface VolumeInfo {
+  environment: "preview" | "production";
+  name: string;
+  exists: boolean;
+  size_bytes: number;
+  created_at: string | null;
+  mount_path: string;
+  in_use: boolean;
 }

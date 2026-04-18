@@ -1,11 +1,12 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate, useParams } from "@tanstack/react-router";
-import { GitBranch, Trash2, Webhook } from "lucide-react";
+import { GitBranch, HardDrive, Network, RefreshCw, Trash2, Webhook } from "lucide-react";
 import { toast } from "sonner";
 
 import { api } from "@/lib/api";
 import { queryKeys } from "@/lib/queryKeys";
+import type { VolumeInfo } from "@/types/api";
 import {
   BuildSettingsFields,
 } from "@/components/projects/build-settings";
@@ -63,6 +64,8 @@ export function ProjectSettings() {
         githubOwner={project.github_owner}
         githubRepo={project.github_repo}
       />
+      <div className="border-b" />
+      <RuntimeSettingsSection project={project} />
       <div className="border-b" />
       <DangerZone
         projectId={id}
@@ -327,6 +330,259 @@ function AutoBuildSection({
           </Button>
         </div>
       )}
+    </div>
+  );
+}
+
+function RuntimeSettingsSection({
+  project,
+}: {
+  project: NonNullable<Awaited<ReturnType<typeof api.getProject>>>;
+}) {
+  const queryClient = useQueryClient();
+  const [hostNetworkAccess, setHostNetworkAccess] = useState(
+    project.host_network_access,
+  );
+  const [dataVolumeEnabled, setDataVolumeEnabled] = useState(
+    project.data_volume_enabled,
+  );
+  const [dataMountPath, setDataMountPath] = useState(
+    project.data_mount_path || "/app/data",
+  );
+
+  const updateMutation = useMutation({
+    mutationFn: () =>
+      api.updateProject(project.id, {
+        host_network_access: hostNetworkAccess,
+        data_volume_enabled: dataVolumeEnabled,
+        data_mount_path: dataMountPath,
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.project(project.id) });
+      toast.success("Runtime settings updated");
+    },
+    onError: (err) => toast.error(err.message),
+  });
+
+  return (
+    <div className="space-y-6">
+      <div>
+        <h2 className="text-base font-semibold">Runtime</h2>
+        <p className="text-sm text-muted-foreground">
+          Container networking and persistent storage for deployed environments.
+        </p>
+      </div>
+
+      <div className="space-y-4">
+        <div className="flex items-center justify-between rounded-lg border px-4 py-3">
+          <div className="flex items-center gap-3">
+            <Network className="h-4 w-4 text-muted-foreground" />
+            <div className="space-y-0.5">
+              <div className="text-sm font-medium">Host network access</div>
+              <div className="text-xs text-muted-foreground">
+                Connect to host services (Redis, MySQL, etc.) via{" "}
+                <code className="rounded bg-muted px-1 font-mono text-xs">
+                  host.docker.internal
+                </code>
+              </div>
+            </div>
+          </div>
+          <Switch
+            checked={hostNetworkAccess}
+            onCheckedChange={setHostNetworkAccess}
+          />
+        </div>
+
+        <div className="space-y-3 rounded-lg border p-4">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <HardDrive className="h-4 w-4 text-muted-foreground" />
+              <div className="space-y-0.5">
+                <div className="text-sm font-medium">
+                  Persistent data volume
+                </div>
+                <div className="text-xs text-muted-foreground">
+                  Mount a named Docker volume so data survives redeployments
+                </div>
+              </div>
+            </div>
+            <Switch
+              checked={dataVolumeEnabled}
+              onCheckedChange={setDataVolumeEnabled}
+            />
+          </div>
+
+          {dataVolumeEnabled && (
+            <div className="space-y-1.5 pl-7">
+              <Label htmlFor="data_mount_path" className="text-xs">
+                Mount path
+              </Label>
+              <Input
+                id="data_mount_path"
+                value={dataMountPath}
+                onChange={(e) => setDataMountPath(e.target.value)}
+                placeholder="/app/data"
+                className="font-mono text-sm"
+              />
+              <p className="text-xs text-muted-foreground">
+                Path inside the container where the volume is mounted. Volume
+                name:{" "}
+                <code className="font-mono">
+                  deployik-{project.name}-{"<env>"}-data
+                </code>
+              </p>
+            </div>
+          )}
+        </div>
+      </div>
+
+      <Button
+        onClick={() => updateMutation.mutate()}
+        disabled={updateMutation.isPending}
+      >
+        {updateMutation.isPending ? "Saving..." : "Save Runtime Settings"}
+      </Button>
+
+      {dataVolumeEnabled && <VolumesSection projectId={project.id} />}
+    </div>
+  );
+}
+
+function formatVolumeSize(bytes: number): string {
+  if (bytes <= 0) return "Volume exists";
+  const units = ["B", "KB", "MB", "GB", "TB"];
+  let v = bytes;
+  let i = 0;
+  while (v >= 1024 && i < units.length - 1) {
+    v /= 1024;
+    i++;
+  }
+  return `${v.toFixed(v >= 10 || i === 0 ? 0 : 1)} ${units[i]}`;
+}
+
+function VolumesSection({ projectId }: { projectId: string }) {
+  const queryClient = useQueryClient();
+
+  const { data: volumes } = useQuery({
+    queryKey: queryKeys.volumes(projectId),
+    queryFn: () => api.listVolumes(projectId),
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: (env: "preview" | "production") =>
+      api.deleteVolume(projectId, env),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.volumes(projectId) });
+      toast.success("Volume deleted");
+    },
+    onError: (err) => toast.error(err.message),
+  });
+
+  const recreateMutation = useMutation({
+    mutationFn: (env: "preview" | "production") =>
+      api.recreateVolume(projectId, env),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.volumes(projectId) });
+      toast.success("Volume recreated");
+    },
+    onError: (err) => toast.error(err.message),
+  });
+
+  return (
+    <div className="space-y-3">
+      <div className="text-sm font-medium">Volumes</div>
+      {(volumes ?? []).map((v: VolumeInfo) => (
+        <div
+          key={v.environment}
+          className="flex items-center justify-between rounded-lg border px-4 py-3"
+        >
+          <div className="space-y-0.5">
+            <div className="flex items-center gap-2">
+              <Badge
+                variant="outline"
+                className={
+                  v.environment === "production"
+                    ? "border-amber-500/25 text-amber-200"
+                    : ""
+                }
+              >
+                {v.environment}
+              </Badge>
+              <code className="text-xs font-mono text-muted-foreground">
+                {v.mount_path}
+              </code>
+            </div>
+            <div className="flex items-center gap-2 text-xs text-muted-foreground">
+              <span>
+                {v.exists
+                  ? formatVolumeSize(v.size_bytes)
+                  : "Created automatically on next deploy"}
+              </span>
+              {v.in_use && (
+                <Badge
+                  variant="outline"
+                  className="border-emerald-500/25 text-emerald-300"
+                >
+                  in use
+                </Badge>
+              )}
+            </div>
+          </div>
+          {v.exists && (
+            <div className="flex items-center gap-1">
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => {
+                  if (
+                    confirm(
+                      `Recreate volume for ${v.environment}? All existing data will be wiped.`,
+                    )
+                  ) {
+                    recreateMutation.mutate(
+                      v.environment as "preview" | "production",
+                    );
+                  }
+                }}
+                disabled={recreateMutation.isPending || v.in_use}
+                title={
+                  v.in_use
+                    ? "Stop the deployment before recreating this volume"
+                    : undefined
+                }
+              >
+                <RefreshCw className="mr-1 h-3 w-3" />
+                Recreate
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="text-destructive hover:text-destructive"
+                onClick={() => {
+                  if (
+                    confirm(
+                      `Delete volume for ${v.environment}? All data will be permanently lost.`,
+                    )
+                  ) {
+                    deleteMutation.mutate(
+                      v.environment as "preview" | "production",
+                    );
+                  }
+                }}
+                disabled={deleteMutation.isPending || v.in_use}
+                title={
+                  v.in_use
+                    ? "Stop the deployment before deleting this volume"
+                    : undefined
+                }
+              >
+                <Trash2 className="mr-1 h-3 w-3" />
+                Delete
+              </Button>
+            </div>
+          )}
+        </div>
+      ))}
     </div>
   );
 }

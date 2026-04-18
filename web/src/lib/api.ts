@@ -21,6 +21,7 @@ import type {
   ProtectionStatus,
   ProtectionUpdateResponse,
   VerifyDomainResponse,
+  VolumeInfo,
 } from "@/types/api";
 
 const API_URL = import.meta.env.VITE_API_URL || "/api";
@@ -440,6 +441,29 @@ class ApiClient {
     return this.request(`/projects/${projectId}/protection/regenerate`, {
       method: "POST",
       body: JSON.stringify(data),
+    });
+  }
+
+  // Volumes
+  async listVolumes(projectId: string): Promise<VolumeInfo[]> {
+    return this.request(`/projects/${projectId}/volumes`);
+  }
+
+  async deleteVolume(
+    projectId: string,
+    env: "preview" | "production",
+  ): Promise<void> {
+    return this.request(`/projects/${projectId}/volumes/${env}`, {
+      method: "DELETE",
+    });
+  }
+
+  async recreateVolume(
+    projectId: string,
+    env: "preview" | "production",
+  ): Promise<void> {
+    return this.request(`/projects/${projectId}/volumes/${env}/recreate`, {
+      method: "POST",
     });
   }
 

@@ -36,30 +36,36 @@ type ProjectHandler struct {
 var slugRegex = regexp.MustCompile(`^[a-z0-9]([a-z0-9-]*[a-z0-9])?$`)
 
 type createProjectRequest struct {
-	OrganizationID  string `json:"organization_id"`
-	Name            string `json:"name"`
-	GithubRepo      string `json:"github_repo"`
-	GithubOwner     string `json:"github_owner"`
-	Branch          string `json:"branch"`
-	Framework       string `json:"framework"`
-	PackageManager  string `json:"package_manager"`
-	RootDirectory   string `json:"root_directory"`
-	OutputDirectory string `json:"output_directory"`
-	BuildCommand    string `json:"build_command"`
-	InstallCommand  string `json:"install_command"`
-	NodeVersion     string `json:"node_version"`
+	OrganizationID    string `json:"organization_id"`
+	Name              string `json:"name"`
+	GithubRepo        string `json:"github_repo"`
+	GithubOwner       string `json:"github_owner"`
+	Branch            string `json:"branch"`
+	Framework         string `json:"framework"`
+	PackageManager    string `json:"package_manager"`
+	RootDirectory     string `json:"root_directory"`
+	OutputDirectory   string `json:"output_directory"`
+	BuildCommand      string `json:"build_command"`
+	InstallCommand    string `json:"install_command"`
+	NodeVersion       string `json:"node_version"`
+	HostNetworkAccess bool   `json:"host_network_access"`
+	DataVolumeEnabled bool   `json:"data_volume_enabled"`
+	DataMountPath     string `json:"data_mount_path"`
 }
 
 type updateProjectRequest struct {
-	Name            *string `json:"name,omitempty"`
-	Branch          *string `json:"branch,omitempty"`
-	Framework       *string `json:"framework,omitempty"`
-	PackageManager  *string `json:"package_manager,omitempty"`
-	RootDirectory   *string `json:"root_directory,omitempty"`
-	OutputDirectory *string `json:"output_directory,omitempty"`
-	BuildCommand    *string `json:"build_command,omitempty"`
-	InstallCommand  *string `json:"install_command,omitempty"`
-	NodeVersion     *string `json:"node_version,omitempty"`
+	Name              *string `json:"name,omitempty"`
+	Branch            *string `json:"branch,omitempty"`
+	Framework         *string `json:"framework,omitempty"`
+	PackageManager    *string `json:"package_manager,omitempty"`
+	RootDirectory     *string `json:"root_directory,omitempty"`
+	OutputDirectory   *string `json:"output_directory,omitempty"`
+	BuildCommand      *string `json:"build_command,omitempty"`
+	InstallCommand    *string `json:"install_command,omitempty"`
+	NodeVersion       *string `json:"node_version,omitempty"`
+	HostNetworkAccess *bool   `json:"host_network_access,omitempty"`
+	DataVolumeEnabled *bool   `json:"data_volume_enabled,omitempty"`
+	DataMountPath     *string `json:"data_mount_path,omitempty"`
 }
 
 func (h *ProjectHandler) List(w http.ResponseWriter, r *http.Request) {
@@ -141,8 +147,14 @@ func (h *ProjectHandler) Create(w http.ResponseWriter, r *http.Request) {
 		OutputDirectory: req.OutputDirectory,
 		BuildCommand:    req.BuildCommand,
 		InstallCommand:  req.InstallCommand,
-		NodeVersion:     req.NodeVersion,
-		Status:          "active",
+		NodeVersion:       req.NodeVersion,
+		HostNetworkAccess: req.HostNetworkAccess,
+		DataVolumeEnabled: req.DataVolumeEnabled,
+		DataMountPath:     req.DataMountPath,
+		Status:            "active",
+	}
+	if project.DataMountPath == "" {
+		project.DataMountPath = "/app/data"
 	}
 	if project.Branch == "" {
 		project.Branch = "main"
@@ -209,6 +221,18 @@ func (h *ProjectHandler) Update(w http.ResponseWriter, r *http.Request) {
 			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid name"})
 			return
 		}
+		// Volume and container names are derived from project.Name; renaming
+		// would silently orphan any existing data volume and leave the running
+		// container on the old name. Block renames when a volume is attached;
+		// the user can disable the volume (and accept data loss) first, or we
+		// can revisit this once volumes are keyed by project.ID.
+		// TODO(pr1-followup): re-key volume naming by project.ID so renames are safe.
+		if name != project.Name && project.DataVolumeEnabled {
+			writeJSON(w, http.StatusConflict, map[string]string{
+				"error": "cannot rename project while a persistent data volume is attached — disable the volume first (this will abandon its data)",
+			})
+			return
+		}
 		project.Name = name
 	}
 	if req.Branch != nil {
@@ -234,6 +258,19 @@ func (h *ProjectHandler) Update(w http.ResponseWriter, r *http.Request) {
 	}
 	if req.NodeVersion != nil {
 		project.NodeVersion = *req.NodeVersion
+	}
+	if req.HostNetworkAccess != nil {
+		project.HostNetworkAccess = *req.HostNetworkAccess
+	}
+	if req.DataVolumeEnabled != nil {
+		project.DataVolumeEnabled = *req.DataVolumeEnabled
+	}
+	if req.DataMountPath != nil {
+		mp := strings.TrimSpace(*req.DataMountPath)
+		if mp == "" {
+			mp = "/app/data"
+		}
+		project.DataMountPath = mp
 	}
 	if err := projectconfig.ApplyProjectDefaults(project); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
@@ -388,8 +425,8 @@ func (h *ProjectHandler) cleanupProjectRuntime(project *db.Project, domains []db
 	}
 
 	if reloadNeeded {
-		if err := h.Manager.ReloadNginx(); err != nil {
-			log.Printf("Warning: failed to reload nginx after deleting project %s: %v", project.Name, err)
+		if err := h.Manager.ReloadProxy(); err != nil {
+			log.Printf("Warning: failed to reload proxy after deleting project %s: %v", project.Name, err)
 		}
 	}
 }

@@ -14,6 +14,7 @@ import (
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/image"
 	"github.com/docker/docker/api/types/network"
+	"github.com/docker/docker/api/types/volume"
 	"github.com/docker/docker/client"
 	"github.com/docker/docker/pkg/archive"
 	"github.com/docker/go-connections/nat"
@@ -111,9 +112,39 @@ func (d *DockerClient) BuildImage(ctx context.Context, contextDir, dockerfilePat
 	return imageID, nil
 }
 
+// RunContainerOptions holds optional settings for container creation.
+type RunContainerOptions struct {
+	ExtraHosts   []string // e.g. []string{"host.docker.internal:host-gateway"}
+	BindHostPort bool     // if true, binds container port 3000 to a random localhost port
+	VolumeBinds  []string // e.g. []string{"deployik-myapp-preview-data:/app/data"}
+}
+
 // RunContainer starts a container from an image.
 // Returns the container ID.
-func (d *DockerClient) RunContainer(ctx context.Context, name, imageTag string, envVars []string, networkName string) (string, error) {
+func (d *DockerClient) RunContainer(ctx context.Context, name, imageTag string, envVars []string, networkName string, opts RunContainerOptions) (string, error) {
+	hostConfig := &container.HostConfig{
+		RestartPolicy: container.RestartPolicy{Name: "unless-stopped"},
+		Resources: container.Resources{
+			Memory:    512 * 1024 * 1024, // 512MB
+			CPUQuota:  100000,            // 1.0 CPU
+			CPUPeriod: 100000,
+		},
+		SecurityOpt: []string{"no-new-privileges=true"},
+		Tmpfs: map[string]string{
+			"/tmp":             "size=64m,noexec,nosuid,nodev",
+			"/app/.next/cache": "size=128m,nosuid,nodev",
+		},
+		ExtraHosts: opts.ExtraHosts,
+		Binds:      opts.VolumeBinds,
+	}
+	if opts.BindHostPort {
+		hostConfig.PortBindings = nat.PortMap{
+			"3000/tcp": []nat.PortBinding{
+				{HostIP: "127.0.0.1", HostPort: "0"},
+			},
+		}
+	}
+
 	// Create container
 	resp, err := d.cli.ContainerCreate(ctx,
 		&container.Config{
@@ -121,19 +152,7 @@ func (d *DockerClient) RunContainer(ctx context.Context, name, imageTag string, 
 			Env:          envVars,
 			ExposedPorts: nat.PortSet{"3000/tcp": struct{}{}},
 		},
-		&container.HostConfig{
-			RestartPolicy: container.RestartPolicy{Name: "unless-stopped"},
-			Resources: container.Resources{
-				Memory:    512 * 1024 * 1024, // 512MB
-				CPUQuota:  100000, // 1.0 CPU
-				CPUPeriod: 100000,
-			},
-			SecurityOpt: []string{"no-new-privileges=true"},
-			Tmpfs: map[string]string{
-				"/tmp":             "size=64m,noexec,nosuid,nodev",
-				"/app/.next/cache": "size=128m,nosuid,nodev",
-			},
-		},
+		hostConfig,
 		&network.NetworkingConfig{},
 		nil,
 		name,
@@ -220,6 +239,57 @@ func (d *DockerClient) ContainerExists(ctx context.Context, name string) (string
 		return "", false
 	}
 	return inspect.ID, true
+}
+
+// GetHostPort returns the host-mapped port for container port 3000/tcp.
+// Only meaningful when the container was started with BindHostPort=true.
+func (d *DockerClient) GetHostPort(ctx context.Context, containerID string) (string, error) {
+	inspect, err := d.cli.ContainerInspect(ctx, containerID)
+	if err != nil {
+		return "", fmt.Errorf("inspect container: %w", err)
+	}
+	bindings, ok := inspect.NetworkSettings.Ports["3000/tcp"]
+	if !ok || len(bindings) == 0 {
+		return "", fmt.Errorf("no host port binding for container port 3000")
+	}
+	return bindings[0].HostPort, nil
+}
+
+// EnsureVolume creates a named Docker volume if it doesn't already exist.
+// Docker's VolumeCreate is idempotent on name — if a volume with this name
+// already exists, this returns its metadata without error. Callers relying on
+// "created fresh" semantics must remove first and verify removal succeeded.
+func (d *DockerClient) EnsureVolume(ctx context.Context, name string) error {
+	_, err := d.cli.VolumeCreate(ctx, volume.CreateOptions{Name: name})
+	return err
+}
+
+// VolumesDiskUsage returns volumes keyed by name with UsageData populated.
+// Hits /system/df scoped to volumes — this is the only Docker API that
+// reports true on-disk size; VolumeInspect and VolumeList leave UsageData
+// as nil. The daemon walks the volume directory to compute size, so on a
+// busy host with many/large volumes this can take a second or two.
+func (d *DockerClient) VolumesDiskUsage(ctx context.Context) (map[string]*volume.Volume, error) {
+	du, err := d.cli.DiskUsage(ctx, types.DiskUsageOptions{Types: []types.DiskUsageObject{types.VolumeObject}})
+	if err != nil {
+		return nil, fmt.Errorf("system df (volumes): %w", err)
+	}
+	result := make(map[string]*volume.Volume, len(du.Volumes))
+	for _, v := range du.Volumes {
+		if v == nil {
+			continue
+		}
+		result[v.Name] = v
+	}
+	return result, nil
+}
+
+// RemoveVolume removes a named Docker volume. The returned error can be
+// classified with errdefs.IsNotFound (gone already) and errdefs.IsConflict
+// (in use by a container). Force=false so we never yank a volume that is
+// actively mounted — the caller gets a Conflict and can surface it to the user.
+func (d *DockerClient) RemoveVolume(ctx context.Context, name string) error {
+	return d.cli.VolumeRemove(ctx, name, false)
 }
 
 // Close closes the Docker client.

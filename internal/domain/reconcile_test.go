@@ -31,7 +31,7 @@ func TestReconcileActiveConfigsEnsuresPreviewWWWCertificate(t *testing.T) {
 		Environment: "preview",
 	}}
 
-	if err := ReconcileActiveConfigs(manager, targets); err != nil {
+	if err := ReconcileActiveConfigs(manager, targets, nil); err != nil {
 		t.Fatalf("ReconcileActiveConfigs returned error: %v", err)
 	}
 
@@ -110,7 +110,7 @@ func TestReconcileActiveConfigsContinuesAfterEarlierCertificateFailure(t *testin
 		},
 	}
 
-	err := ReconcileActiveConfigs(manager, targets)
+	err := ReconcileActiveConfigs(manager, targets, nil)
 	if err == nil {
 		t.Fatal("expected reconcile to return aggregated error")
 	}

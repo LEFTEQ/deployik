@@ -28,6 +28,7 @@ type Pipeline struct {
 	DomainManager *domain.Manager
 	BuildDir      string
 	ProxyNetwork  string // Docker network name (e.g., "proxy")
+	ProxyType     string // "docker" | "host-port"
 	Hub           *ws.Hub
 	ScreenshotDir string // Directory to store deployment screenshots
 
@@ -248,9 +249,36 @@ func (p *Pipeline) Deploy(ctx context.Context, project *db.Project, deployment *
 	// Check if old container exists
 	oldContainerID, oldExists := p.Docker.ContainerExists(ctx, containerName)
 
+	// Build RunContainerOptions from project settings
+	var extraHosts []string
+	if project.HostNetworkAccess {
+		extraHosts = []string{"host.docker.internal:host-gateway"}
+	}
+
+	var volumeBinds []string
+	if project.DataVolumeEnabled {
+		volumeName := fmt.Sprintf("deployik-%s-%s-data", project.Name, deployment.Environment)
+		emit(fmt.Sprintf("Ensuring data volume %s...", volumeName))
+		if err := p.Docker.EnsureVolume(ctx, volumeName); err != nil {
+			emitErr(fmt.Sprintf("Warning: could not ensure data volume: %v", err))
+		} else {
+			mountPath := project.DataMountPath
+			if mountPath == "" {
+				mountPath = "/app/data"
+			}
+			volumeBinds = []string{volumeName + ":" + mountPath}
+			emit(fmt.Sprintf("Volume mounted at %s", mountPath))
+		}
+	}
+
 	// Start new container with temporary name
 	tempName := containerName + "-" + deployment.ID[:8]
-	newContainerID, err := p.Docker.RunContainer(ctx, tempName, imageTag, runtimeEnvVars, p.ProxyNetwork)
+	opts := RunContainerOptions{
+		ExtraHosts:   extraHosts,
+		BindHostPort: p.ProxyType == "host-port",
+		VolumeBinds:  volumeBinds,
+	}
+	newContainerID, err := p.Docker.RunContainer(ctx, tempName, imageTag, runtimeEnvVars, p.ProxyNetwork, opts)
 	if err != nil {
 		fail(err, "Container start failed")
 		return
@@ -267,9 +295,21 @@ func (p *Pipeline) Deploy(ctx context.Context, project *db.Project, deployment *
 	}
 	emit("Health check passed")
 
+	// Determine the upstream address for proxy config
+	containerUpstream := containerName + ":3000"
+	if p.ProxyType == "host-port" {
+		hostPort, err := p.Docker.GetHostPort(ctx, newContainerID)
+		if err != nil {
+			emitErr(fmt.Sprintf("Warning: could not get host port, falling back to container name: %v", err))
+		} else {
+			containerUpstream = "127.0.0.1:" + hostPort
+			emit(fmt.Sprintf("Container bound to host port %s", hostPort))
+		}
+	}
+
 	if p.DomainManager != nil {
 		emit("Ensuring environment domains...")
-		if err := p.ensureEnvironmentDomains(project, deployment, containerName, emit); err != nil {
+		if err := p.ensureEnvironmentDomains(project, deployment, containerName, containerUpstream, emit); err != nil {
 			p.Docker.StopContainer(ctx, newContainerID)
 			fail(err, "Domain provisioning failed")
 			return
@@ -349,7 +389,7 @@ func (p *Pipeline) Deploy(ctx context.Context, project *db.Project, deployment *
 	}
 }
 
-func (p *Pipeline) ensureEnvironmentDomains(project *db.Project, deployment *db.Deployment, containerName string, emit func(string)) error {
+func (p *Pipeline) ensureEnvironmentDomains(project *db.Project, deployment *db.Deployment, containerName, containerUpstream string, emit func(string)) error {
 	domains, err := p.DB.ListDomains(project.ID)
 	if err != nil {
 		return fmt.Errorf("list domains: %w", err)
@@ -399,6 +439,7 @@ func (p *Pipeline) ensureEnvironmentDomains(project *db.Project, deployment *db.
 			SSLDomains:        plan.AllDomains(),
 			Environment:       d.Environment,
 			ContainerName:     containerName,
+			ContainerUpstream: containerUpstream,
 			PasswordProtected: passwordProtected,
 		}, false, nil)
 		if err != nil {

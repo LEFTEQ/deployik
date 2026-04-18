@@ -1,0 +1,25 @@
+# Example systemd unit for the Vite dev server.
+# Only needed for dev/staging setups where you want HMR — the production Go
+# binary already embeds the built SPA, so most deployments don't need this.
+#
+# Before installing, substitute the placeholders:
+#
+#   sed 's|@DEPLOYIK_HOME@|/opt/deployik|g; s|@DEPLOYIK_USER@|deploy|g; s|@BUN_BIN@|/home/deploy/.bun/bin/bun|g' \
+#     scripts/examples/deployik-web.service \
+#     > /etc/systemd/system/deployik-web.service
+
+[Unit]
+Description=Deployik frontend dev server (Vite)
+After=network.target deployik.service
+
+[Service]
+Type=simple
+User=@DEPLOYIK_USER@
+WorkingDirectory=@DEPLOYIK_HOME@/web
+ExecStart=@BUN_BIN@ run dev
+Restart=always
+RestartSec=5
+Environment=PATH=@BUN_BIN_DIR@:/usr/local/bin:/usr/bin:/bin
+
+[Install]
+WantedBy=multi-user.target

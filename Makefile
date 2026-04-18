@@ -1,8 +1,11 @@
 .PHONY: dev-api dev-web dev-seed build-web build run docker-build clean
 
 # Development
+# Sources .env when present (so GITHUB_CLIENT_ID/SECRET etc. are picked up) and
+# always forces DEV_MODE=true regardless of what's in .env — otherwise a missing
+# DEV_MODE line would silently drop the dev-login endpoint and mock GitHub data.
 dev-api:
-	DEV_MODE=true go run ./cmd/server/
+	@bash -c 'if [ -f .env ]; then set -a && . ./.env && set +a; fi; DEV_MODE=true go run ./cmd/server/'
 
 dev-web:
 	cd web && bun run dev

@@ -11,6 +11,7 @@ bin/
 # Frontend
 web/node_modules/
 web/dist/
+web/tsconfig.tsbuildinfo
 cmd/server/web_dist/*
 !cmd/server/web_dist/.gitkeep
 

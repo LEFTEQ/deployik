@@ -81,12 +81,17 @@ func main() {
 
 	wsHub := ws.NewHub()
 	domainManager := domain.NewManager(domain.ManagerConfig{
-		NginxConfDir:   cfg.NginxConfDir,
-		ProxyContainer: cfg.ProxyContainerName,
-		ProxyCertsDir:  cfg.ProxyCertsDir,
-		ProxyHTMLDir:   cfg.ProxyHTMLDir,
-		VPSHost:        cfg.VPSHost,
-		SSLEmail:       cfg.SSLEmail,
+		NginxConfDir:      cfg.NginxConfDir,
+		ProxyContainer:    cfg.ProxyContainerName,
+		ProxyCertsDir:     cfg.ProxyCertsDir,
+		ProxyHTMLDir:      cfg.ProxyHTMLDir,
+		VPSHost:           cfg.VPSHost,
+		SSLEmail:          cfg.SSLEmail,
+		ProxyType:         cfg.ProxyType,
+		ProxyConfigFormat: cfg.ProxyConfigFormat,
+		ProxyReloadCmd:    cfg.ProxyReloadCmd,
+		ProxySSLCert:      cfg.ProxySSLCert,
+		ProxySSLKey:       cfg.ProxySSLKey,
 	})
 	analyticsService := analytics.NewService(
 		database,
@@ -112,6 +117,7 @@ func main() {
 		DomainManager:    domainManager,
 		BuildDir:         cfg.BuildDir,
 		ProxyNetwork:     "proxy",
+		ProxyType:        cfg.ProxyType,
 		Hub:              wsHub,
 		ScreenshotDir:    cfg.ScreenshotDir,
 		Ctx:              pipelineCtx,
@@ -127,7 +133,7 @@ func main() {
 
 	if targets, err := database.ListActiveDomainProvisionTargets(); err != nil {
 		log.Printf("Warning: failed to list active domains for nginx reconcile: %v", err)
-	} else if err := domain.ReconcileActiveConfigs(domainManager, targets); err != nil {
+	} else if err := domain.ReconcileActiveConfigs(domainManager, targets, dockerClient); err != nil {
 		log.Printf("Warning: failed to reconcile active domain configs: %v", err)
 	}
 

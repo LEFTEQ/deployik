@@ -1,6 +1,6 @@
 # Deployik
 
-Self-hosted Vercel alternative for the Lovinka VPS. Deploys Next.js and static web apps from GitHub with automatic domains, SSL, environment variables, blue-green zero-downtime deployments, auto-build via GitHub webhooks, per-environment password protection, and post-deploy screenshot capture.
+Self-hosted Vercel alternative for the Lovinka VPS. Deploys Next.js and static web apps from GitHub with automatic domains, SSL, environment variables, blue-green zero-downtime deployments, auto-build via GitHub webhooks, per-environment password protection, post-deploy screenshot capture, optional per-project host-network access and persistent named Docker volumes, and a configurable reverse proxy (Docker nginx-proxy, host nginx, or host Apache — picked via `PROXY_TYPE` / `PROXY_CONFIG_FORMAT`).
 
 ## Stack
 
@@ -34,6 +34,7 @@ scripts/
   seed-dev.sh             Seeds local dev database with test data
   deploy.sh               Manual deployment script
   deploy-vps.sh           VPS deployment helper
+  examples/               systemd unit templates with @DEPLOYIK_HOME@ / @DEPLOYIK_USER@ / @BUN_BIN@ placeholders for operators running Deployik directly on the host (needed for PROXY_TYPE=host-port)
 
 internal/
   backup/
@@ -54,6 +55,7 @@ internal/
       platform.go         GET /api/platform: returns VPS IP for DNS setup guides
       organizations.go    List organizations for current user
       analytics.go        Project analytics: combined Umami audience + Loki runtime data
+      volumes.go          VolumeHandler: list (name + on-disk size + in_use flag), delete, recreate per project-environment; errdefs-classified errors surface 409 on in-use volumes instead of masking as 500
       access.go           loadAuthorizedProject/Deployment helpers (calls authz)
       helpers.go          writeJSON utility
     middleware/
@@ -81,9 +83,9 @@ internal/
     access.go             CanAccessProject, LoadProject, LoadDeployment (ownership + admin bypass)
 
   build/
-    pipeline.go           Full deploy orchestration: clone -> patch -> build -> run -> health -> swap -> screenshot
+    pipeline.go           Full deploy orchestration: clone -> patch -> build -> run (with optional ExtraHosts, VolumeBinds, host-port binding) -> health -> swap -> screenshot
     clone.go              Git shallow clone with OAuth token auth
-    docker.go             Docker SDK: BuildImage, RunContainer, StopContainer, WaitForHealthy, ContainerExists
+    docker.go             Docker SDK: BuildImage, RunContainer (accepts RunContainerOptions with ExtraHosts/BindHostPort/VolumeBinds), StopContainer, WaitForHealthy, ContainerExists, GetHostPort, EnsureVolume, RemoveVolume, VolumesDiskUsage (hits /system/df so sizes are populated)
     dockerfile.go         Programmatic Dockerfile generation (Next.js standalone + static site)
     nextjs.go             Patches next.config.* to inject output: 'standalone'
     variables.go          Splits env vars into build-time (NEXT_PUBLIC_*) and runtime sets
@@ -110,7 +112,9 @@ internal/
       008_deployment_enhancements.sql  Adds trigger_source, triggered_by_username, screenshot_path to deployments
       009_auto_build.sql       Adds auto_build_configs and webhook_events tables
       010_password_protection.sql  Adds preview_password, production_password to projects
-    models.go             User, Organization, OrganizationMembership, RefreshSession, AuditLog, Project (with password fields), Deployment (with trigger/screenshot fields), BuildLog, Domain, ProjectVariable, VariableKind, AutoBuildConfig, WebhookEvent, ProjectWithLatestDeployment, DeploymentWithUser, DeploymentListResponse, DeploymentFilter
+      011_host_network_access.sql  Adds host_network_access to projects (opt-in `host.docker.internal` via ExtraHosts)
+      012_proxy_and_volumes.sql  Adds data_volume_enabled and data_mount_path (default `/app/data`) to projects
+    models.go             User, Organization, OrganizationMembership, RefreshSession, AuditLog, Project (with password fields, host_network_access, data_volume_enabled, data_mount_path), Deployment (with trigger/screenshot fields), BuildLog, Domain, ProjectVariable, VariableKind, AutoBuildConfig, WebhookEvent, ProjectWithLatestDeployment, DeploymentWithUser, DeploymentListResponse, DeploymentFilter
     queries_users.go      GetUserByGithubID, GetUserByID, UpsertUser
     queries_organizations.go  Personal workspace bootstrap, memberships, org listing
     queries_projects.go   ListProjectsWithLatestDeployment, GetProject, Create, Update, Delete (soft), GetProjectPassword, SetProjectPassword, ClearProjectPassword
@@ -125,9 +129,10 @@ internal/
     queries_webhook_events.go  CreateWebhookEvent, WebhookEventExists (idempotency)
 
   domain/
-    ssl.go                Manager: ProvisionDomain (DNS verify -> certbot -> nginx -> reload); ProvisionLogger for structured step events
-    nginx.go              GenerateNginxConfig from Go template with password protection support (auth_request blocks), RemoveNginxConfig
-    reconcile.go          Rewrites nginx configs for already-active Deployik domains on startup
+    ssl.go                Manager: ProvisionDomain (DNS verify -> cert (certbot or configured wildcard) -> proxy config -> reload); ProvisionLogger for structured step events; ReloadProxy() dispatches to ReloadNginx() in docker mode or runs PROXY_RELOAD_CMD via `sh -c` in host-port mode
+    nginx.go              GenerateNginxConfig from Go template with password protection support (auth_request blocks), ContainerUpstream so host-port mode can point nginx at 127.0.0.1:<port>, RemoveNginxConfig
+    apache.go             GenerateApacheConfig: Apache VirtualHost template (HTTP→HTTPS redirect, www canonicalization, TLS with optional wildcard cert, HTTP/2 + WebSocket upgrade). Password protection is not yet supported in this path
+    reconcile.go          Rewrites proxy configs (nginx or Apache) for already-active Deployik domains on startup. In host-port mode, looks up each container's live host port via DockerInspector and skips targets whose container isn't running so no broken vhost lands on disk
     dns.go                VerifyDNS (A-record lookup against VPS IP)
     variants.go           Canonicalizes production custom domains so apex stays primary and optional www alias redirects to it
     auth_page.go          WriteAuthPage: generates static Czech-language auth HTML page for password-protected sites
@@ -205,14 +210,14 @@ web/src/
 
 ## Database Schema
 
-SQLite with 10 migrations. Tables:
+SQLite with 12 migrations. Tables:
 
 | Table | Key Fields | Notes |
 |---|---|---|
 | `users` | id (ULID), github_id (unique), username, github_token (encrypted), role (admin/user) | `ADMIN_GITHUB_USERS` provides explicit admin bootstrap; first user only auto-promotes when no admin list is configured |
 | `organizations` | id (ULID), name, slug (unique), is_personal, personal_owner_user_id (nullable unique FK) | Every user gets a personal workspace; shared orgs use memberships |
 | `organization_memberships` | organization_id (FK), user_id (FK), role (owner/member) | Grants workspace visibility |
-| `projects` | id (ULID), name (unique slug), github_repo, github_owner, branch, user_id (creator FK), organization_id (nullable FK), framework, package_manager, root_directory, output_directory, build_command, install_command, node_version, status, preview_password (encrypted), production_password (encrypted) | Soft-delete via status='deleted'; password fields added in migration 010 |
+| `projects` | id (ULID), name (unique slug), github_repo, github_owner, branch, user_id (creator FK), organization_id (nullable FK), framework, package_manager, root_directory, output_directory, build_command, install_command, node_version, status, preview_password (encrypted), production_password (encrypted), host_network_access (bool), data_volume_enabled (bool), data_mount_path (default `/app/data`) | Soft-delete via status='deleted'; password fields added in migration 010; runtime fields added in migrations 011-012 |
 | `deployments` | id (ULID), project_id (FK), environment, status, commit_sha, commit_message, branch, container_id, container_name, image_tag, build_duration, triggered_by, trigger_source (manual/webhook/api), triggered_by_username, screenshot_path, error_message, finished_at | trigger/screenshot fields added in migration 008 |
 | `build_logs` | id (auto), deployment_id (FK), line_number, content, stream (stdout/stderr) | |
 | `domains` | id (ULID), project_id (FK), domain (unique), environment, is_auto, dns_verified, ssl_status (pending/active/error), ssl_expires_at | Auto-domains cannot be deleted |
@@ -270,6 +275,11 @@ SQLite with 10 migrations. Tables:
 - `GET  /api/projects/{id}/protection` -- Get protection status `{preview_enabled, production_enabled}`
 - `PUT  /api/projects/{id}/protection` -- Enable/disable protection `{environment, enabled}` (returns generated password when enabling)
 - `POST /api/projects/{id}/protection/regenerate` -- Regenerate password `{environment}` (returns new password)
+
+**Volumes (only meaningful when `data_volume_enabled=true` on the project):**
+- `GET    /api/projects/{id}/volumes` -- List preview + production volumes with on-disk size (via `/system/df`) and in_use flag (true when the env's container is currently running)
+- `DELETE /api/projects/{id}/volumes/{env}` -- Delete the volume (returns 409 if in use by a running container)
+- `POST   /api/projects/{id}/volumes/{env}/recreate` -- Remove + recreate (returns 409 if in use; never reports success unless the old volume was actually removed first)
 
 **Domains:**
 - `GET    /api/projects/{id}/domains` -- List domains
@@ -380,12 +390,14 @@ The pipeline runs in a background goroutine per deployment:
 6. **Variable resolution** -- Separate env var and secret resolution, each with shared+scoped merge
 7. **Dockerfile generation** -- Respects the project package-manager setting (`auto`, `bun`, `pnpm`, `npm`, `yarn`). `auto` still detects from lock files first (checks repo root first for monorepos, then app dir). If user provides a Dockerfile, it is used as-is.
 8. **Docker build** -- Streams output line-by-line via WebSocket hub
-9. **Container start** -- Temporary name (`{canonical}-{deploy_id_prefix}`)
-10. **Health check** -- Polls container state; healthy after 60s timeout
-11. **Domain provisioning** -- For each domain in the environment: DNS verify -> certbot SSL -> nginx config (with password protection if enabled) -> nginx reload
-12. **Blue-green swap** -- Stop old container, rename new to canonical name
-13. **Finalize** -- Mark previous live as "replaced", new as "live"
-14. **Screenshot** -- Async: capture headless Chrome screenshot of the deployed site (5s delay)
+9. **Volume ensure** -- If `data_volume_enabled=true`, `EnsureVolume` creates `deployik-{project}-{env}-data` (idempotent); the volume is bound to the container at `data_mount_path` (default `/app/data`)
+10. **Container start** -- Temporary name (`{canonical}-{deploy_id_prefix}`); `RunContainerOptions` carries `ExtraHosts: ["host.docker.internal:host-gateway"]` when `host_network_access=true`, `VolumeBinds` from the step above, and `BindHostPort=true` under `PROXY_TYPE=host-port` (binds container 3000 to a random `127.0.0.1:<random>`)
+11. **Health check** -- Polls container state; healthy after 60s timeout
+12. **Upstream resolution** -- docker mode: `{containerName}:3000` over the `proxy` Docker network. host-port mode: `GetHostPort()` reads the live port from `inspect.NetworkSettings.Ports["3000/tcp"]`
+13. **Domain provisioning** -- For each domain in the environment: DNS verify -> SSL (certbot per-domain, or skip entirely when `PROXY_SSL_CERT` is configured) -> proxy config (nginx or Apache depending on `PROXY_CONFIG_FORMAT`, with password protection if enabled) -> `ReloadProxy()`
+14. **Blue-green swap** -- Stop old container, rename new to canonical name
+15. **Finalize** -- Mark previous live as "replaced", new as "live"
+16. **Screenshot** -- Async: capture headless Chrome screenshot of the deployed site (5s delay)
 
 Container naming: `deployik-{project_name}-{environment}` (e.g., `deployik-my-app-preview`)
 
@@ -498,6 +510,12 @@ Production runs via `docker/docker-compose.yml` with:
 | `VPS_HOST` | `203.0.113.10` | Expected IP for DNS verification |
 | `WEBHOOK_URL` | `{FRONTEND_URL}/api/webhooks/github` | Public URL for GitHub webhook callbacks |
 | `SCREENSHOT_DIR` | `{DATA_DIR}/screenshots` | Directory to store deployment screenshots |
+| `PROXY_TYPE` | `docker` | `docker` (nginx-proxy container on the same Docker network, containers reachable by name) or `host-port` (each deployed container binds to a random localhost port; the host proxy reaches it via `127.0.0.1:<port>`) |
+| `PROXY_CONFIG_FORMAT` | `nginx` | `nginx` server blocks or `apache` VirtualHost blocks written into `NGINX_CONF_DIR` |
+| `PROXY_RELOAD_CMD` | _(unset)_ | Shell command run via `sh -c` to reload the proxy when `PROXY_TYPE=host-port` (e.g. `apachectl graceful`, `sudo -n systemctl reload nginx`, `nsenter -t 1 -m -- apachectl graceful`) |
+| `PROXY_SSL_CERT` | _(unset)_ | Path to a pre-existing wildcard cert — when set, per-domain certbot runs are skipped |
+| `PROXY_SSL_KEY` | _(unset)_ | Matching wildcard key |
+| `VITE_ALLOWED_HOSTS` | _(unset)_ | Comma-separated hostnames the Vite dev server will accept (for public HMR behind a reverse proxy) |
 | `DEV_MODE` | _(unset)_ | Set to `true` to allow startup without required env vars; enables dev-login endpoint and mock GitHub data |
 
 ## Design Decisions
@@ -511,3 +529,8 @@ Production runs via `docker/docker-compose.yml` with:
 - **Sidebar layout over top-nav tabs:** The monolithic `ProjectDetail.tsx` (2000+ lines with tabs) was decomposed into 7+ separate page files with nested TanStack Router routes, navigated via a sidebar with collapsible Settings section. This improves code organization, enables deep-linking, and gives more room for future navigation items.
 - **Password protection via nginx auth_request:** Instead of proxying all traffic through Deployik, password-protected sites use nginx's `auth_request` directive pointing to Deployik's `/api/site-auth/check`. This keeps the fast path (authenticated requests) entirely in nginx while only the initial auth check hits Deployik.
 - **Webhook HMAC validation per project:** Each project's auto-build config stores its own encrypted webhook secret, so a single webhook endpoint can serve multiple projects by iterating configs and validating signatures independently.
+- **Proxy abstraction (ReloadProxy + ContainerUpstream):** Replacing direct `ReloadNginx()` calls with a `ReloadProxy()` dispatcher let one install serve docker-nginx-proxy, host nginx, or host Apache without branching hotpaths through the codebase. `ContainerUpstream` on `NginxConfig`/`ApacheConfig` decouples the upstream string from the container name so `PROXY_TYPE=host-port` can insert `127.0.0.1:<port>` without touching callers.
+- **`sh -c` for PROXY_RELOAD_CMD:** The host-port reload command is passed to `sh -c` rather than parsed with `strings.Fields`. This is operator-controlled config (not user input), so giving the operator the full shell vocabulary (sudo, pipes, `nsenter -t 1 -m -- apachectl graceful`, configtest chains) is strictly better than a fragile whitespace-split parser.
+- **Volumes via `/system/df`:** `VolumeInspect` and `VolumeList` leave `UsageData` nil, so the only way to show real on-disk sizes is `DiskUsage`. The volumes handler calls it once per request and keys the result by volume name for both preview and production.
+- **Volume name keyed by project.Name (for now):** Volume naming is `deployik-{project.Name}-{env}-data` to match the container. Because `project.Name` is mutable via `PATCH /api/projects/{id}`, renaming would silently orphan the data. The Update handler therefore rejects rename requests when `data_volume_enabled=true` (409); a follow-up will re-key by `project.ID`.
+- **Host-port port instability is documented, not masked:** Each deployed container binds to a random localhost port via `nat.PortBinding{HostIP: "127.0.0.1", HostPort: "0"}`. Docker re-assigns on restart, so the reconcile path reads the live port from `inspect.NetworkSettings.Ports` on boot and skips writing targets whose container isn't up yet — better to have no vhost than a vhost pointing nowhere. Restart-time port drift is called out in README Known Limitations with a TODO for deterministic ports.
