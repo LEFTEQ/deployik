@@ -117,13 +117,15 @@ func NewRouter(cfg *RouterConfig) *chi.Mux {
 				dockerClient = cfg.Pipeline.Docker
 			}
 			projectHandler := &handlers.ProjectHandler{
-				DB:        cfg.DB,
-				Docker:    dockerClient,
-				Manager:   cfg.DomainManager,
-				Encryptor: cfg.Encryptor,
-				Audit:     auditRecorder,
-				Analytics: cfg.Analytics,
-				DevMode:   cfg.DevMode,
+				DB:         cfg.DB,
+				Docker:     dockerClient,
+				Manager:    cfg.DomainManager,
+				Encryptor:  cfg.Encryptor,
+				Audit:      auditRecorder,
+				Analytics:  cfg.Analytics,
+				DevMode:    cfg.DevMode,
+				Pipeline:   cfg.Pipeline,
+				WebhookURL: cfg.WebhookURL,
 			}
 			r.Get("/github/repos", projectHandler.ListGithubRepos)
 			r.Get("/github/branches", projectHandler.ListGithubBranches)

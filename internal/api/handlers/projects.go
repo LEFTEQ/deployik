@@ -24,13 +24,15 @@ import (
 )
 
 type ProjectHandler struct {
-	DB        *db.DB
-	Docker    *build.DockerClient
-	Manager   *domain.Manager
-	Encryptor *crypto.Encryptor
-	Audit     *audit.Recorder
-	Analytics *analytics.Service
-	DevMode   bool
+	DB         *db.DB
+	Docker     *build.DockerClient
+	Manager    *domain.Manager
+	Encryptor  *crypto.Encryptor
+	Audit      *audit.Recorder
+	Analytics  *analytics.Service
+	DevMode    bool
+	Pipeline   *build.Pipeline // used for initial deploy on project creation
+	WebhookURL string          // used for auto-build webhook on project creation
 }
 
 var slugRegex = regexp.MustCompile(`^[a-z0-9]([a-z0-9-]*[a-z0-9])?$`)
@@ -184,6 +186,15 @@ func (h *ProjectHandler) Create(w http.ResponseWriter, r *http.Request) {
 	h.DB.CreateDomain(previewDomain)
 
 	h.syncProjectAnalytics(project, []db.Domain{*previewDomain})
+
+	// Best-effort: provision GitHub webhook + auto-build config.
+	user, err := h.DB.GetUserByID(claims.UserID)
+	if err != nil || user == nil {
+		log.Printf("Warning: could not load user for post-create setup (project %s): %v", project.ID, err)
+	} else {
+		h.setupAutoBuildBestEffort(r.Context(), project, user)
+		h.dispatchInitialDeployBestEffort(r.Context(), project, user)
+	}
 
 	writeJSON(w, http.StatusCreated, project)
 	h.Audit.Record(audit.Entry{
@@ -387,6 +398,79 @@ func (h *ProjectHandler) syncProjectAnalytics(project *db.Project, domains []db.
 	if err := h.Analytics.EnsureProject(ctx, project, domains); err != nil {
 		log.Printf("Warning: failed to sync analytics for project %s: %v", project.ID, err)
 	}
+}
+
+// setupAutoBuildBestEffort provisions a GitHub webhook and inserts an
+// auto_build_configs row for the project. Failures are logged and silently
+// swallowed — the project creation response is unaffected.
+func (h *ProjectHandler) setupAutoBuildBestEffort(ctx context.Context, project *db.Project, user *db.User) {
+	if h.WebhookURL == "" {
+		log.Printf("Warning: WebhookURL not configured; skipping auto-build setup for project %s", project.ID)
+		return
+	}
+	token, err := h.Encryptor.Decrypt(user.GithubToken)
+	if err != nil {
+		log.Printf("Warning: failed to decrypt token for auto-build setup (project %s): %v", project.ID, err)
+		return
+	}
+	config, err := provisionWebhook(ctx, h.DB, h.Encryptor, project, token, h.WebhookURL, project.Branch, "*")
+	if err != nil {
+		log.Printf("Warning: auto-build webhook setup failed for project %s: %v", project.ID, err)
+		return
+	}
+	h.Audit.Record(audit.Entry{
+		UserID:       user.ID,
+		Action:       "auto_build_create",
+		ResourceType: "auto_build_config",
+		ResourceID:   config.ID,
+		ProjectID:    project.ID,
+		Metadata: map[string]any{
+			"source": "project_create",
+		},
+	})
+}
+
+// dispatchInitialDeployBestEffort creates a queued preview deployment and
+// hands it to the pipeline. Failures are logged and silently swallowed.
+func (h *ProjectHandler) dispatchInitialDeployBestEffort(ctx context.Context, project *db.Project, user *db.User) {
+	if h.Pipeline == nil {
+		log.Printf("Warning: Pipeline not configured; skipping initial deploy for project %s", project.ID)
+		return
+	}
+	token, err := h.Encryptor.Decrypt(user.GithubToken)
+	if err != nil {
+		log.Printf("Warning: failed to decrypt token for initial deploy (project %s): %v", project.ID, err)
+		return
+	}
+	deployment := &db.Deployment{
+		ProjectID:           project.ID,
+		Environment:         "preview",
+		Branch:              project.Branch,
+		Status:              "queued",
+		TriggerSource:       "api",
+		TriggeredBy:         user.ID,
+		TriggeredByUsername: user.Username,
+	}
+	if err := h.DB.CreateDeployment(deployment); err != nil {
+		log.Printf("Warning: failed to create initial deployment for project %s: %v", project.ID, err)
+		return
+	}
+	h.Pipeline.Dispatch(project, deployment, token, func(line, stream string) {
+		log.Printf("[deploy:%s] %s", deployment.ID[:8], line)
+	})
+	h.Audit.Record(audit.Entry{
+		UserID:       user.ID,
+		Action:       "deployment_create",
+		ResourceType: "deployment",
+		ResourceID:   deployment.ID,
+		ProjectID:    project.ID,
+		DeploymentID: deployment.ID,
+		Metadata: map[string]any{
+			"source":      "project_create",
+			"environment": "preview",
+		},
+	})
+	_ = ctx // ctx available for future use; Dispatch spawns its own goroutine
 }
 
 func (h *ProjectHandler) cleanupProjectRuntime(project *db.Project, domains []db.Domain) {

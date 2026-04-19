@@ -12,6 +12,13 @@ import (
 // without needing to change every method signature.
 var apiBase = "https://api.github.com"
 
+// SetTestAPIBase overrides apiBase for tests; returns a restore func.
+func SetTestAPIBase(url string) (restore func()) {
+	old := apiBase
+	apiBase = url
+	return func() { apiBase = old }
+}
+
 // Repo represents a GitHub repository.
 type Repo struct {
 	ID            int64  `json:"id"`

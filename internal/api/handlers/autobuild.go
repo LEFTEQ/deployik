@@ -1,9 +1,11 @@
 package handlers
 
 import (
+	"context"
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"log"
 	"net/http"
 	"strings"
@@ -72,6 +74,49 @@ func (h *AutoBuildHandler) Get(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// provisionWebhook generates a webhook secret, calls GitHub to create the webhook,
+// encrypts the secret, and inserts a new auto_build_configs row.
+// It returns the inserted config or an error if anything fails.
+// The caller is responsible for deciding how to handle the error
+// (fail the request vs. log-and-continue best-effort).
+func provisionWebhook(
+	_ context.Context,
+	database *db.DB,
+	encryptor *crypto.Encryptor,
+	project *db.Project,
+	githubToken, webhookURL, productionBranch, previewBranches string,
+) (*db.AutoBuildConfig, error) {
+	secretBytes := make([]byte, 32)
+	if _, err := rand.Read(secretBytes); err != nil {
+		return nil, fmt.Errorf("generate webhook secret: %w", err)
+	}
+	rawSecret := hex.EncodeToString(secretBytes)
+
+	encryptedSecret, err := encryptor.Encrypt(rawSecret)
+	if err != nil {
+		return nil, fmt.Errorf("encrypt webhook secret: %w", err)
+	}
+
+	log.Printf("Auto-build: creating webhook for %s/%s, url=%s", project.GithubOwner, project.GithubRepo, webhookURL)
+	id, err := ghclient.NewClient(githubToken).CreateWebhook(project.GithubOwner, project.GithubRepo, webhookURL, rawSecret)
+	if err != nil {
+		return nil, fmt.Errorf("create webhook: %w", err)
+	}
+
+	config := &db.AutoBuildConfig{
+		ProjectID:        project.ID,
+		Enabled:          true,
+		ProductionBranch: productionBranch,
+		PreviewBranches:  previewBranches,
+		WebhookID:        &id,
+		WebhookSecret:    encryptedSecret,
+	}
+	if err := database.UpsertAutoBuildConfig(config); err != nil {
+		return nil, fmt.Errorf("upsert auto-build config: %w", err)
+	}
+	return config, nil
+}
+
 // Put creates or updates the auto-build configuration.
 func (h *AutoBuildHandler) Put(w http.ResponseWriter, r *http.Request) {
 	projectID := chi.URLParam(r, "id")
@@ -111,26 +156,11 @@ func (h *AutoBuildHandler) Put(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var webhookID *int64
-	var webhookSecret string
+	var config *db.AutoBuildConfig
 
 	if existing == nil || existing.WebhookID == nil {
-		// Need to create a webhook
-		secretBytes := make([]byte, 32)
-		if _, err := rand.Read(secretBytes); err != nil {
-			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to generate webhook secret"})
-			return
-		}
-		rawSecret := hex.EncodeToString(secretBytes)
-
-		encryptedSecret, err := h.Encryptor.Encrypt(rawSecret)
-		if err != nil {
-			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to encrypt webhook secret"})
-			return
-		}
-
-		log.Printf("Auto-build: creating webhook for %s/%s, url=%s", project.GithubOwner, project.GithubRepo, h.WebhookURL)
-		id, err := ghclient.NewClient(token).CreateWebhook(project.GithubOwner, project.GithubRepo, h.WebhookURL, rawSecret)
+		// Create path: use the shared helper.
+		config, err = provisionWebhook(r.Context(), h.DB, h.Encryptor, project, token, h.WebhookURL, req.ProductionBranch, req.PreviewBranches)
 		if err != nil {
 			errMsg := err.Error()
 			log.Printf("Auto-build: webhook creation failed for %s/%s: %s", project.GithubOwner, project.GithubRepo, errMsg)
@@ -151,11 +181,17 @@ func (h *AutoBuildHandler) Put(w http.ResponseWriter, r *http.Request) {
 			writeJSON(w, http.StatusBadGateway, map[string]string{"error": "failed to create webhook: " + errMsg})
 			return
 		}
-		webhookID = &id
-		webhookSecret = encryptedSecret
+		// Reflect the requested enabled/branch values on top of provisioned config.
+		config.Enabled = req.Enabled
+		config.ProductionBranch = req.ProductionBranch
+		config.PreviewBranches = req.PreviewBranches
+		if err := h.DB.UpsertAutoBuildConfig(config); err != nil {
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to save auto-build config"})
+			return
+		}
 	} else {
-		webhookID = existing.WebhookID
-		// If toggling enabled state, update the webhook on GitHub
+		// Update path: reuse existing webhook.
+		// If toggling enabled state, update the webhook on GitHub.
 		if existing.Enabled != req.Enabled {
 			if err := ghclient.NewClient(token).UpdateWebhookActive(
 				project.GithubOwner, project.GithubRepo, *existing.WebhookID, req.Enabled,
@@ -163,23 +199,19 @@ func (h *AutoBuildHandler) Put(w http.ResponseWriter, r *http.Request) {
 				log.Printf("Warning: failed to update webhook active state: %v", err)
 			}
 		}
-	}
-
-	config := &db.AutoBuildConfig{
-		ProjectID:        project.ID,
-		Enabled:          req.Enabled,
-		ProductionBranch: req.ProductionBranch,
-		PreviewBranches:  req.PreviewBranches,
-		WebhookID:        webhookID,
-		WebhookSecret:    webhookSecret,
-	}
-	if existing != nil {
-		config.ID = existing.ID
-	}
-
-	if err := h.DB.UpsertAutoBuildConfig(config); err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to save auto-build config"})
-		return
+		config = &db.AutoBuildConfig{
+			ID:               existing.ID,
+			ProjectID:        project.ID,
+			Enabled:          req.Enabled,
+			ProductionBranch: req.ProductionBranch,
+			PreviewBranches:  req.PreviewBranches,
+			WebhookID:        existing.WebhookID,
+			WebhookSecret:    existing.WebhookSecret,
+		}
+		if err := h.DB.UpsertAutoBuildConfig(config); err != nil {
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to save auto-build config"})
+			return
+		}
 	}
 
 	claims := auth.GetClaims(r.Context())
