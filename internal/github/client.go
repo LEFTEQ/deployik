@@ -8,7 +8,9 @@ import (
 	"net/http"
 )
 
-const apiBase = "https://api.github.com"
+// apiBase is a var (not const) so tests can point it at a local httptest.Server
+// without needing to change every method signature.
+var apiBase = "https://api.github.com"
 
 // Repo represents a GitHub repository.
 type Repo struct {

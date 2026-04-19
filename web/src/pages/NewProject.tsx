@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import { Search, Lock, Globe, GitBranch, ArrowLeft } from "lucide-react";
@@ -23,13 +23,32 @@ import {
   BuildSettingsFields,
   getFrameworkDefaults,
 } from "@/components/projects/build-settings";
-import type { GitHubRepo } from "@/types/api";
+import { PickApp } from "@/components/projects/pick-app";
+import type { GitHubRepo, MonorepoApp, RepoInspection } from "@/types/api";
+
+function buildSettingsFromApp(
+  app: MonorepoApp,
+  inspection: RepoInspection,
+  prev: ReturnType<typeof getFrameworkDefaults>,
+): ReturnType<typeof getFrameworkDefaults> {
+  const seeded = getFrameworkDefaults(app.framework, inspection.package_manager);
+  return {
+    ...prev,
+    framework: app.framework || prev.framework,
+    packageManager: inspection.package_manager || prev.packageManager,
+    rootDirectory: app.path,
+    outputDirectory: app.output_directory || seeded.outputDirectory,
+    buildCommand: app.suggested_build_command || seeded.buildCommand,
+    installCommand: seeded.installCommand,
+  };
+}
 
 export function NewProject() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [search, setSearch] = useState("");
   const [selectedRepo, setSelectedRepo] = useState<GitHubRepo | null>(null);
+  const [appPicked, setAppPicked] = useState(false);
   const [name, setName] = useState("");
   const [branch, setBranch] = useState("");
   const {
@@ -60,6 +79,35 @@ export function NewProject() {
     staleTime: staleTimes.github,
   });
 
+  const {
+    data: inspection,
+    isLoading: inspectionLoading,
+  } = useQuery({
+    queryKey: queryKeys.repoInspection(
+      selectedRepo?.owner.login ?? "",
+      selectedRepo?.name ?? "",
+      branch || selectedRepo?.default_branch || "",
+    ),
+    queryFn: () =>
+      api.inspectRepo(
+        selectedRepo!.owner.login,
+        selectedRepo!.name,
+        branch || selectedRepo!.default_branch,
+      ),
+    enabled: !!selectedRepo && !!(branch || selectedRepo?.default_branch),
+    staleTime: 5 * 60_000,
+    retry: 1,
+  });
+
+  // Auto-prefill on single-app inspection result — skip State B
+  useEffect(() => {
+    if (!inspection || appPicked || inspection.is_monorepo) return;
+    const firstApp = inspection.apps[0];
+    if (!firstApp) return;
+    setBuildSettings((prev) => buildSettingsFromApp(firstApp, inspection, prev));
+    setAppPicked(true);
+  }, [inspection, appPicked]);
+
   const createMutation = useMutation({
     mutationFn: () =>
       api.createProject({
@@ -77,7 +125,7 @@ export function NewProject() {
         node_version: buildSettings.nodeVersion,
       }),
     onSuccess: (project) => {
-      queryClient.invalidateQueries({ queryKey: ["projects"] }); // invalidate all org scopes
+      queryClient.invalidateQueries({ queryKey: ["projects"] });
       toast.success("Project created");
       navigate({
         to: "/projects/$id",
@@ -93,7 +141,7 @@ export function NewProject() {
       r.name.toLowerCase().includes(search.toLowerCase()),
   );
 
-  // Step 1: Select repo
+  // State A: No repo selected — show RepoPicker
   if (!selectedRepo) {
     return (
       <div className="mx-auto max-w-2xl p-6">
@@ -138,6 +186,7 @@ export function NewProject() {
                   className="flex cursor-pointer items-center gap-3 border-b border-white/5 px-5 py-3.5 transition-colors last:border-b-0 hover:bg-muted/50"
                   onClick={() => {
                     setSelectedRepo(repo);
+                    setAppPicked(false);
                     setName(repo.name.toLowerCase().replace(/[^a-z0-9-]/g, "-"));
                     setBranch(repo.default_branch);
                     setBuildSettings(getFrameworkDefaults("nextjs", "auto"));
@@ -179,15 +228,57 @@ export function NewProject() {
     );
   }
 
-  // Step 2: Configure
+  if (inspectionLoading && !appPicked) {
+    return (
+      <div className="mx-auto max-w-2xl p-6">
+        <LoadingState
+          title="Inspecting repository…"
+          description="Detecting workspaces, frameworks, and build commands."
+          className="min-h-[320px]"
+        />
+      </div>
+    );
+  }
+
+  // State B: monorepo detected, user hasn't picked an app yet
+  if (inspection?.is_monorepo && !appPicked) {
+    return (
+      <PickApp
+        inspection={inspection}
+        repoFullName={`${selectedRepo.owner.login}/${selectedRepo.name}`}
+        onSelectApp={(app) => {
+          setBuildSettings((prev) => buildSettingsFromApp(app, inspection, prev));
+          setAppPicked(true);
+        }}
+        onSetManually={() => {
+          setAppPicked(true);
+        }}
+        onBack={() => {
+          setSelectedRepo(null);
+          setAppPicked(false);
+        }}
+      />
+    );
+  }
+
+  // State C: Configure (existing step 2, structurally unchanged)
   return (
     <div className="mx-auto max-w-2xl p-6">
       <button
-        onClick={() => setSelectedRepo(null)}
+        onClick={() => {
+          if (inspection?.is_monorepo) {
+            setAppPicked(false);
+          } else {
+            setSelectedRepo(null);
+            setAppPicked(false);
+          }
+        }}
         className="mb-4 inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
       >
         <ArrowLeft className="h-4 w-4" />
-        Back to repository selection
+        {inspection?.is_monorepo
+          ? "Back to app selection"
+          : "Back to repository selection"}
       </button>
 
       <h1 className="text-2xl font-bold tracking-tight">Configure Project</h1>

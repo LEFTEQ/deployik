@@ -23,6 +23,7 @@ import type {
   VerifyDomainResponse,
   VolumeInfo,
   HealthResponse,
+  RepoInspection,
 } from "@/types/api";
 
 const API_URL = import.meta.env.VITE_API_URL || "/api";
@@ -145,6 +146,16 @@ class ApiClient {
   ): Promise<{ name: string; commit: { sha: string } }[]> {
     return this.request(
       `/github/branches?owner=${encodeURIComponent(owner)}&repo=${encodeURIComponent(repo)}`,
+    );
+  }
+
+  async inspectRepo(
+    owner: string,
+    repo: string,
+    branch: string,
+  ): Promise<RepoInspection> {
+    return this.request(
+      `/github/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/inspect?branch=${encodeURIComponent(branch)}`,
     );
   }
 

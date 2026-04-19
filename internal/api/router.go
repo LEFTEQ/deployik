@@ -55,6 +55,7 @@ func NewRouter(cfg *RouterConfig) *chi.Mux {
 	refreshLimiter := middleware.NewRateLimiter(30, time.Minute)
 	mutationLimiter := middleware.NewRateLimiter(60, time.Minute)
 	wsLimiter := middleware.NewRateLimiter(30, time.Minute)
+	inspectLimiter := middleware.NewRateLimiter(20, time.Minute)
 
 	authHandler := &handlers.AuthHandler{
 		DB:           cfg.DB,
@@ -126,6 +127,12 @@ func NewRouter(cfg *RouterConfig) *chi.Mux {
 			}
 			r.Get("/github/repos", projectHandler.ListGithubRepos)
 			r.Get("/github/branches", projectHandler.ListGithubBranches)
+			inspectHandler := &handlers.InspectHandler{
+				DB:        cfg.DB,
+				Encryptor: cfg.Encryptor,
+			}
+			r.With(inspectLimiter.Middleware("github_inspect")).
+				Get("/github/repos/{owner}/{repo}/inspect", inspectHandler.Get)
 
 			organizationHandler := &handlers.OrganizationHandler{DB: cfg.DB}
 			r.Get("/organizations", organizationHandler.List)

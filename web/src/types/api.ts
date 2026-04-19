@@ -318,3 +318,24 @@ export interface HealthResponse {
   status: "ok";
   version?: VersionInfo;
 }
+
+export type MonorepoTooling = "turborepo" | "nx";
+export type MonorepoFramework = "nextjs" | "vite" | "astro" | "static";
+export type MonorepoPackageManager = "auto" | "bun" | "pnpm" | "npm" | "yarn";
+
+export interface MonorepoApp {
+  name: string;
+  path: string;
+  framework: MonorepoFramework;
+  output_directory: string;
+  suggested_build_command: string;
+  buildable: boolean;
+}
+
+export interface RepoInspection {
+  is_monorepo: boolean;
+  package_manager: MonorepoPackageManager;
+  tooling: MonorepoTooling[];
+  apps: MonorepoApp[];
+  truncated: boolean;
+}

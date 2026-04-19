@@ -60,6 +60,8 @@ export const queryKeys = {
   githubRepos: () => ["github-repos"] as const,
   githubBranches: (owner: string, repo: string) =>
     ["github-branches", owner, repo] as const,
+  repoInspection: (owner: string, repo: string, branch: string) =>
+    ["repo-inspection", owner, repo, branch] as const,
 } as const;
 
 // Stale-time presets. The default 30s in QueryClient remains for anything

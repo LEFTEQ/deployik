@@ -57,6 +57,7 @@ internal/
       organizations.go    List organizations for current user
       analytics.go        Project analytics: combined Umami audience + Loki runtime data
       volumes.go          VolumeHandler: list (name + on-disk size + in_use flag), delete, recreate per project-environment; errdefs-classified errors surface 409 on in-use volumes instead of masking as 500
+      inspect.go          InspectHandler: GET /api/github/repos/{owner}/{repo}/inspect; uses user's OAuth token to detect monorepo structure via GitHub API
       access.go           loadAuthorizedProject/Deployment helpers (calls authz)
       helpers.go          writeJSON utility
     middleware/
@@ -143,7 +144,12 @@ internal/
 
   github/
     oauth.go              OAuthConfig: AuthorizeURL (scope: repo,read:user,admin:repo_hook), ExchangeCode; GetUser
-    client.go             Client: ListRepos, ListBranches, GetLatestCommit, CreateTagReference, CreateWebhook, DeleteWebhook, UpdateWebhookActive
+    client.go             Client: ListRepos, ListBranches, GetLatestCommit, CreateTagReference, CreateWebhook, DeleteWebhook, UpdateWebhookActive, GetFileContent, GetTree (used by monorepo inspector)
+
+  monorepo/
+    inspect.go            Inspect() orchestrator + RepoInspector interface + ErrFileNotFound sentinel
+    detect.go             Pure detection helpers: package manager, tooling (turborepo/nx), workspaces, glob expansion, per-app profile, vite outDir
+    types.go              Report, App, Tooling structs (JSON-serialisable, mirror frontend types)
 
   projectconfig/
     defaults.go           Framework presets (nextjs, vite, astro, static), Resolve(), ApplyProjectDefaults(), path normalization
@@ -160,7 +166,7 @@ web/src/
     Login.tsx             GitHub OAuth redirect
     AuthCallback.tsx      Exchanges code/state for cookie session, stores only user state
     Projects.tsx          Dashboard: project list with latest deployment info
-    NewProject.tsx        Two-step: select repo -> configure build settings
+    NewProject.tsx        Three-step state machine: (A) pick repo -> (B) pick app from monorepo (skipped for single-app repos) -> (C) configure build settings
     ProjectOverview.tsx   Dual environment rows (preview + production), domain strips, recent deployments, release panel
     ProjectDeployments.tsx  Deployment history with filters (branch, environment, status, date range), pagination
     ProjectAnalytics.tsx  Thin wrapper around project-analytics component
@@ -189,6 +195,7 @@ web/src/
     projects/project-analytics.tsx  Analytics tab UI: 4 key stats + 2 collapsible sections (Audience + Runtime)
     projects/project-analytics-meta.ts  AUDIENCE_STATUS_META: badge styles and descriptions for analytics statuses
     projects/project-integration.tsx  Analytics setup stepper: Install -> Verify -> Events
+    projects/pick-app.tsx Monorepo app picker shown as Step 2 in NewProject when inspection detects workspaces; renders detected framework/output/build per app
     BuildLog.tsx          Log viewer with auto-scroll, stderr highlighting
     ui/                   shadcn/ui components (button, card, dialog, input, select, etc.)
     ui/breadcrumb.tsx     Breadcrumb primitives for project layout header
@@ -254,6 +261,7 @@ SQLite with 12 migrations. Tables:
 **GitHub:**
 - `GET  /api/github/repos` -- User's GitHub repos (dev-mode: returns mock repos)
 - `GET  /api/github/branches?owner=&repo=` -- Repo branches (dev-mode: returns mock branches)
+- `GET /api/github/repos/{owner}/{repo}/inspect?branch=` -- Detect monorepo structure (pnpm/npm/yarn/bun workspaces, Turborepo, Nx) and per-app build profiles. Rate-limited to 20/min/IP.
 
 **Projects:**
 - `GET    /api/projects?organization_id=` -- List projects with latest deployment join, optionally filtered to one workspace
@@ -330,6 +338,7 @@ SQLite with 12 migrations. Tables:
 - **Soft deletes:** Projects use `status='deleted'` rather than actual row deletion. Domains use hard delete (but auto-domains are protected by `is_auto=0` check).
 - **Workspace model:** Users always get a personal organization via `EnsurePersonalOrganization()`. Shared organizations are represented by `organizations + organization_memberships`, and the frontend persists the currently selected workspace in `store/organization.ts`.
 - **Build metadata:** `cmd/server/main.go` declares `gitSHA`, `buildTime`, `ghRunID`, `ghRepo` package vars set at link time via `go build -ldflags="-X main.<name>=<value>"`. CI (`.github/workflows/ci.yml`) passes these as Docker `build-args` to `docker/build-push-action@v6`, which the `Dockerfile` `go-builder` stage forwards to the `RUN go build` line. The result is wrapped in `internal/version.Info` and surfaced via the `/api/health` JSON response.
+- **Monorepo inspection:** `internal/monorepo` is a dependency-free detection package that scans a GitHub repo via a small `RepoInspector` interface (mockable in tests). It detects `pnpm-workspace.yaml`, `turbo.json`, `nx.json`, and root `package.json` `workspaces` (npm/yarn/bun share the same field), expands workspace globs against the GitHub Trees API, and derives per-app framework/output/build defaults. The `internal/api/handlers/InspectHandler` adapts `*github.Client` (via `gh.ErrNotFound` → `monorepo.ErrFileNotFound` translation) to expose this at `GET /api/github/repos/{owner}/{repo}/inspect?branch=...` for the new-project flow.
 
 ### Auto-Build System
 
@@ -458,6 +467,7 @@ The `projectconfig.Resolve()` function is the backend source of truth. The front
 - **Variable store:** `VariableStore` component provides Vercel-style individual add/edit/delete for env vars and secrets. Supports .env file import, scope badges (shared/preview/production), and inline editing.
 - **UI theme:** Dark theme (zinc palette), shadcn/ui new-york variant.
 - **Path alias:** `@/` maps to `web/src/` in both tsconfig and Vite config.
+- **New-project flow:** `web/src/pages/NewProject.tsx` is a 3-step state machine: (A) pick repo → (B) pick app from monorepo (skipped transparently for single-app repos) → (C) configure build settings. Step B reuses `<PickApp>` and is driven by `api.inspectRepo()` (TanStack Query, 5-min staleTime). Picking an app pre-fills `framework`, `package_manager`, `root_directory`, `output_directory`, `build_command`. Inspect errors fall through silently to manual configuration.
 
 ### Testing
 
