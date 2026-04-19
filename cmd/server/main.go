@@ -88,6 +88,19 @@ func main() {
 		log.Printf("Warning: Docker client not available: %v", err)
 	} else {
 		defer dockerClient.Close()
+
+		// Bootstrap the named buildx builder in the background so startup isn't
+		// blocked on pulling the BuildKit image on first boot. A failure here is
+		// non-fatal; the first build will surface a clearer error if it sticks.
+		go func() {
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+			defer cancel()
+			if err := dockerClient.EnsureBuildxBuilder(ctx); err != nil {
+				log.Printf("Warning: buildx builder bootstrap failed: %v", err)
+			} else {
+				log.Printf("Buildx builder %q ready", build.BuildxBuilderName)
+			}
+		}()
 	}
 
 	wsHub := ws.NewHub()

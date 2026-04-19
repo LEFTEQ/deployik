@@ -1,13 +1,15 @@
 package build
 
 import (
+	"bufio"
 	"context"
-	"encoding/json"
 	"fmt"
 	"io"
 	"log"
-	"path/filepath"
+	"os"
+	"os/exec"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/docker/docker/api/types"
@@ -16,7 +18,6 @@ import (
 	"github.com/docker/docker/api/types/network"
 	"github.com/docker/docker/api/types/volume"
 	"github.com/docker/docker/client"
-	"github.com/docker/docker/pkg/archive"
 	"github.com/docker/go-connections/nat"
 )
 
@@ -34,83 +35,155 @@ func NewDockerClient() (*DockerClient, error) {
 	return &DockerClient{cli: cli}, nil
 }
 
-// BuildStreamLine represents a single line from docker build output.
-type BuildStreamLine struct {
-	Stream string `json:"stream"`
-	Error  string `json:"error"`
+// BuildxBuilderName is the named buildx builder Deployik uses for all builds.
+// A persistent docker-container driver builder gives us:
+//   - cross-build persistence of `RUN --mount=type=cache` (package-manager caches,
+//     Next.js incremental build cache, etc.),
+//   - a single place to prune cache (`docker buildx prune --builder=...`),
+//   - isolation from whatever the host's default buildx config is.
+const BuildxBuilderName = "deployik-builder"
+
+// EnsureBuildxBuilder makes sure the `deployik-builder` named buildx builder
+// exists and is started. Safe to call repeatedly (idempotent).
+//
+// Lifecycle:
+//   - On first call, creates the builder with the docker-container driver and
+//     bootstraps the BuildKit container.
+//   - On subsequent calls, `buildx inspect --bootstrap` is a no-op when the
+//     builder is already running, and will start it if it was stopped.
+//
+// Non-fatal on failure: the caller logs a warning and continues; BuildImage
+// will surface a clearer error on the next build if the builder truly isn't
+// available.
+func (d *DockerClient) EnsureBuildxBuilder(ctx context.Context) error {
+	// Fast path: builder already exists → bootstrap starts it if stopped.
+	if err := exec.CommandContext(ctx, "docker", "buildx", "inspect", "--bootstrap", BuildxBuilderName).Run(); err == nil {
+		return nil
+	}
+
+	create := exec.CommandContext(ctx, "docker", "buildx", "create",
+		"--name", BuildxBuilderName,
+		"--driver", "docker-container",
+		"--bootstrap",
+	)
+	out, err := create.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("create buildx builder %s: %w: %s", BuildxBuilderName, err, strings.TrimSpace(string(out)))
+	}
+	return nil
 }
 
-// BuildImage builds a Docker image from a directory containing a Dockerfile.
-// Returns the image ID and calls onLog for each build output line.
-func (d *DockerClient) BuildImage(ctx context.Context, contextDir, dockerfilePath, imageTag string, onLog func(line string)) (string, error) {
-	// Create tar archive of the build context
-	tar, err := archive.TarWithOptions(contextDir, &archive.TarOptions{})
-	if err != nil {
-		return "", fmt.Errorf("create tar: %w", err)
-	}
-	defer tar.Close()
-
-	relDockerfile := "Dockerfile"
-	if dockerfilePath != "" {
-		relativePath, err := filepath.Rel(contextDir, dockerfilePath)
-		if err == nil && !strings.HasPrefix(relativePath, "..") {
-			relDockerfile = filepath.ToSlash(relativePath)
-		}
-		if relDockerfile == "" || relDockerfile == "." {
-			relDockerfile = "Dockerfile"
-		}
-	}
-
-	resp, err := d.cli.ImageBuild(ctx, tar, types.ImageBuildOptions{
-		Tags:        []string{imageTag},
-		Dockerfile:  relDockerfile,
-		Remove:      true,
-		ForceRemove: true,
-	})
-	if err != nil {
-		return "", fmt.Errorf("image build: %w", err)
-	}
-	defer resp.Body.Close()
-
-	var imageID string
-	decoder := json.NewDecoder(resp.Body)
-	for {
-		var line BuildStreamLine
-		if err := decoder.Decode(&line); err != nil {
-			if err == io.EOF {
-				break
-			}
-			return "", fmt.Errorf("decode build output: %w", err)
-		}
-
-		if line.Error != "" {
-			return "", fmt.Errorf("build error: %s", line.Error)
-		}
-
-		if line.Stream != "" {
-			trimmed := strings.TrimRight(line.Stream, "\n")
-			if trimmed != "" {
-				if onLog != nil {
-					onLog(trimmed)
-				}
-				// Try to extract image ID from build output
-				if strings.HasPrefix(trimmed, "Successfully built ") {
-					imageID = strings.TrimPrefix(trimmed, "Successfully built ")
-				}
-			}
-		}
-	}
-
-	// If we didn't get an ID from the stream, inspect the tag
-	if imageID == "" {
-		inspect, _, err := d.cli.ImageInspectWithRaw(ctx, imageTag)
-		if err == nil {
-			imageID = inspect.ID
-		}
-	}
-
-	return imageID, nil
+// BuildImageOptions carries optional knobs for BuildImage. All fields are optional.
+type BuildImageOptions struct {
+	// Builder is the buildx builder name. Defaults to BuildxBuilderName.
+	Builder string
+	// SecretsFile is the path to a KEY=VALUE env-style file whose contents are
+	// mounted into the build via `--secret id=deployik-secrets,src=<path>`.
+	// The Dockerfile can source it in a RUN step that uses
+	// `--mount=type=secret,id=deployik-secrets`. Empty → no secret mount.
+	SecretsFile string
+	// OnLog receives one build-output line at a time (merged stdout+stderr).
+	OnLog func(line string)
 }
+
+// BuildImage builds a Docker image via `docker buildx build` and returns the image ID.
+// Uses BuildKit unconditionally so user Dockerfiles relying on BuildKit features
+// (automatic ARGs like $BUILDPLATFORM, RUN --mount, HEREDOCs, # syntax=, etc.) build
+// correctly.
+func (d *DockerClient) BuildImage(ctx context.Context, contextDir, dockerfilePath, imageTag string, opts BuildImageOptions) (string, error) {
+	dockerfileArg := dockerfilePath
+	if dockerfileArg == "" {
+		dockerfileArg = "Dockerfile"
+	}
+
+	builder := opts.Builder
+	if builder == "" {
+		builder = BuildxBuilderName
+	}
+
+	args := []string{
+		"buildx", "build",
+		"--builder", builder,
+		"--load",
+		"--progress=plain",
+		"-t", imageTag,
+		"-f", dockerfileArg,
+	}
+	if opts.SecretsFile != "" {
+		args = append(args, "--secret", "id=deployik-secrets,src="+opts.SecretsFile)
+	}
+	args = append(args, contextDir)
+
+	cmd := exec.CommandContext(ctx, "docker", args...)
+	// Make buildx deterministic about its output: plain progress, no truncation, no colors.
+	cmd.Env = append(os.Environ(),
+		"DOCKER_BUILDKIT=1",
+		"BUILDKIT_PROGRESS=plain",
+		"BUILDX_NO_DEFAULT_ATTESTATIONS=1",
+		"NO_COLOR=1",
+	)
+
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		return "", fmt.Errorf("stdout pipe: %w", err)
+	}
+	stderr, err := cmd.StderrPipe()
+	if err != nil {
+		return "", fmt.Errorf("stderr pipe: %w", err)
+	}
+
+	if err := cmd.Start(); err != nil {
+		return "", fmt.Errorf("start docker buildx: %w", err)
+	}
+
+	tail := newLineTail(40)
+
+	var wg sync.WaitGroup
+	consume := func(r io.Reader) {
+		defer wg.Done()
+		scanner := bufio.NewScanner(r)
+		scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
+		for scanner.Scan() {
+			line := scanner.Text()
+			tail.push(line)
+			if opts.OnLog != nil {
+				opts.OnLog(line)
+			}
+		}
+	}
+	wg.Add(2)
+	go consume(stdout)
+	go consume(stderr)
+	wg.Wait()
+
+	if err := cmd.Wait(); err != nil {
+		return "", fmt.Errorf("docker buildx build failed: %w\n%s", err, tail.join())
+	}
+
+	inspect, _, err := d.cli.ImageInspectWithRaw(ctx, imageTag)
+	if err != nil {
+		return "", fmt.Errorf("inspect built image %s: %w", imageTag, err)
+	}
+	return inspect.ID, nil
+}
+
+// lineTail keeps a bounded ring of the most recent N lines, used to attach
+// trailing build output to error messages without unbounded memory growth.
+type lineTail struct {
+	capacity int
+	lines    []string
+}
+
+func newLineTail(n int) *lineTail { return &lineTail{capacity: n} }
+
+func (t *lineTail) push(line string) {
+	t.lines = append(t.lines, line)
+	if len(t.lines) > t.capacity {
+		t.lines = t.lines[len(t.lines)-t.capacity:]
+	}
+}
+
+func (t *lineTail) join() string { return strings.Join(t.lines, "\n") }
 
 // RunContainerOptions holds optional settings for container creation.
 type RunContainerOptions struct {

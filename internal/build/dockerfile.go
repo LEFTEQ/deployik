@@ -30,6 +30,10 @@ type DockerfileData struct {
 	UseYarn          bool
 	BuildEnvVars     []EnvVar
 	InstallDirectory string
+	// ProjectID scopes project-specific BuildKit cache mounts (e.g. Next.js
+	// `.next/cache`) so incremental-build caches of one project don't leak into
+	// another. Optional — falls back to a shared cache when empty.
+	ProjectID string
 }
 
 type EnvVar struct {
@@ -129,7 +133,10 @@ func generateNextJSDockerfile(data DockerfileData) string {
 	installDir := dockerAppDir(data.InstallDirectory)
 	outputDir := dockerProjectPath(data.RootDirectory, data.OutputDirectory)
 	staticTarget := dockerProjectPath("", path.Join(data.OutputDirectory, "static"))
+	nextCacheDir := path.Join(appDir, ".next/cache")
 
+	// `# syntax` must be the very first line of the file for BuildKit to honor it.
+	b.WriteString("# syntax=docker/dockerfile:1.7\n")
 	b.WriteString(fmt.Sprintf("FROM node:%s-alpine AS base\n", data.NodeVersion))
 	b.WriteString("WORKDIR /app\n\n")
 
@@ -148,10 +155,10 @@ func generateNextJSDockerfile(data DockerfileData) string {
 	} else if data.UseYarn {
 		b.WriteString("RUN corepack enable\n")
 	}
-	b.WriteString(fmt.Sprintf("RUN %s\n\n", data.InstallCommand))
+	b.WriteString(installRunLine(data))
 
 	// Build stage — package manager must also be available here
-	b.WriteString("FROM deps AS builder\n")
+	b.WriteString("\nFROM deps AS builder\n")
 	b.WriteString(fmt.Sprintf("WORKDIR %s\n", appDir))
 
 	// Build-time env vars (NEXT_PUBLIC_*)
@@ -159,8 +166,12 @@ func generateNextJSDockerfile(data DockerfileData) string {
 		b.WriteString(fmt.Sprintf("ENV %s=%s\n", ev.Key, strconv.Quote(ev.Value)))
 	}
 
-	b.WriteString(fmt.Sprintf("RUN %s\n\n", data.BuildCommand))
-	b.WriteString("RUN mkdir -p /tmp/deployik/public && if [ -d public ]; then cp -R public/. /tmp/deployik/public/; fi\n\n")
+	buildCacheID := nextCacheMountID(data.ProjectID)
+	b.WriteString(buildRunLine(data.BuildCommand, []string{
+		fmt.Sprintf("--mount=type=cache,target=%s,id=%s,sharing=locked", nextCacheDir, buildCacheID),
+		"--mount=type=secret,id=deployik-secrets",
+	}))
+	b.WriteString("\nRUN mkdir -p /tmp/deployik/public && if [ -d public ]; then cp -R public/. /tmp/deployik/public/; fi\n\n")
 
 	// Runtime stage
 	b.WriteString("FROM base AS runner\n")
@@ -190,6 +201,7 @@ func generateStaticDockerfile(data DockerfileData) string {
 	installDir := dockerAppDir(data.InstallDirectory)
 	outputDir := dockerProjectPath(data.RootDirectory, data.OutputDirectory)
 
+	b.WriteString("# syntax=docker/dockerfile:1.7\n")
 	b.WriteString(fmt.Sprintf("FROM node:%s-alpine AS base\n", data.NodeVersion))
 	b.WriteString("WORKDIR /app\n\n")
 
@@ -205,14 +217,17 @@ func generateStaticDockerfile(data DockerfileData) string {
 	} else if data.UseYarn {
 		b.WriteString("RUN corepack enable\n")
 	}
-	b.WriteString(fmt.Sprintf("RUN %s\n\n", data.InstallCommand))
+	b.WriteString(installRunLine(data))
 
-	b.WriteString("FROM deps AS builder\n")
+	b.WriteString("\nFROM deps AS builder\n")
 	b.WriteString(fmt.Sprintf("WORKDIR %s\n", appDir))
 	for _, ev := range data.BuildEnvVars {
 		b.WriteString(fmt.Sprintf("ENV %s=%s\n", ev.Key, strconv.Quote(ev.Value)))
 	}
-	b.WriteString(fmt.Sprintf("RUN %s\n\n", data.BuildCommand))
+	b.WriteString(buildRunLine(data.BuildCommand, []string{
+		"--mount=type=secret,id=deployik-secrets",
+	}))
+	b.WriteString("\n")
 
 	b.WriteString("FROM base AS runner\n")
 	b.WriteString("ENV NODE_ENV=production\n")
@@ -225,6 +240,77 @@ func generateStaticDockerfile(data DockerfileData) string {
 	b.WriteString("CMD [\"serve\", \"-s\", \"site\", \"-l\", \"3000\"]\n")
 
 	return b.String()
+}
+
+// installRunLine renders the install-command RUN step, prefixed with a
+// BuildKit cache mount for the effective package manager's on-disk cache.
+// Falls back to a plain `RUN <cmd>` when no cache target is known — keeps
+// behavior identical on classic-builder fallbacks (should never happen now
+// that Deployik always goes through buildx).
+func installRunLine(data DockerfileData) string {
+	cacheFlag := packageManagerCacheMount(resolvePackageManager(data))
+	if cacheFlag == "" {
+		return fmt.Sprintf("RUN %s\n", data.InstallCommand)
+	}
+	return fmt.Sprintf("RUN %s \\\n    %s\n", cacheFlag, data.InstallCommand)
+}
+
+// buildRunLine renders the build-command RUN step with the given BuildKit
+// mount flags (expected to include `--mount=type=secret,id=deployik-secrets`
+// and, for frameworks that have one, an incremental-build cache mount). When
+// the secret mount is present, the command is wrapped so that the secrets
+// file — if BuildKit materialised it — is sourced into the environment before
+// the build runs. This matches the Vercel semantics where build steps can
+// read any project env var without those values leaking into image layers.
+func buildRunLine(command string, mountFlags []string) string {
+	hasSecret := false
+	for _, m := range mountFlags {
+		if strings.Contains(m, "type=secret") && strings.Contains(m, "id=deployik-secrets") {
+			hasSecret = true
+			break
+		}
+	}
+
+	body := command
+	if hasSecret {
+		body = fmt.Sprintf(
+			"if [ -f /run/secrets/deployik-secrets ]; then set -a && . /run/secrets/deployik-secrets && set +a; fi && %s",
+			command,
+		)
+	}
+
+	if len(mountFlags) == 0 {
+		return fmt.Sprintf("RUN %s\n", body)
+	}
+	return fmt.Sprintf("RUN %s \\\n    %s\n", strings.Join(mountFlags, " "), body)
+}
+
+// packageManagerCacheMount returns the BuildKit cache-mount flag for the
+// given package manager's on-disk install cache, or "" if none is known.
+// Paths assume the default root user of the node:*-alpine base image (HOME=/root).
+func packageManagerCacheMount(pm string) string {
+	switch pm {
+	case projectconfig.PackageManagerBun:
+		return "--mount=type=cache,target=/root/.bun/install/cache,sharing=locked"
+	case projectconfig.PackageManagerPnpm:
+		return "--mount=type=cache,target=/root/.local/share/pnpm/store,sharing=locked"
+	case projectconfig.PackageManagerYarn:
+		return "--mount=type=cache,target=/root/.cache/yarn,sharing=locked"
+	case projectconfig.PackageManagerNpm:
+		return "--mount=type=cache,target=/root/.npm,sharing=locked"
+	default:
+		return ""
+	}
+}
+
+// nextCacheMountID returns the BuildKit cache-mount `id=` for a project's
+// Next.js incremental build cache. Scoped per project so incremental caches
+// don't cross-contaminate between projects sharing the same builder.
+func nextCacheMountID(projectID string) string {
+	if projectID == "" {
+		return "deployik-next-cache"
+	}
+	return "deployik-next-cache-" + projectID
 }
 
 func detectInstallDirectory(repoDir, rootDirectory string) string {

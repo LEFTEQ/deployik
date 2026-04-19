@@ -205,6 +205,7 @@ func (p *Pipeline) Deploy(ctx context.Context, project *db.Project, deployment *
 	}
 
 	buildEnvVars, runtimeEnvVars := resolveDeploymentVariables(decryptedEnvVars, decryptedSecrets)
+	buildSecrets := resolveBuildSecrets(decryptedEnvVars, decryptedSecrets)
 
 	// Step 5: Generate Dockerfile
 	emit("Generating Dockerfile...")
@@ -217,6 +218,7 @@ func (p *Pipeline) Deploy(ctx context.Context, project *db.Project, deployment *
 		OutputDirectory: settings.OutputDirectory,
 		Runtime:         settings.Runtime,
 		BuildEnvVars:    buildEnvVars,
+		ProjectID:       project.ID,
 	})
 	if err != nil {
 		fail(err, "Dockerfile generation failed")
@@ -224,17 +226,34 @@ func (p *Pipeline) Deploy(ctx context.Context, project *db.Project, deployment *
 	}
 	emit("Dockerfile ready")
 
+	// Write project env vars + secrets to a short-lived file that BuildKit mounts
+	// as /run/secrets/deployik-secrets inside build RUN steps that opt in via
+	// `--mount=type=secret,id=deployik-secrets`. Values never land in image
+	// layers. The file lives in buildDir so it's cleaned up with the rest of the
+	// build scratch area.
+	secretsFile, err := writeBuildSecretsFile(buildDir, buildSecrets)
+	if err != nil {
+		fail(err, "Prepare build secrets failed")
+		return
+	}
+	if secretsFile != "" {
+		defer os.Remove(secretsFile)
+	}
+
 	// Step 5: Docker build
 	containerName := fmt.Sprintf("deployik-%s-%s", project.Name, deployment.Environment)
 	imageTag := fmt.Sprintf("deployik-%s-%s:%s", project.Name, deployment.Environment, deployment.ID[:8])
 
 	emit(fmt.Sprintf("Building image %s...", imageTag))
-	_, err = p.Docker.BuildImage(ctx, repoDir, dockerfilePath, imageTag, func(line string) {
-		logLineNum++
-		p.DB.InsertBuildLog(deployment.ID, logLineNum, line, "stdout")
-		if p.Hub != nil {
-			p.Hub.Publish(ws.LogLine{DeploymentID: deployment.ID, LineNumber: logLineNum, Content: line, Stream: "stdout"})
-		}
+	_, err = p.Docker.BuildImage(ctx, repoDir, dockerfilePath, imageTag, BuildImageOptions{
+		SecretsFile: secretsFile,
+		OnLog: func(line string) {
+			logLineNum++
+			p.DB.InsertBuildLog(deployment.ID, logLineNum, line, "stdout")
+			if p.Hub != nil {
+				p.Hub.Publish(ws.LogLine{DeploymentID: deployment.ID, LineNumber: logLineNum, Content: line, Stream: "stdout"})
+			}
+		},
 	})
 	if err != nil {
 		fail(err, "Docker build failed")

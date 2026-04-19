@@ -28,7 +28,7 @@ RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o /deployik-backup ./cmd
 
 # Stage 3: Minimal runtime
 FROM alpine:3.20
-RUN apk add --no-cache ca-certificates git docker-cli
+RUN apk add --no-cache ca-certificates git docker-cli docker-cli-buildx
 WORKDIR /app
 COPY --from=go-builder /deployik /app/deployik
 COPY --from=go-builder /deployik-backup /app/deployik-backup

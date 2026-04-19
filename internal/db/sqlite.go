@@ -54,7 +54,22 @@ func Open(dbPath string) (*DB, error) {
 	return &DB{conn}, nil
 }
 
-// OpenMemory creates an in-memory database (for testing).
+// OpenMemory creates an in-memory database for testing.
+//
+// SQLite's `:memory:` backend scopes the database per *connection*, and Go's
+// sql.DB is a connection pool — so as soon as the pool opens a second
+// connection (which it will under any non-trivial concurrent load, including
+// goroutines spawned by the pipeline while tests are running), queries start
+// hitting a fresh, empty database and fail with "no such table: …".
+//
+// We force the pool to a single connection so the migrated schema is the only
+// schema any query ever sees. This matches what production does implicitly
+// with a file-backed DB, and keeps tests deterministic under goroutine churn.
 func OpenMemory() (*DB, error) {
-	return Open(":memory:")
+	database, err := Open(":memory:")
+	if err != nil {
+		return nil, err
+	}
+	database.SetMaxOpenConns(1)
+	return database, nil
 }

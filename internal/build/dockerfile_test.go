@@ -39,6 +39,9 @@ func TestGenerateDockerfileSupportsRootDirectoryAndNextOutput(t *testing.T) {
 	}
 
 	got := string(content)
+	if !strings.HasPrefix(got, "# syntax=docker/dockerfile:") {
+		t.Fatalf("expected BuildKit syntax directive on first line, got:\n%s", got)
+	}
 	if !strings.Contains(got, "WORKDIR /app/apps/web") {
 		t.Fatalf("expected build workdir to target root directory, got:\n%s", got)
 	}
@@ -47,6 +50,18 @@ func TestGenerateDockerfileSupportsRootDirectoryAndNextOutput(t *testing.T) {
 	}
 	if !strings.Contains(got, "COPY --from=builder --chown=nextjs:nodejs /app/apps/web/.next/static /app/.next/static") {
 		t.Fatalf("expected static asset copy path to include output directory, got:\n%s", got)
+	}
+	if !strings.Contains(got, "--mount=type=cache,target=/root/.local/share/pnpm/store") {
+		t.Fatalf("expected pnpm install cache mount, got:\n%s", got)
+	}
+	if !strings.Contains(got, "--mount=type=cache,target=/app/apps/web/.next/cache") {
+		t.Fatalf("expected next incremental-build cache mount scoped to app dir, got:\n%s", got)
+	}
+	if !strings.Contains(got, "--mount=type=secret,id=deployik-secrets") {
+		t.Fatalf("expected secret mount for build-time env vars, got:\n%s", got)
+	}
+	if !strings.Contains(got, "if [ -f /run/secrets/deployik-secrets ]") {
+		t.Fatalf("expected build command to source secrets file when present, got:\n%s", got)
 	}
 }
 
@@ -76,6 +91,9 @@ func TestGenerateDockerfileSupportsStaticRuntime(t *testing.T) {
 	}
 
 	got := string(content)
+	if !strings.HasPrefix(got, "# syntax=docker/dockerfile:") {
+		t.Fatalf("expected BuildKit syntax directive on first line, got:\n%s", got)
+	}
 	if !strings.Contains(got, "RUN npm i -g serve@14") {
 		t.Fatalf("expected static runtime to install serve, got:\n%s", got)
 	}
@@ -153,10 +171,13 @@ func TestGenerateDockerfileAutoDetectsNpmFromPackageLockJSON(t *testing.T) {
 	if strings.Contains(got, "npm i -g bun") {
 		t.Fatalf("expected no bun install when package-lock.json is present, got:\n%s", got)
 	}
-	if !strings.Contains(got, "RUN npm ci") {
+	if !strings.Contains(got, "--mount=type=cache,target=/root/.npm") {
+		t.Fatalf("expected npm install cache mount, got:\n%s", got)
+	}
+	if !strings.Contains(got, "npm ci") {
 		t.Fatalf("expected npm ci install command, got:\n%s", got)
 	}
-	if !strings.Contains(got, "RUN npm run build") {
+	if !strings.Contains(got, "npm run build") {
 		t.Fatalf("expected npm run build command, got:\n%s", got)
 	}
 }
@@ -190,7 +211,7 @@ func TestGenerateDockerfileExplicitNpmDoesNotInstallBun(t *testing.T) {
 	if strings.Contains(got, "npm i -g bun") {
 		t.Fatalf("expected no bun install with explicit npm package manager, got:\n%s", got)
 	}
-	if !strings.Contains(got, "RUN npm ci") {
+	if !strings.Contains(got, "npm ci") {
 		t.Fatalf("expected npm ci install command, got:\n%s", got)
 	}
 }
@@ -224,10 +245,13 @@ func TestGenerateDockerfileSupportsYarnPackageManager(t *testing.T) {
 	if !strings.Contains(got, "RUN corepack enable") {
 		t.Fatalf("expected yarn builds to enable corepack, got:\n%s", got)
 	}
-	if !strings.Contains(got, "RUN yarn install --frozen-lockfile") {
+	if !strings.Contains(got, "--mount=type=cache,target=/root/.cache/yarn") {
+		t.Fatalf("expected yarn install cache mount, got:\n%s", got)
+	}
+	if !strings.Contains(got, "yarn install --frozen-lockfile") {
 		t.Fatalf("expected yarn install command, got:\n%s", got)
 	}
-	if !strings.Contains(got, "RUN yarn build") {
+	if !strings.Contains(got, "yarn build") {
 		t.Fatalf("expected yarn build command, got:\n%s", got)
 	}
 }
