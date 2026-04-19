@@ -74,7 +74,7 @@ export function CommandPalette({ compact = false }: { compact?: boolean }) {
         className={cn(
           compact
             ? "h-9 w-9 shrink-0"
-            : "h-9 w-full justify-between gap-3 text-muted-foreground md:max-w-sm",
+            : "h-9 w-64 shrink-0 justify-between gap-3 text-muted-foreground",
         )}
         onClick={() => setOpen(true)}
         aria-label="Open search"
