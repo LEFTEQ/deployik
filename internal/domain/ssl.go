@@ -49,7 +49,15 @@ type ProvisionConfig struct {
 	SSLDomains        []string
 	RedirectDomain    string
 	ContainerName     string
-	ContainerUpstream string // "host:port"; falls back to ContainerName:3000
+	// ContainerUpstream is "host:port" — preferred. When set, it's written
+	// verbatim. The deploy + reconcile paths build it explicitly because they
+	// may point at 127.0.0.1:<random> in host-port mode.
+	ContainerUpstream string
+	// Port is the TCP port the container listens on. Used to build the
+	// upstream when ContainerUpstream is empty (e.g. protection toggle, domain
+	// verify — paths where the caller doesn't know about host-port mode).
+	// Zero defaults to 3000.
+	Port              int
 	PasswordProtected bool
 }
 
@@ -257,7 +265,11 @@ func (m *Manager) WriteNginxConfig(cfg ProvisionConfig) (string, error) {
 
 	upstream := cfg.ContainerUpstream
 	if upstream == "" {
-		upstream = cfg.ContainerName + ":3000"
+		port := cfg.Port
+		if port <= 0 {
+			port = 3000
+		}
+		upstream = fmt.Sprintf("%s:%d", cfg.ContainerName, port)
 	}
 	return GenerateNginxConfig(m.NginxConfDir, NginxConfig{
 		ProjectID:         cfg.ProjectID,

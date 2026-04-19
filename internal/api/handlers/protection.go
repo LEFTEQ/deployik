@@ -350,6 +350,7 @@ func (h *ProtectionHandler) regenerateNginxForEnvironment(project *db.Project, e
 			RedirectDomain:    plan.RedirectDomain,
 			Environment:       d.Environment,
 			ContainerName:     containerName,
+			Port:              updatedProject.Port,
 			PasswordProtected: passwordProtected,
 		})
 		if err == nil {

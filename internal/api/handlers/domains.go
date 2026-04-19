@@ -277,6 +277,7 @@ func (h *DomainHandler) Verify(w http.ResponseWriter, r *http.Request) {
 			SSLDomains:     plan.AllDomains(),
 			Environment:    target.Environment,
 			ContainerName:  "deployik-" + project.Name + "-" + target.Environment,
+			Port:           project.Port,
 		}, false, emit); err != nil {
 			log.Printf("SSL cert request failed for %s: %v", target.DomainName, err)
 			h.DB.UpdateDomainSSL(domainID, "error", target.SSLExpiresAt)
