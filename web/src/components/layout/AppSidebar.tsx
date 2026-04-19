@@ -24,6 +24,7 @@ import { useAuthStore } from "@/store/auth";
 import { useOrganizationStore } from "@/store/organization";
 import { useOrganizations } from "@/hooks/use-organizations";
 import { ProjectPicker } from "@/components/layout/ProjectPicker";
+import { VersionRow } from "@/components/layout/VersionRow";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import {
   Collapsible,
@@ -314,6 +315,7 @@ export function AppSidebar({ context, projectId, ...props }: AppSidebarProps) {
       </SidebarContent>
 
       <SidebarFooter>
+        <VersionRow />
         <SidebarMenu>
           <SidebarMenuItem>
             <DropdownMenu>

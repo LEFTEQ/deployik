@@ -303,3 +303,18 @@ export interface VolumeInfo {
   mount_path: string;
   in_use: boolean;
 }
+
+export interface VersionInfo {
+  git_sha: string;
+  git_sha_full: string;
+  build_time: string;
+  gh_repo: string;
+  gh_run_id: string;
+  commit_url: string;
+  run_url: string;
+}
+
+export interface HealthResponse {
+  status: "ok";
+  version?: VersionInfo;
+}

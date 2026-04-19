@@ -22,6 +22,7 @@ import type {
   ProtectionUpdateResponse,
   VerifyDomainResponse,
   VolumeInfo,
+  HealthResponse,
 } from "@/types/api";
 
 const API_URL = import.meta.env.VITE_API_URL || "/api";
@@ -115,6 +116,10 @@ class ApiClient {
 
   async getMe(): Promise<User> {
     return this.request("/auth/me");
+  }
+
+  async getHealth(): Promise<HealthResponse> {
+    return this.request("/health", { method: "GET" }, false);
   }
 
   async listOrganizations(): Promise<Organization[]> {

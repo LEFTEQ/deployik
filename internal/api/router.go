@@ -1,7 +1,6 @@
 package api
 
 import (
-	"net/http"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -16,6 +15,7 @@ import (
 	"github.com/LEFTEQ/lovinka-deployik/internal/db"
 	"github.com/LEFTEQ/lovinka-deployik/internal/domain"
 	"github.com/LEFTEQ/lovinka-deployik/internal/github"
+	"github.com/LEFTEQ/lovinka-deployik/internal/version"
 	"github.com/LEFTEQ/lovinka-deployik/internal/ws"
 )
 
@@ -37,6 +37,7 @@ type RouterConfig struct {
 	WebhookURL     string
 	ScreenshotDir  string
 	DevMode        bool
+	Version        *version.Info
 }
 
 func NewRouter(cfg *RouterConfig) *chi.Mux {
@@ -80,10 +81,8 @@ func NewRouter(cfg *RouterConfig) *chi.Mux {
 
 	r.Route("/api", func(r chi.Router) {
 		// Public routes
-		r.Get("/health", func(w http.ResponseWriter, r *http.Request) {
-			w.Header().Set("Content-Type", "application/json")
-			w.Write([]byte(`{"status":"ok"}`))
-		})
+		healthHandler := &handlers.HealthHandler{Version: cfg.Version}
+		r.Get("/health", healthHandler.Get)
 
 		// Auth routes (public)
 		r.With(oauthLimiter.Middleware("oauth_start")).Get("/auth/github", authHandler.GetGithubAuth)

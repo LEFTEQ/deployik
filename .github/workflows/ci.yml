@@ -71,6 +71,11 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+          build-args: |
+            GIT_SHA=${{ github.sha }}
+            BUILD_TIME=${{ github.event.head_commit.timestamp || github.run_started_at }}
+            GH_RUN_ID=${{ github.run_id }}
+            GH_REPO=${{ github.repository }}
 
   deploy-vps:
     needs: build-and-push

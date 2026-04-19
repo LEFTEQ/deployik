@@ -48,6 +48,7 @@ internal/
       deployments.go      List (filtered/paginated), trigger, get, build logs; production releases can optionally create a git tag
       domains.go          Add, list, delete, verify (DNS + SSL) with real-time WebSocket log streaming
       envvars.go          VariableHandler -- generic for both env and secret stores; BulkSet + single Upsert
+      health.go           HealthHandler: GET /api/health -- {status, version} JSON; nil-safe for tests/older builds
       autobuild.go        Auto-build config CRUD: creates/deletes GitHub webhooks, manages webhook secrets
       webhooks.go         Incoming GitHub webhook handler: validates HMAC signature, matches branch to config, triggers deployments
       protection.go       Password protection: get/update/regenerate per-environment; site-auth verify + check endpoints for nginx auth_request
@@ -70,6 +71,9 @@ internal/
 
   audit/
     recorder.go           Writes sensitive action events into audit_logs
+
+  version/
+    version.go            Build metadata (git SHA, build time, GH Actions run); New() derives commit/run URLs from raw inputs
 
   analytics/
     service.go            Project-level analytics orchestration (Umami audience + Loki runtime)
@@ -176,6 +180,7 @@ web/src/
     layout/ProjectPicker.tsx  Command-based project switcher in sidebar header (search + navigate)
     layout/CommandPalette.tsx  Global Cmd/Ctrl+K spotlight for actions, workspaces, and project search
     layout/TopBar.tsx     Legacy top bar component (kept but not used in main layout; functionality moved to sidebar)
+    layout/VersionRow.tsx Sidebar footer row showing commit SHA + GH Actions run; collapses to icon + tooltip in icon-only sidebar mode
     projects/build-settings.tsx  Reusable BuildSettingsFields component with framework + package manager presets
     projects/variable-store.tsx  Vercel-style variable store: individual add/edit/delete rows, .env import, scope badges
     projects/dns-setup-guide.tsx  Collapsible DNS setup instructions with platform IP lookup
@@ -231,7 +236,7 @@ SQLite with 12 migrations. Tables:
 ## API Endpoints
 
 ### Public
-- `GET  /api/health` -- Health check
+- `GET  /api/health` -- Health check; response includes `version` block (git SHA, GitHub Actions run id, commit_url, run_url) for the SPA's sidebar build badge
 - `GET  /api/auth/github` -- Redirects to GitHub OAuth
 - `GET  /api/auth/github/callback?code=&state=` -- Verifies OAuth state, sets session cookies, returns user
 - `POST /api/auth/refresh` -- Rotates refresh cookie, returns user
@@ -324,6 +329,7 @@ SQLite with 12 migrations. Tables:
 - **Project names:** Must match `^[a-z0-9]([a-z0-9-]*[a-z0-9])?$` (used as DNS subdomain).
 - **Soft deletes:** Projects use `status='deleted'` rather than actual row deletion. Domains use hard delete (but auto-domains are protected by `is_auto=0` check).
 - **Workspace model:** Users always get a personal organization via `EnsurePersonalOrganization()`. Shared organizations are represented by `organizations + organization_memberships`, and the frontend persists the currently selected workspace in `store/organization.ts`.
+- **Build metadata:** `cmd/server/main.go` declares `gitSHA`, `buildTime`, `ghRunID`, `ghRepo` package vars set at link time via `go build -ldflags="-X main.<name>=<value>"`. CI (`.github/workflows/ci.yml`) passes these as Docker `build-args` to `docker/build-push-action@v6`, which the `Dockerfile` `go-builder` stage forwards to the `RUN go build` line. The result is wrapped in `internal/version.Info` and surfaced via the `/api/health` JSON response.
 
 ### Auto-Build System
 

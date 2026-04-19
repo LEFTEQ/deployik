@@ -9,12 +9,21 @@ RUN bun run build
 # Stage 2: Build Go binary
 FROM golang:1.25-alpine AS go-builder
 WORKDIR /app
+ARG GIT_SHA=dev
+ARG BUILD_TIME=unknown
+ARG GH_RUN_ID=
+ARG GH_REPO=lefteq/lovinka-deployik
 RUN apk add --no-cache git
 COPY go.mod go.sum ./
 RUN go mod download
 COPY . .
 COPY --from=frontend-builder /app/web/dist cmd/server/web_dist
-RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o /deployik ./cmd/server/
+RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w \
+  -X main.gitSHA=${GIT_SHA} \
+  -X main.buildTime=${BUILD_TIME} \
+  -X main.ghRunID=${GH_RUN_ID} \
+  -X main.ghRepo=${GH_REPO}" \
+  -o /deployik ./cmd/server/
 RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o /deployik-backup ./cmd/backup/
 
 # Stage 3: Minimal runtime

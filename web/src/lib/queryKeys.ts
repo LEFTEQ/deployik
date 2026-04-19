@@ -8,6 +8,7 @@ export const queryKeys = {
   // Auth & identity
   organizations: () => ["organizations"] as const,
   platform: () => ["platform"] as const,
+  health: () => ["health"] as const,
 
   // Projects
   projects: (organizationId: string | null | undefined) =>

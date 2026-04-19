@@ -22,11 +22,22 @@ import (
 	"github.com/LEFTEQ/lovinka-deployik/internal/db"
 	"github.com/LEFTEQ/lovinka-deployik/internal/domain"
 	"github.com/LEFTEQ/lovinka-deployik/internal/github"
+	"github.com/LEFTEQ/lovinka-deployik/internal/version"
 	"github.com/LEFTEQ/lovinka-deployik/internal/ws"
 )
 
 //go:embed all:web_dist
 var embeddedWeb embed.FS
+
+// Build metadata injected by `go build -ldflags="-X main.<name>=<value>"`.
+// Populated in CI via Docker build args; defaults below apply for local
+// `make dev-api` (or any build that omits -ldflags).
+var (
+	gitSHA    = "dev"
+	buildTime = "unknown"
+	ghRunID   = ""
+	ghRepo    = "lefteq/lovinka-deployik"
+)
 
 func main() {
 	cfg, err := config.Load()
@@ -144,6 +155,8 @@ func main() {
 		RedirectURI:  cfg.FrontendURL + "/auth/callback",
 	}
 
+	versionInfo := version.New(gitSHA, buildTime, ghRunID, ghRepo)
+
 	// Create router with all dependencies
 	router := api.NewRouter(&api.RouterConfig{
 		DB:             database,
@@ -162,6 +175,7 @@ func main() {
 		WebhookURL:     cfg.WebhookURL,
 		ScreenshotDir:  cfg.ScreenshotDir,
 		DevMode:        os.Getenv("DEV_MODE") == "true",
+		Version:        versionInfo,
 	})
 
 	addr := fmt.Sprintf(":%s", cfg.Port)
