@@ -216,6 +216,82 @@ func TestGenerateDockerfileExplicitNpmDoesNotInstallBun(t *testing.T) {
 	}
 }
 
+func TestGenerateDockerfileHonorsCustomPort(t *testing.T) {
+	t.Parallel()
+
+	repoDir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(repoDir, "package.json"), []byte(`{"name":"app"}`), 0644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	dockerfilePath, err := GenerateDockerfile(repoDir, DockerfileData{
+		PackageManager:  projectconfig.PackageManagerNpm,
+		NodeVersion:     "22",
+		OutputDirectory: "dist",
+		Runtime:         projectconfig.RuntimeStatic,
+		InstallCommand:  "npm ci",
+		BuildCommand:    "npm run build",
+		Port:            8080,
+	})
+	if err != nil {
+		t.Fatalf("GenerateDockerfile: %v", err)
+	}
+
+	content, err := os.ReadFile(dockerfilePath)
+	if err != nil {
+		t.Fatalf("ReadFile: %v", err)
+	}
+
+	got := string(content)
+	for _, want := range []string{
+		"EXPOSE 8080",
+		"ENV PORT=8080",
+		"localhost:8080",
+		`"-l", "8080"`,
+	} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("expected generated Dockerfile to contain %q, got:\n%s", want, got)
+		}
+	}
+	if strings.Contains(got, "3000") {
+		t.Fatalf("expected no 3000 fallback when custom port is set, got:\n%s", got)
+	}
+}
+
+func TestGenerateDockerfileDefaultsPortTo3000(t *testing.T) {
+	t.Parallel()
+
+	repoDir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(repoDir, "package.json"), []byte(`{"name":"app"}`), 0644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	dockerfilePath, err := GenerateDockerfile(repoDir, DockerfileData{
+		PackageManager:  projectconfig.PackageManagerNpm,
+		NodeVersion:     "22",
+		OutputDirectory: "dist",
+		Runtime:         projectconfig.RuntimeStatic,
+		InstallCommand:  "npm ci",
+		BuildCommand:    "npm run build",
+		// Port intentionally unset
+	})
+	if err != nil {
+		t.Fatalf("GenerateDockerfile: %v", err)
+	}
+
+	content, err := os.ReadFile(dockerfilePath)
+	if err != nil {
+		t.Fatalf("ReadFile: %v", err)
+	}
+
+	got := string(content)
+	for _, want := range []string{"EXPOSE 3000", "ENV PORT=3000", `"-l", "3000"`} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("expected default port 3000, got:\n%s", got)
+		}
+	}
+}
+
 func TestGenerateDockerfileSupportsYarnPackageManager(t *testing.T) {
 	t.Parallel()
 

@@ -13,7 +13,9 @@ import (
 // DockerInspector is used by reconcile to inspect running containers for host-port mode.
 type DockerInspector interface {
 	ContainerExists(ctx context.Context, name string) (string, bool)
-	GetHostPort(ctx context.Context, containerID string) (string, error)
+	// GetHostPort returns the host port bound to the container's target port
+	// (pass the same port the container was started with; 0 defaults to 3000).
+	GetHostPort(ctx context.Context, containerID string, port int) (string, error)
 }
 
 // ReconcileActiveConfigs rewrites proxy configs for already-active domains and reloads once.
@@ -40,7 +42,11 @@ func ReconcileActiveConfigs(manager *Manager, targets []db.DomainProvisionTarget
 		}
 
 		containerName := fmt.Sprintf("deployik-%s-%s", target.ProjectName, target.Environment)
-		upstream := containerName + ":3000"
+		targetPort := target.Port
+		if targetPort <= 0 {
+			targetPort = 3000
+		}
+		upstream := fmt.Sprintf("%s:%d", containerName, targetPort)
 
 		// In host-port mode, the proxy lives on the host and talks to
 		// 127.0.0.1:<random>. We must look up the live port from Docker — if
@@ -57,12 +63,12 @@ func ReconcileActiveConfigs(manager *Manager, targets []db.DomainProvisionTarget
 				log.Printf("reconcile: skipping %s — container %s not running yet", target.DomainName, containerName)
 				continue
 			}
-			port, err := docker.GetHostPort(context.Background(), containerID)
+			hostPort, err := docker.GetHostPort(context.Background(), containerID, targetPort)
 			if err != nil {
 				errs = append(errs, fmt.Sprintf("host port lookup for %s: %v", target.DomainName, err))
 				continue
 			}
-			upstream = "127.0.0.1:" + port
+			upstream = "127.0.0.1:" + hostPort
 		}
 
 		cfg := ProvisionConfig{

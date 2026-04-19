@@ -94,6 +94,7 @@ function BuildSettingsSection({
     buildCommand: project.build_command,
     installCommand: project.install_command,
     nodeVersion: project.node_version,
+    port: project.port || 3000,
   });
 
   const updateMutation = useMutation({
@@ -107,6 +108,7 @@ function BuildSettingsSection({
         build_command: buildSettings.buildCommand,
         install_command: buildSettings.installCommand,
         node_version: buildSettings.nodeVersion,
+        port: buildSettings.port,
       }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.project(project.id) });

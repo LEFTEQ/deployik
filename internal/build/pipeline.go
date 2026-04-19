@@ -219,6 +219,7 @@ func (p *Pipeline) Deploy(ctx context.Context, project *db.Project, deployment *
 		Runtime:         settings.Runtime,
 		BuildEnvVars:    buildEnvVars,
 		ProjectID:       project.ID,
+		Port:            project.Port,
 	})
 	if err != nil {
 		fail(err, "Dockerfile generation failed")
@@ -296,6 +297,7 @@ func (p *Pipeline) Deploy(ctx context.Context, project *db.Project, deployment *
 		ExtraHosts:   extraHosts,
 		BindHostPort: p.ProxyType == "host-port",
 		VolumeBinds:  volumeBinds,
+		Port:         project.Port,
 	}
 	newContainerID, err := p.Docker.RunContainer(ctx, tempName, imageTag, runtimeEnvVars, p.ProxyNetwork, opts)
 	if err != nil {
@@ -315,9 +317,13 @@ func (p *Pipeline) Deploy(ctx context.Context, project *db.Project, deployment *
 	emit("Health check passed")
 
 	// Determine the upstream address for proxy config
-	containerUpstream := containerName + ":3000"
+	targetPort := project.Port
+	if targetPort <= 0 {
+		targetPort = 3000
+	}
+	containerUpstream := fmt.Sprintf("%s:%d", containerName, targetPort)
 	if p.ProxyType == "host-port" {
-		hostPort, err := p.Docker.GetHostPort(ctx, newContainerID)
+		hostPort, err := p.Docker.GetHostPort(ctx, newContainerID, targetPort)
 		if err != nil {
 			emitErr(fmt.Sprintf("Warning: could not get host port, falling back to container name: %v", err))
 		} else {

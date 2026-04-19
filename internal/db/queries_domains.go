@@ -120,7 +120,8 @@ func (db *DB) ListActiveDomainProvisionTargets() ([]DomainProvisionTarget, error
 		            WHEN d.environment = 'preview'    AND p.preview_password    IS NOT NULL THEN 1
 		            WHEN d.environment = 'production' AND p.production_password IS NOT NULL THEN 1
 		            ELSE 0
-		        END AS password_protected
+		        END AS password_protected,
+		        p.port
 		 FROM domains d
 		 JOIN projects p ON p.id = d.project_id
 		 WHERE p.status = 'active' AND d.ssl_status = 'active'
@@ -135,7 +136,7 @@ func (db *DB) ListActiveDomainProvisionTargets() ([]DomainProvisionTarget, error
 	for rows.Next() {
 		var target DomainProvisionTarget
 		var pwProtected int
-		if err := rows.Scan(&target.ProjectID, &target.ProjectName, &target.DomainName, &target.Environment, &pwProtected); err != nil {
+		if err := rows.Scan(&target.ProjectID, &target.ProjectName, &target.DomainName, &target.Environment, &pwProtected, &target.Port); err != nil {
 			return nil, fmt.Errorf("scan active domain provision target: %w", err)
 		}
 		target.PasswordProtected = pwProtected == 1

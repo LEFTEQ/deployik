@@ -123,6 +123,7 @@ export function NewProject() {
         install_command: buildSettings.installCommand,
         build_command: buildSettings.buildCommand,
         node_version: buildSettings.nodeVersion,
+        port: buildSettings.port,
       }),
     onSuccess: (project) => {
       queryClient.invalidateQueries({ queryKey: ["projects"] });

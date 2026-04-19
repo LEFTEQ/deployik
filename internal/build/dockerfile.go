@@ -34,6 +34,10 @@ type DockerfileData struct {
 	// `.next/cache`) so incremental-build caches of one project don't leak into
 	// another. Optional — falls back to a shared cache when empty.
 	ProjectID string
+	// Port is the TCP port the generated container binds to. Injected as
+	// `ENV PORT=<port>`, `EXPOSE <port>`, HEALTHCHECK URL, and `serve -l` port.
+	// Zero defaults to 3000 (Deployik's historical default).
+	Port int
 }
 
 type EnvVar struct {
@@ -184,12 +188,13 @@ func generateNextJSDockerfile(data DockerfileData) string {
 	b.WriteString(fmt.Sprintf("COPY --from=builder --chown=nextjs:nodejs %s/standalone ./\n", outputDir))
 	b.WriteString(fmt.Sprintf("COPY --from=builder --chown=nextjs:nodejs %s/static %s\n\n", outputDir, staticTarget))
 
+	port := effectivePort(data.Port)
 	b.WriteString("USER nextjs\n")
-	b.WriteString("EXPOSE 3000\n")
-	b.WriteString("ENV PORT=3000\n")
+	b.WriteString(fmt.Sprintf("EXPOSE %d\n", port))
+	b.WriteString(fmt.Sprintf("ENV PORT=%d\n", port))
 	b.WriteString("ENV HOSTNAME=\"0.0.0.0\"\n")
 	b.WriteString("HEALTHCHECK --interval=30s --timeout=3s --start-period=10s --retries=3 \\\n")
-	b.WriteString("  CMD node -e \"require('http').get('http://localhost:3000/',(r)=>{process.exit(r.statusCode<400?0:1)}).on('error',()=>process.exit(1))\"\n")
+	b.WriteString(fmt.Sprintf("  CMD node -e \"require('http').get('http://localhost:%d/',(r)=>{process.exit(r.statusCode<400?0:1)}).on('error',()=>process.exit(1))\"\n", port))
 	b.WriteString("CMD [\"node\", \"server.js\"]\n")
 
 	return b.String()
@@ -233,11 +238,12 @@ func generateStaticDockerfile(data DockerfileData) string {
 	b.WriteString("ENV NODE_ENV=production\n")
 	b.WriteString("RUN npm i -g serve@14 && apk --no-cache del wget curl 2>/dev/null; rm -rf /var/cache/apk/*\n\n")
 	b.WriteString(fmt.Sprintf("COPY --from=builder %s ./site\n\n", outputDir))
-	b.WriteString("EXPOSE 3000\n")
-	b.WriteString("ENV PORT=3000\n")
+	port := effectivePort(data.Port)
+	b.WriteString(fmt.Sprintf("EXPOSE %d\n", port))
+	b.WriteString(fmt.Sprintf("ENV PORT=%d\n", port))
 	b.WriteString("HEALTHCHECK --interval=30s --timeout=3s --start-period=10s --retries=3 \\\n")
-	b.WriteString("  CMD node -e \"require('http').get('http://localhost:3000/',(r)=>{process.exit(r.statusCode===200?0:1)}).on('error',()=>process.exit(1))\"\n")
-	b.WriteString("CMD [\"serve\", \"-s\", \"site\", \"-l\", \"3000\"]\n")
+	b.WriteString(fmt.Sprintf("  CMD node -e \"require('http').get('http://localhost:%d/',(r)=>{process.exit(r.statusCode===200?0:1)}).on('error',()=>process.exit(1))\"\n", port))
+	b.WriteString(fmt.Sprintf("CMD [\"serve\", \"-s\", \"site\", \"-l\", \"%d\"]\n", port))
 
 	return b.String()
 }
@@ -301,6 +307,17 @@ func packageManagerCacheMount(pm string) string {
 	default:
 		return ""
 	}
+}
+
+// effectivePort returns the container listen port to bake into a generated
+// Dockerfile, defaulting to 3000 when unset. Mirrors the same default used by
+// docker.RunContainer and pipeline.go's upstream builder so the three stay in
+// sync without callers having to pass matching zero-fallbacks.
+func effectivePort(port int) int {
+	if port < 1 || port > 65535 {
+		return 3000
+	}
+	return port
 }
 
 // nextCacheMountID returns the BuildKit cache-mount `id=` for a project's

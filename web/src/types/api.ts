@@ -43,6 +43,7 @@ export interface Project {
   build_command: string;
   install_command: string;
   node_version: string;
+  port: number;
   host_network_access: boolean;
   data_volume_enabled: boolean;
   data_mount_path: string;

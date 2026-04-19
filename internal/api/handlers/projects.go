@@ -50,6 +50,7 @@ type createProjectRequest struct {
 	BuildCommand      string `json:"build_command"`
 	InstallCommand    string `json:"install_command"`
 	NodeVersion       string `json:"node_version"`
+	Port              int    `json:"port"`
 	HostNetworkAccess bool   `json:"host_network_access"`
 	DataVolumeEnabled bool   `json:"data_volume_enabled"`
 	DataMountPath     string `json:"data_mount_path"`
@@ -65,9 +66,22 @@ type updateProjectRequest struct {
 	BuildCommand      *string `json:"build_command,omitempty"`
 	InstallCommand    *string `json:"install_command,omitempty"`
 	NodeVersion       *string `json:"node_version,omitempty"`
+	Port              *int    `json:"port,omitempty"`
 	HostNetworkAccess *bool   `json:"host_network_access,omitempty"`
 	DataVolumeEnabled *bool   `json:"data_volume_enabled,omitempty"`
 	DataMountPath     *string `json:"data_mount_path,omitempty"`
+}
+
+// validateProjectPort rejects obviously-invalid ports. 0 is treated as "unset"
+// by the caller and defaulted to 3000 at persist time.
+func validateProjectPort(port int) error {
+	if port == 0 {
+		return nil
+	}
+	if port < 1 || port > 65535 {
+		return fmt.Errorf("port must be between 1 and 65535")
+	}
+	return nil
 }
 
 func (h *ProjectHandler) List(w http.ResponseWriter, r *http.Request) {
@@ -126,6 +140,11 @@ func (h *ProjectHandler) Create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if err := validateProjectPort(req.Port); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		return
+	}
+
 	organizationID, err := h.resolveCreateOrganizationID(claims.UserID, strings.TrimSpace(req.OrganizationID))
 	if err != nil {
 		status := http.StatusInternalServerError
@@ -150,6 +169,7 @@ func (h *ProjectHandler) Create(w http.ResponseWriter, r *http.Request) {
 		BuildCommand:    req.BuildCommand,
 		InstallCommand:  req.InstallCommand,
 		NodeVersion:       req.NodeVersion,
+		Port:              req.Port,
 		HostNetworkAccess: req.HostNetworkAccess,
 		DataVolumeEnabled: req.DataVolumeEnabled,
 		DataMountPath:     req.DataMountPath,
@@ -269,6 +289,17 @@ func (h *ProjectHandler) Update(w http.ResponseWriter, r *http.Request) {
 	}
 	if req.NodeVersion != nil {
 		project.NodeVersion = *req.NodeVersion
+	}
+	if req.Port != nil {
+		if err := validateProjectPort(*req.Port); err != nil {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+			return
+		}
+		port := *req.Port
+		if port == 0 {
+			port = 3000
+		}
+		project.Port = port
 	}
 	if req.HostNetworkAccess != nil {
 		project.HostNetworkAccess = *req.HostNetworkAccess

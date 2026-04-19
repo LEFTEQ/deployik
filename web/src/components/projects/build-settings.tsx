@@ -24,7 +24,13 @@ export interface BuildSettingsValues {
   installCommand: string;
   buildCommand: string;
   nodeVersion: string;
+  port: number;
 }
+
+// Default container listen port. Deployik's generated runtimes (Next.js
+// standalone + `serve`) both bind to this; user-provided Dockerfiles override
+// via this same field when they listen on a different port.
+export const DEFAULT_PROJECT_PORT = 3000;
 
 type FrameworkOption = {
   value: FrameworkPreset;
@@ -176,6 +182,7 @@ export function getFrameworkDefaults(
       normalizedPackageManager,
     ),
     nodeVersion: "22",
+    port: DEFAULT_PROJECT_PORT,
   };
 }
 
@@ -212,6 +219,7 @@ export function syncBuildSettingsWithFramework(
       values.nodeVersion === currentDefaults.nodeVersion
         ? nextDefaults.nodeVersion
         : values.nodeVersion,
+    port: values.port,
   };
 }
 
@@ -330,6 +338,7 @@ export function BuildSettingsFields({
               installCommand: defaults.installCommand,
               buildCommand: defaults.buildCommand,
               nodeVersion: defaults.nodeVersion,
+              port: DEFAULT_PROJECT_PORT,
             })
           }
         >
@@ -447,6 +456,28 @@ export function BuildSettingsFields({
               <SelectItem value="18">Node.js 18</SelectItem>
             </SelectContent>
           </Select>
+        </div>
+
+        <div className="space-y-2">
+          <Label>Container Port</Label>
+          <Input
+            type="number"
+            min={1}
+            max={65535}
+            value={value.port || ""}
+            onChange={(event) => {
+              const raw = event.target.value.trim();
+              patch({
+                port: raw === "" ? DEFAULT_PROJECT_PORT : Number.parseInt(raw, 10) || DEFAULT_PROJECT_PORT,
+              });
+            }}
+            placeholder={String(DEFAULT_PROJECT_PORT)}
+          />
+          <p className="text-xs text-muted-foreground">
+            The port your container listens on. Deployik's generated runtimes
+            use {DEFAULT_PROJECT_PORT}; change this when your own Dockerfile
+            serves on a different port (e.g. nginx on 80, Flask on 5000).
+          </p>
         </div>
       </div>
 

@@ -119,6 +119,7 @@ internal/
       010_password_protection.sql  Adds preview_password, production_password to projects
       011_host_network_access.sql  Adds host_network_access to projects (opt-in `host.docker.internal` via ExtraHosts)
       012_proxy_and_volumes.sql  Adds data_volume_enabled and data_mount_path (default `/app/data`) to projects
+      013_project_port.sql     Adds port (default 3000) to projects; drives container ExposedPorts + nginx upstream for user-provided Dockerfiles that don't listen on 3000
     models.go             User, Organization, OrganizationMembership, RefreshSession, AuditLog, Project (with password fields, host_network_access, data_volume_enabled, data_mount_path), Deployment (with trigger/screenshot fields), BuildLog, Domain, ProjectVariable, VariableKind, AutoBuildConfig, WebhookEvent, ProjectWithLatestDeployment, DeploymentWithUser, DeploymentListResponse, DeploymentFilter
     queries_users.go      GetUserByGithubID, GetUserByID, UpsertUser
     queries_organizations.go  Personal workspace bootstrap, memberships, org listing
@@ -229,7 +230,7 @@ SQLite with 12 migrations. Tables:
 | `users` | id (ULID), github_id (unique), username, github_token (encrypted), role (admin/user) | `ADMIN_GITHUB_USERS` provides explicit admin bootstrap; first user only auto-promotes when no admin list is configured |
 | `organizations` | id (ULID), name, slug (unique), is_personal, personal_owner_user_id (nullable unique FK) | Every user gets a personal workspace; shared orgs use memberships |
 | `organization_memberships` | organization_id (FK), user_id (FK), role (owner/member) | Grants workspace visibility |
-| `projects` | id (ULID), name (unique slug), github_repo, github_owner, branch, user_id (creator FK), organization_id (nullable FK), framework, package_manager, root_directory, output_directory, build_command, install_command, node_version, status, preview_password (encrypted), production_password (encrypted), host_network_access (bool), data_volume_enabled (bool), data_mount_path (default `/app/data`) | Soft-delete via status='deleted'; password fields added in migration 010; runtime fields added in migrations 011-012 |
+| `projects` | id (ULID), name (unique slug), github_repo, github_owner, branch, user_id (creator FK), organization_id (nullable FK), framework, package_manager, root_directory, output_directory, build_command, install_command, node_version, status, preview_password (encrypted), production_password (encrypted), host_network_access (bool), data_volume_enabled (bool), data_mount_path (default `/app/data`), port (default 3000) | Soft-delete via status='deleted'; password fields added in migration 010; runtime fields added in migrations 011-013 |
 | `deployments` | id (ULID), project_id (FK), environment, status, commit_sha, commit_message, branch, container_id, container_name, image_tag, build_duration, triggered_by, trigger_source (manual/webhook/api), triggered_by_username, screenshot_path, error_message, finished_at | trigger/screenshot fields added in migration 008 |
 | `build_logs` | id (auto), deployment_id (FK), line_number, content, stream (stdout/stderr) | |
 | `domains` | id (ULID), project_id (FK), domain (unique), environment, is_auto, dns_verified, ssl_status (pending/active/error), ssl_expires_at | Auto-domains cannot be deleted |

@@ -80,6 +80,7 @@ type Project struct {
 	BuildCommand     string    `json:"build_command"`
 	InstallCommand   string    `json:"install_command"`
 	NodeVersion       string    `json:"node_version"`
+	Port              int       `json:"port"`
 	HostNetworkAccess bool      `json:"host_network_access"`
 	DataVolumeEnabled bool      `json:"data_volume_enabled"`
 	DataMountPath     string    `json:"data_mount_path"`
@@ -172,6 +173,7 @@ type DomainProvisionTarget struct {
 	DomainName        string
 	Environment       string
 	PasswordProtected bool
+	Port              int
 }
 
 type VariableKind string

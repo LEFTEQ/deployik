@@ -188,13 +188,23 @@ func (t *lineTail) join() string { return strings.Join(t.lines, "\n") }
 // RunContainerOptions holds optional settings for container creation.
 type RunContainerOptions struct {
 	ExtraHosts   []string // e.g. []string{"host.docker.internal:host-gateway"}
-	BindHostPort bool     // if true, binds container port 3000 to a random localhost port
+	BindHostPort bool     // if true, binds the container port to a random localhost port
 	VolumeBinds  []string // e.g. []string{"deployik-myapp-preview-data:/app/data"}
+	// Port is the TCP port the container listens on (the port Deployik declares
+	// as ExposedPorts and, when BindHostPort is set, maps to a random host port).
+	// Zero defaults to 3000 — the port our generated Dockerfiles bind to.
+	Port int
 }
 
 // RunContainer starts a container from an image.
 // Returns the container ID.
 func (d *DockerClient) RunContainer(ctx context.Context, name, imageTag string, envVars []string, networkName string, opts RunContainerOptions) (string, error) {
+	port := opts.Port
+	if port <= 0 {
+		port = 3000
+	}
+	containerPort := nat.Port(fmt.Sprintf("%d/tcp", port))
+
 	hostConfig := &container.HostConfig{
 		RestartPolicy: container.RestartPolicy{Name: "unless-stopped"},
 		Resources: container.Resources{
@@ -212,7 +222,7 @@ func (d *DockerClient) RunContainer(ctx context.Context, name, imageTag string, 
 	}
 	if opts.BindHostPort {
 		hostConfig.PortBindings = nat.PortMap{
-			"3000/tcp": []nat.PortBinding{
+			containerPort: []nat.PortBinding{
 				{HostIP: "127.0.0.1", HostPort: "0"},
 			},
 		}
@@ -223,7 +233,7 @@ func (d *DockerClient) RunContainer(ctx context.Context, name, imageTag string, 
 		&container.Config{
 			Image:        imageTag,
 			Env:          envVars,
-			ExposedPorts: nat.PortSet{"3000/tcp": struct{}{}},
+			ExposedPorts: nat.PortSet{containerPort: struct{}{}},
 		},
 		hostConfig,
 		&network.NetworkingConfig{},
@@ -314,16 +324,21 @@ func (d *DockerClient) ContainerExists(ctx context.Context, name string) (string
 	return inspect.ID, true
 }
 
-// GetHostPort returns the host-mapped port for container port 3000/tcp.
+// GetHostPort returns the host-mapped port for the given container port/tcp.
 // Only meaningful when the container was started with BindHostPort=true.
-func (d *DockerClient) GetHostPort(ctx context.Context, containerID string) (string, error) {
+// Pass the same Port value that was given to RunContainerOptions; 0 defaults to 3000.
+func (d *DockerClient) GetHostPort(ctx context.Context, containerID string, port int) (string, error) {
+	if port <= 0 {
+		port = 3000
+	}
+	key := nat.Port(fmt.Sprintf("%d/tcp", port))
 	inspect, err := d.cli.ContainerInspect(ctx, containerID)
 	if err != nil {
 		return "", fmt.Errorf("inspect container: %w", err)
 	}
-	bindings, ok := inspect.NetworkSettings.Ports["3000/tcp"]
+	bindings, ok := inspect.NetworkSettings.Ports[key]
 	if !ok || len(bindings) == 0 {
-		return "", fmt.Errorf("no host port binding for container port 3000")
+		return "", fmt.Errorf("no host port binding for container port %d", port)
 	}
 	return bindings[0].HostPort, nil
 }
