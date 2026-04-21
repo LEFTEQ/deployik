@@ -222,6 +222,10 @@ func (h *DomainHandler) Verify(w http.ResponseWriter, r *http.Request) {
 		lineNum := 0
 		topic := "domain:" + domainID
 
+		// Drop any leftover events from a previous verify session on this
+		// domain so a late-connecting WebSocket doesn't replay stale logs.
+		h.Hub.ResetBuffer(topic)
+
 		emit := func(step, status, content string) {
 			lineNum++
 			h.Hub.Publish(ws.LogLine{

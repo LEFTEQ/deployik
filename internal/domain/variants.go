@@ -76,13 +76,12 @@ func ResolveVariantPlan(domainName, environment string) VariantPlan {
 		return plan
 	}
 
-	if environment == "preview" {
-		plan.RedirectDomain = "www." + normalized
-		return plan
-	}
-
+	// Only add a www redirect variant when the input is the apex (eTLD+1).
+	// For subdomains we would otherwise demand DNS the user never created
+	// (e.g. www.forge.example.org), and wildcard DNS only covers one label so
+	// www.* under auto-preview hosts never actually resolved either.
 	root, err := publicsuffix.EffectiveTLDPlusOne(normalized)
-	if environment == "production" && err == nil && root == normalized {
+	if err == nil && root == normalized {
 		plan.RedirectDomain = "www." + normalized
 	}
 

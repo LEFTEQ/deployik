@@ -38,15 +38,15 @@ func TestResolveVariantPlanDoesNotAddWWWForSubdomain(t *testing.T) {
 	}
 }
 
-func TestResolveVariantPlanAddsWWWRedirectForPreview(t *testing.T) {
+func TestResolveVariantPlanDoesNotAddWWWForPreviewSubdomain(t *testing.T) {
 	t.Parallel()
 
 	plan := ResolveVariantPlan("acme-web.preview.example.com", "preview")
 	if plan.CanonicalDomain != "acme-web.preview.example.com" {
 		t.Fatalf("canonical domain = %q, want preview host", plan.CanonicalDomain)
 	}
-	if plan.RedirectDomain != "www.acme-web.preview.example.com" {
-		t.Fatalf("redirect domain = %q, want preview www host", plan.RedirectDomain)
+	if plan.RedirectDomain != "" {
+		t.Fatalf("redirect domain = %q, want empty for subdomain preview host", plan.RedirectDomain)
 	}
 }
 
@@ -59,5 +59,29 @@ func TestResolveVariantPlanStripsWWWForPreviewDomain(t *testing.T) {
 	}
 	if plan.RedirectDomain != "www.acme-web.preview.example.com" {
 		t.Fatalf("redirect domain = %q, want preview www host", plan.RedirectDomain)
+	}
+}
+
+func TestResolveVariantPlanAddsWWWForPreviewApex(t *testing.T) {
+	t.Parallel()
+
+	plan := ResolveVariantPlan("example.org", "preview")
+	if plan.CanonicalDomain != "example.org" {
+		t.Fatalf("canonical domain = %q, want example.org", plan.CanonicalDomain)
+	}
+	if plan.RedirectDomain != "www.example.org" {
+		t.Fatalf("redirect domain = %q, want www.example.org", plan.RedirectDomain)
+	}
+}
+
+func TestResolveVariantPlanForeignCustomPreviewSubdomain(t *testing.T) {
+	t.Parallel()
+
+	plan := ResolveVariantPlan("forge.example.org", "preview")
+	if plan.CanonicalDomain != "forge.example.org" {
+		t.Fatalf("canonical domain = %q, want forge.example.org", plan.CanonicalDomain)
+	}
+	if plan.RedirectDomain != "" {
+		t.Fatalf("redirect domain = %q, want empty for custom preview subdomain", plan.RedirectDomain)
 	}
 }

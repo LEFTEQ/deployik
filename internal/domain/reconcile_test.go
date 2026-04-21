@@ -10,7 +10,7 @@ import (
 	"github.com/LEFTEQ/lovinka-deployik/internal/db"
 )
 
-func TestReconcileActiveConfigsEnsuresPreviewWWWCertificate(t *testing.T) {
+func TestReconcileActiveConfigsSkipsWWWForPreviewSubdomain(t *testing.T) {
 	t.Parallel()
 
 	confDir := t.TempDir()
@@ -35,20 +35,15 @@ func TestReconcileActiveConfigsEnsuresPreviewWWWCertificate(t *testing.T) {
 		t.Fatalf("ReconcileActiveConfigs returned error: %v", err)
 	}
 
-	if len(runner.calls) != 3 {
-		t.Fatalf("expected 3 runner invocations, got %d", len(runner.calls))
+	// A preview subdomain has no redirect variant, so certbot must NOT run —
+	// only the nginx config test + reload should be invoked.
+	if len(runner.calls) != 2 {
+		t.Fatalf("expected 2 runner invocations (nginx -t + reload), got %d", len(runner.calls))
 	}
-
-	certbotCall := strings.Join(runner.calls[0], " ")
-	for _, want := range []string{
-		"certbot/certbot certonly",
-		"--cert-name demo-web2.preview.example.com",
-		"--expand",
-		"-d demo-web2.preview.example.com",
-		"-d www.demo-web2.preview.example.com",
-	} {
-		if !strings.Contains(certbotCall, want) {
-			t.Fatalf("expected certbot call to contain %q, got %s", want, certbotCall)
+	for _, call := range runner.calls {
+		joined := strings.Join(call, " ")
+		if strings.Contains(joined, "certbot/certbot certonly") {
+			t.Fatalf("did not expect certbot invocation for preview subdomain, got %s", joined)
 		}
 	}
 
@@ -59,11 +54,8 @@ func TestReconcileActiveConfigsEnsuresPreviewWWWCertificate(t *testing.T) {
 	}
 
 	got := string(content)
-	if !strings.Contains(got, "server_name www.demo-web2.preview.example.com;") {
-		t.Fatalf("expected preview redirect server in nginx config, got:\n%s", got)
-	}
-	if !strings.Contains(got, "return 301 https://demo-web2.preview.example.com$request_uri;") {
-		t.Fatalf("expected preview redirect target in nginx config, got:\n%s", got)
+	if strings.Contains(got, "server_name www.demo-web2.preview.example.com;") {
+		t.Fatalf("did not expect preview www redirect server block, got:\n%s", got)
 	}
 }
 
@@ -85,7 +77,9 @@ func TestReconcileActiveConfigsContinuesAfterEarlierCertificateFailure(t *testin
 	t.Parallel()
 
 	confDir := t.TempDir()
-	runner := &selectiveFailRunner{failFor: "honza-web.preview.example.com"}
+	// Use production apex domains so certbot runs for each target (preview
+	// subdomains have no www variant and skip certbot entirely).
+	runner := &selectiveFailRunner{failFor: "honza-web.com"}
 	manager := &Manager{
 		NginxConfDir:   confDir,
 		ProxyContainer: "nginx-proxy",
@@ -99,14 +93,14 @@ func TestReconcileActiveConfigsContinuesAfterEarlierCertificateFailure(t *testin
 		{
 			ProjectID:   "01KNHONZA",
 			ProjectName: "honza-web",
-			DomainName:  "honza-web.preview.example.com",
-			Environment: "preview",
+			DomainName:  "honza-web.com",
+			Environment: "production",
 		},
 		{
 			ProjectID:   "01KNJENNY",
 			ProjectName: "demo-web2",
-			DomainName:  "demo-web2.preview.example.com",
-			Environment: "preview",
+			DomainName:  "demo-web2.com",
+			Environment: "production",
 		},
 	}
 
@@ -114,19 +108,19 @@ func TestReconcileActiveConfigsContinuesAfterEarlierCertificateFailure(t *testin
 	if err == nil {
 		t.Fatal("expected reconcile to return aggregated error")
 	}
-	if !strings.Contains(err.Error(), "honza-web.preview.example.com") {
+	if !strings.Contains(err.Error(), "honza-web.com") {
 		t.Fatalf("expected aggregated error to mention failed domain, got %v", err)
 	}
 
-	confPath := filepath.Join(confDir, "deployik-demo-web2-preview-lovinka-com.conf")
+	confPath := filepath.Join(confDir, "deployik-demo-web2-com.conf")
 	content, readErr := os.ReadFile(confPath)
 	if readErr != nil {
 		t.Fatalf("expected later domain config to be written, got read error: %v", readErr)
 	}
 
 	got := string(content)
-	if !strings.Contains(got, "server_name www.demo-web2.preview.example.com;") {
-		t.Fatalf("expected later target to still get preview redirect config, got:\n%s", got)
+	if !strings.Contains(got, "server_name www.demo-web2.com;") {
+		t.Fatalf("expected later target to still get production www redirect config, got:\n%s", got)
 	}
 
 	if len(runner.calls) < 4 {

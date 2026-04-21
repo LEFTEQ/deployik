@@ -153,6 +153,7 @@ export function ProjectSettingsDomains() {
   const [expandedLogDomainId, setExpandedLogDomainId] = useState<string | null>(null);
   const [minimized, setMinimized] = useState(false);
   const { logs, state: verifyState, summary, clearLogs } = useDomainVerification(verifyingDomainId);
+  const attemptedRef = useRef<Set<string>>(new Set());
 
   const { data: domains, isLoading } = useQuery({
     queryKey: queryKeys.domains(id),
@@ -183,6 +184,9 @@ export function ProjectSettingsDomains() {
 
   const verifyMutation = useMutation({
     mutationFn: (domainId: string) => api.verifyDomain(id, domainId),
+    onMutate: (domainId) => {
+      attemptedRef.current.add(domainId);
+    },
     onSuccess: (_result, domainId) => {
       setVerifyingDomainId(domainId);
       setExpandedLogDomainId(domainId);
@@ -202,6 +206,17 @@ export function ProjectSettingsDomains() {
       return () => clearTimeout(timer);
     }
   }, [verifyState, queryClient, id]);
+
+  // Auto-fire verify for any pending custom domain on page load (once per session per domain).
+  useEffect(() => {
+    if (!domains || verifyingDomainId !== null || verifyMutation.isPending) return;
+    const pending = domains.find(
+      (d) => !d.is_auto && !isDomainReady(d) && !attemptedRef.current.has(d.id),
+    );
+    if (pending) {
+      verifyMutation.mutate(pending.id);
+    }
+  }, [domains, verifyingDomainId, verifyMutation]);
 
   const productionDomains = domains?.filter((d) => d.environment === "production") ?? [];
   const previewDomains = domains?.filter((d) => d.environment === "preview") ?? [];
@@ -347,7 +362,7 @@ export function ProjectSettingsDomains() {
             </Button>
           </div>
         ) : (
-          <div className="divide-y rounded-lg border">
+          <div className="divide-y overflow-hidden rounded-lg border">
             {/* Inline add form */}
             {showAddForm && (
               <div className="flex flex-col gap-3 px-4 py-3 sm:flex-row sm:items-center">
