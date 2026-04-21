@@ -142,13 +142,18 @@ export function getPrimaryEnvironmentUrl(
   const readyDomains = getReadyEnvironmentDomains(domains, environment);
   if (!readyDomains.length) return null;
 
-  const preferred =
+  const explicitPrimary = readyDomains.find((domain) => domain.is_primary);
+  if (explicitPrimary) {
+    return `https://${explicitPrimary.domain}`;
+  }
+
+  const fallback =
     readyDomains.find((domain) =>
       environment === "preview" ? domain.is_auto : !domain.is_auto,
     ) ?? readyDomains[0];
-  if (!preferred) return null;
+  if (!fallback) return null;
 
-  return `https://${preferred.domain}`;
+  return `https://${fallback.domain}`;
 }
 
 // ---------------------------------------------------------------------------

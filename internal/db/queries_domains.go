@@ -7,7 +7,7 @@ import (
 
 func (db *DB) ListDomains(projectID string) ([]Domain, error) {
 	rows, err := db.Query(
-		`SELECT id, project_id, domain, environment, is_auto, dns_verified, ssl_status, ssl_expires_at, created_at
+		`SELECT id, project_id, domain, environment, is_auto, is_primary, dns_verified, ssl_status, ssl_expires_at, created_at
 		 FROM domains WHERE project_id = ?
 		 ORDER BY is_auto DESC, created_at ASC`, projectID,
 	)
@@ -20,7 +20,7 @@ func (db *DB) ListDomains(projectID string) ([]Domain, error) {
 	for rows.Next() {
 		var d Domain
 		if err := rows.Scan(&d.ID, &d.ProjectID, &d.DomainName, &d.Environment,
-			&d.IsAuto, &d.DNSVerified, &d.SSLStatus, &d.SSLExpiresAt, &d.CreatedAt); err != nil {
+			&d.IsAuto, &d.IsPrimary, &d.DNSVerified, &d.SSLStatus, &d.SSLExpiresAt, &d.CreatedAt); err != nil {
 			return nil, fmt.Errorf("scan domain: %w", err)
 		}
 		domains = append(domains, d)
@@ -31,10 +31,10 @@ func (db *DB) ListDomains(projectID string) ([]Domain, error) {
 func (db *DB) GetDomainByID(id string) (*Domain, error) {
 	d := &Domain{}
 	err := db.QueryRow(
-		`SELECT id, project_id, domain, environment, is_auto, dns_verified, ssl_status, ssl_expires_at, created_at
+		`SELECT id, project_id, domain, environment, is_auto, is_primary, dns_verified, ssl_status, ssl_expires_at, created_at
 		 FROM domains WHERE id = ?`, id,
 	).Scan(&d.ID, &d.ProjectID, &d.DomainName, &d.Environment,
-		&d.IsAuto, &d.DNSVerified, &d.SSLStatus, &d.SSLExpiresAt, &d.CreatedAt)
+		&d.IsAuto, &d.IsPrimary, &d.DNSVerified, &d.SSLStatus, &d.SSLExpiresAt, &d.CreatedAt)
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}
@@ -47,10 +47,10 @@ func (db *DB) GetDomainByID(id string) (*Domain, error) {
 func (db *DB) GetDomainByName(domain string) (*Domain, error) {
 	d := &Domain{}
 	err := db.QueryRow(
-		`SELECT id, project_id, domain, environment, is_auto, dns_verified, ssl_status, ssl_expires_at, created_at
+		`SELECT id, project_id, domain, environment, is_auto, is_primary, dns_verified, ssl_status, ssl_expires_at, created_at
 		 FROM domains WHERE domain = ?`, domain,
 	).Scan(&d.ID, &d.ProjectID, &d.DomainName, &d.Environment,
-		&d.IsAuto, &d.DNSVerified, &d.SSLStatus, &d.SSLExpiresAt, &d.CreatedAt)
+		&d.IsAuto, &d.IsPrimary, &d.DNSVerified, &d.SSLStatus, &d.SSLExpiresAt, &d.CreatedAt)
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}
@@ -63,9 +63,9 @@ func (db *DB) GetDomainByName(domain string) (*Domain, error) {
 func (db *DB) CreateDomain(d *Domain) error {
 	d.ID = NewID()
 	_, err := db.Exec(
-		`INSERT INTO domains (id, project_id, domain, environment, is_auto, dns_verified, ssl_status)
-		 VALUES (?, ?, ?, ?, ?, ?, ?)`,
-		d.ID, d.ProjectID, d.DomainName, d.Environment, d.IsAuto, d.DNSVerified, d.SSLStatus,
+		`INSERT INTO domains (id, project_id, domain, environment, is_auto, is_primary, dns_verified, ssl_status)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+		d.ID, d.ProjectID, d.DomainName, d.Environment, d.IsAuto, d.IsPrimary, d.DNSVerified, d.SSLStatus,
 	)
 	if err != nil {
 		return fmt.Errorf("create domain: %w", err)
@@ -86,6 +86,46 @@ func (db *DB) UpdateDomainSSL(id, status string, expiresAt sql.NullTime) error {
 	if err != nil {
 		return fmt.Errorf("update domain ssl: %w", err)
 	}
+	return nil
+}
+
+func (db *DB) UpdateDomainEnvironment(id, environment string) error {
+	_, err := db.Exec(`UPDATE domains SET environment = ?, is_primary = 0 WHERE id = ?`, environment, id)
+	if err != nil {
+		return fmt.Errorf("update domain environment: %w", err)
+	}
+	return nil
+}
+
+// SetDomainPrimary flips the primary flag within one project/environment scope
+// in a single transaction so the partial unique index never sees two primaries.
+func (db *DB) SetDomainPrimary(projectID, environment, domainID string) error {
+	tx, err := db.Begin()
+	if err != nil {
+		return fmt.Errorf("set primary begin: %w", err)
+	}
+	defer tx.Rollback()
+
+	if _, err := tx.Exec(
+		`UPDATE domains SET is_primary = 0
+		 WHERE project_id = ? AND environment = ? AND id != ?`,
+		projectID, environment, domainID,
+	); err != nil {
+		return fmt.Errorf("set primary clear siblings: %w", err)
+	}
+
+	if _, err := tx.Exec(
+		`UPDATE domains SET is_primary = 1
+		 WHERE id = ? AND project_id = ? AND environment = ?`,
+		domainID, projectID, environment,
+	); err != nil {
+		return fmt.Errorf("set primary assign: %w", err)
+	}
+
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("set primary commit: %w", err)
+	}
+
 	return nil
 }
 

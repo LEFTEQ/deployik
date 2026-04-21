@@ -9,7 +9,11 @@ import {
   GlobeLock,
   Link2,
   LoaderCircle,
+  MoreHorizontal,
   Plus,
+  RefreshCcw,
+  Star,
+  Trash2,
   X,
 } from "lucide-react";
 import { toast } from "sonner";
@@ -25,12 +29,29 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { LoadingState } from "@/components/ui/spinner";
 import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { cn } from "@/lib/utils";
 import type { Domain, DomainLogEvent } from "@/types/api";
 
@@ -152,6 +173,7 @@ export function ProjectSettingsDomains() {
   const [verifyingDomainId, setVerifyingDomainId] = useState<string | null>(null);
   const [expandedLogDomainId, setExpandedLogDomainId] = useState<string | null>(null);
   const [minimized, setMinimized] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState<Domain | null>(null);
   const { logs, state: verifyState, summary, clearLogs } = useDomainVerification(verifyingDomainId);
   const attemptedRef = useRef<Set<string>>(new Set());
 
@@ -196,6 +218,44 @@ export function ProjectSettingsDomains() {
     onError: (err) => toast.error(err.message),
   });
 
+  const moveMutation = useMutation({
+    mutationFn: ({
+      domainId,
+      environment,
+    }: {
+      domainId: string;
+      environment: Domain["environment"];
+    }) => api.updateDomain(id, domainId, { environment }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.domains(id) });
+      toast.success("Environment updated");
+    },
+    onError: (err) => toast.error(err.message),
+  });
+
+  const setPrimaryMutation = useMutation({
+    mutationFn: (domainId: string) =>
+      api.updateDomain(id, domainId, { is_primary: true }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.domains(id) });
+      toast.success("Primary updated");
+    },
+    onError: (err) => toast.error(err.message),
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: (domainId: string) => api.deleteDomain(id, domainId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.domains(id) });
+      setDeleteTarget(null);
+      toast.success("Domain deleted");
+    },
+    onError: (err) => {
+      setDeleteTarget(null);
+      toast.error(err.message);
+    },
+  });
+
   useEffect(() => {
     if (verifyState === "success" || verifyState === "error") {
       queryClient.invalidateQueries({ queryKey: queryKeys.domains(id) });
@@ -232,6 +292,7 @@ export function ProjectSettingsDomains() {
     const isVerifying = verifyingDomainId === domain.id && (verifyState === "verifying" || verifyState === "connecting");
     const showLogPanel = expandedLogDomainId === domain.id && verifyState !== "idle";
     const allVerifyDisabled = verifyMutation.isPending || verifyingDomainId !== null;
+    const canMove = !moveMutation.isPending && verifyingDomainId === null;
 
     return (
       <div key={domain.id}>
@@ -248,6 +309,12 @@ export function ProjectSettingsDomains() {
               <Badge variant={domain.is_auto ? "secondary" : "outline"}>
                 {domain.is_auto ? "Auto" : "Custom"}
               </Badge>
+              {domain.is_primary ? (
+                <Badge variant="outline" className="border-amber-400/40 text-amber-200">
+                  <Star className="mr-1 h-3 w-3" />
+                  Primary
+                </Badge>
+              ) : null}
             </div>
             <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
               <span className="inline-flex items-center gap-1 rounded-full border border-white/8 px-2 py-1">
@@ -271,7 +338,7 @@ export function ProjectSettingsDomains() {
             </div>
           </div>
 
-          <div className="flex flex-wrap gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             {ready ? (
               <Button asChild size="sm" variant="outline">
                 <a
@@ -285,19 +352,76 @@ export function ProjectSettingsDomains() {
               </Button>
             ) : null}
             {!domain.is_auto ? (
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={() => verifyMutation.mutate(domain.id)}
-                disabled={allVerifyDisabled}
-              >
-                {isVerifying ? (
-                  <LoaderCircle className="mr-1.5 h-3.5 w-3.5 animate-spin" />
-                ) : (
-                  <GlobeLock className="mr-1.5 h-3.5 w-3.5" />
-                )}
-                {isVerifying ? "Verifying..." : "Verify"}
-              </Button>
+              <>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => verifyMutation.mutate(domain.id)}
+                  disabled={allVerifyDisabled}
+                >
+                  {isVerifying ? (
+                    <LoaderCircle className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+                  ) : (
+                    <GlobeLock className="mr-1.5 h-3.5 w-3.5" />
+                  )}
+                  {isVerifying ? "Verifying..." : "Verify"}
+                </Button>
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="h-8 w-8 px-0"
+                      aria-label={`Open actions for ${domain.domain}`}
+                    >
+                      <MoreHorizontal className="h-4 w-4" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end">
+                    <DropdownMenuItem
+                      onSelect={() =>
+                        moveMutation.mutate({
+                          domainId: domain.id,
+                          environment:
+                            domain.environment === "preview"
+                              ? "production"
+                              : "preview",
+                        })
+                      }
+                      disabled={!canMove}
+                    >
+                      <RefreshCcw className="mr-2 h-4 w-4" />
+                      Move to{" "}
+                      {domain.environment === "preview" ? "Production" : "Preview"}
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      onSelect={() => verifyMutation.mutate(domain.id)}
+                      disabled={allVerifyDisabled}
+                    >
+                      <GlobeLock className="mr-2 h-4 w-4" />
+                      Re-verify
+                    </DropdownMenuItem>
+                    {!domain.is_primary ? (
+                      <DropdownMenuItem
+                        onSelect={() => setPrimaryMutation.mutate(domain.id)}
+                        disabled={setPrimaryMutation.isPending}
+                      >
+                        <Star className="mr-2 h-4 w-4" />
+                        Set as primary
+                      </DropdownMenuItem>
+                    ) : null}
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem
+                      className="text-red-400 focus:text-red-400"
+                      onSelect={() => setDeleteTarget(domain)}
+                      disabled={deleteMutation.isPending}
+                    >
+                      <Trash2 className="mr-2 h-4 w-4" />
+                      Delete
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              </>
             ) : null}
           </div>
         </div>
@@ -445,6 +569,43 @@ export function ProjectSettingsDomains() {
         environment={newDomainEnvironment}
         platform={platform}
       />
+
+      <AlertDialog
+        open={deleteTarget !== null}
+        onOpenChange={(open) => {
+          if (!open && !deleteMutation.isPending) {
+            setDeleteTarget(null);
+          }
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete {deleteTarget?.domain}?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This removes the proxy config for the domain, so the live URL will
+              stop responding. Existing certificate files are left in place and
+              expire naturally.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={deleteMutation.isPending}>
+              Cancel
+            </AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-red-500 text-white hover:bg-red-500/90"
+              disabled={deleteMutation.isPending}
+              onClick={(e) => {
+                e.preventDefault();
+                if (deleteTarget) {
+                  deleteMutation.mutate(deleteTarget.id);
+                }
+              }}
+            >
+              {deleteMutation.isPending ? "Deleting..." : "Delete"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

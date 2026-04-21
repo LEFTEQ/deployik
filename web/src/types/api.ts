@@ -94,6 +94,7 @@ export interface Domain {
   domain: string;
   environment: "preview" | "production";
   is_auto: boolean;
+  is_primary: boolean;
   dns_verified: boolean;
   ssl_status: "pending" | "active" | "error";
   ssl_expires_at: string | null;

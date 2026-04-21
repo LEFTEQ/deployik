@@ -46,7 +46,7 @@ internal/
       auth.go             GitHub OAuth callback, OAuth state verification, cookie session issuance, refresh, logout, /me, DevLogin (DEV_MODE only)
       projects.go         CRUD + GitHub repo/branch listing; dev-mode mock repos/branches for Playwright testing
       deployments.go      List (filtered/paginated), trigger, get, build logs; production releases can optionally create a git tag
-      domains.go          Add, list, delete, verify (DNS + SSL) with real-time WebSocket log streaming
+      domains.go          Add, list, move/set-primary via PATCH, delete, verify (DNS + SSL) with real-time WebSocket log streaming
       envvars.go          VariableHandler -- generic for both env and secret stores; BulkSet + single Upsert
       health.go           HealthHandler: GET /api/health -- {status, version} JSON; nil-safe for tests/older builds
       autobuild.go        Auto-build config CRUD: creates/deletes GitHub webhooks, manages webhook secrets
@@ -120,13 +120,14 @@ internal/
       011_host_network_access.sql  Adds host_network_access to projects (opt-in `host.docker.internal` via ExtraHosts)
       012_proxy_and_volumes.sql  Adds data_volume_enabled and data_mount_path (default `/app/data`) to projects
       013_project_port.sql     Adds port (default 3000) to projects; drives container ExposedPorts + nginx upstream for user-provided Dockerfiles that don't listen on 3000
+      014_domain_primary.sql  Adds domains.is_primary with a partial unique index per `(project_id, environment)` and backfills existing rows from the legacy is_auto heuristic
     models.go             User, Organization, OrganizationMembership, RefreshSession, AuditLog, Project (with password fields, host_network_access, data_volume_enabled, data_mount_path), Deployment (with trigger/screenshot fields), BuildLog, Domain, ProjectVariable, VariableKind, AutoBuildConfig, WebhookEvent, ProjectWithLatestDeployment, DeploymentWithUser, DeploymentListResponse, DeploymentFilter
     queries_users.go      GetUserByGithubID, GetUserByID, UpsertUser
     queries_organizations.go  Personal workspace bootstrap, memberships, org listing
     queries_projects.go   ListProjectsWithLatestDeployment, GetProject, Create, Update, Delete (soft), GetProjectPassword, SetProjectPassword, ClearProjectPassword
     queries_deployments.go  ListDeploymentsFiltered (with pagination/filters), Get, Create, UpdateStatus/Container/Duration/Screenshot, GetLiveDeployment
     queries_envvars.go    ListProjectVariables, ListResolvedEnvVars/Secrets, BulkSet*, UpsertProjectVariable, Delete*, key conflict checks
-    queries_domains.go    List, GetByName, Create, UpdateDNS/SSL, Delete, DeleteForProject
+    queries_domains.go    List, GetByName, Create, UpdateDNS/SSL/Environment, SetDomainPrimary, Delete, DeleteForProject
     queries_buildlogs.go  Insert, GetBuildLogs, PruneBuildLogs
     queries_refresh_tokens.go  Create/GetActive/Rotate/Revoke refresh sessions
     queries_audit_logs.go CreateAuditLog
@@ -173,7 +174,7 @@ web/src/
     ProjectAnalytics.tsx  Thin wrapper around project-analytics component
     ProjectIntegration.tsx  Thin wrapper around project-integration component
     ProjectSettings.tsx   Build settings page (framework, package manager, commands, directories)
-    ProjectSettingsDomains.tsx  Domain management: inline add form, environment grouping, DNS setup guide, verification with real-time log streaming
+    ProjectSettingsDomains.tsx  Domain management: inline add form, environment grouping, primary badge, verify + move/set-primary/delete actions, DNS setup guide, verification with real-time log streaming
     ProjectSettingsEnv.tsx  Environment variables + secrets with Vercel-style individual add/edit/delete, .env import
     ProjectSettingsProtection.tsx  Per-environment password protection toggle with password reveal
     DeploymentDetail.tsx  Build log viewer with real-time WebSocket streaming
@@ -223,7 +224,7 @@ web/src/
 
 ## Database Schema
 
-SQLite with 12 migrations. Tables:
+SQLite with 14 migrations. Tables:
 
 | Table | Key Fields | Notes |
 |---|---|---|
@@ -233,7 +234,7 @@ SQLite with 12 migrations. Tables:
 | `projects` | id (ULID), name (unique slug), github_repo, github_owner, branch, user_id (creator FK), organization_id (nullable FK), framework, package_manager, root_directory, output_directory, build_command, install_command, node_version, status, preview_password (encrypted), production_password (encrypted), host_network_access (bool), data_volume_enabled (bool), data_mount_path (default `/app/data`), port (default 3000) | Soft-delete via status='deleted'; password fields added in migration 010; runtime fields added in migrations 011-013 |
 | `deployments` | id (ULID), project_id (FK), environment, status, commit_sha, commit_message, branch, container_id, container_name, image_tag, build_duration, triggered_by, trigger_source (manual/webhook/api), triggered_by_username, screenshot_path, error_message, finished_at | trigger/screenshot fields added in migration 008 |
 | `build_logs` | id (auto), deployment_id (FK), line_number, content, stream (stdout/stderr) | |
-| `domains` | id (ULID), project_id (FK), domain (unique), environment, is_auto, dns_verified, ssl_status (pending/active/error), ssl_expires_at | Auto-domains cannot be deleted |
+| `domains` | id (ULID), project_id (FK), domain (unique), environment, is_auto, is_primary (partial unique per project+environment), dns_verified, ssl_status (pending/active/error), ssl_expires_at | Auto-domains cannot be deleted or moved; `is_primary` drives canonical URL selection per environment |
 | `env_variables` | id (ULID), project_id (FK), environment (shared/preview/production), kind (env/secret), key, value (encrypted) | UNIQUE(project_id, environment, key) |
 | `project_analytics` | project_id (PK/FK), audience_enabled, tracking_mode, audience_status, umami_website_id, last_event_at, verified_at | One linked Umami website per project; stores audience analytics health/provisioning state |
 | `refresh_tokens` | id (ULID), user_id (FK), token_hash, expires_at, last_used_at, revoked_at | Opaque refresh tokens are hashed at rest and rotated on use |
@@ -298,6 +299,7 @@ SQLite with 12 migrations. Tables:
 **Domains:**
 - `GET    /api/projects/{id}/domains` -- List domains
 - `POST   /api/projects/{id}/domains` -- Add domain `{domain, environment}`
+- `PATCH  /api/projects/{id}/domains/{did}` -- Update domain `{environment?, is_primary?}`; move re-provisions the proxy target and rejects `is_auto=1` rows
 - `DELETE /api/projects/{id}/domains/{did}` -- Delete domain (not auto-domains)
 - `POST   /api/projects/{id}/domains/{did}/verify` -- Verify DNS + provision SSL (async, streams logs via WebSocket)
 

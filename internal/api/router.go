@@ -192,6 +192,7 @@ func NewRouter(cfg *RouterConfig) *chi.Mux {
 			domainHandler := &handlers.DomainHandler{DB: cfg.DB, Manager: cfg.DomainManager, Hub: cfg.WSHub, Audit: auditRecorder}
 			r.Get("/projects/{id}/domains", domainHandler.List)
 			r.With(mutationLimiter.Middleware("domain_add")).Post("/projects/{id}/domains", domainHandler.Add)
+			r.With(mutationLimiter.Middleware("domain_update")).Patch("/projects/{id}/domains/{did}", domainHandler.Update)
 			r.With(mutationLimiter.Middleware("domain_delete")).Delete("/projects/{id}/domains/{did}", domainHandler.Delete)
 			r.With(mutationLimiter.Middleware("domain_verify")).Post("/projects/{id}/domains/{did}/verify", domainHandler.Verify)
 

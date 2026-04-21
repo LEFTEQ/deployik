@@ -156,18 +156,18 @@ func (h *ProjectHandler) Create(w http.ResponseWriter, r *http.Request) {
 	}
 
 	project := &db.Project{
-		OrganizationID:  organizationID,
-		Name:            name,
-		GithubRepo:      req.GithubRepo,
-		GithubOwner:     req.GithubOwner,
-		Branch:          strings.TrimSpace(req.Branch),
-		UserID:          claims.UserID,
-		Framework:       req.Framework,
-		PackageManager:  req.PackageManager,
-		RootDirectory:   req.RootDirectory,
-		OutputDirectory: req.OutputDirectory,
-		BuildCommand:    req.BuildCommand,
-		InstallCommand:  req.InstallCommand,
+		OrganizationID:    organizationID,
+		Name:              name,
+		GithubRepo:        req.GithubRepo,
+		GithubOwner:       req.GithubOwner,
+		Branch:            strings.TrimSpace(req.Branch),
+		UserID:            claims.UserID,
+		Framework:         req.Framework,
+		PackageManager:    req.PackageManager,
+		RootDirectory:     req.RootDirectory,
+		OutputDirectory:   req.OutputDirectory,
+		BuildCommand:      req.BuildCommand,
+		InstallCommand:    req.InstallCommand,
 		NodeVersion:       req.NodeVersion,
 		Port:              req.Port,
 		HostNetworkAccess: req.HostNetworkAccess,
@@ -201,6 +201,7 @@ func (h *ProjectHandler) Create(w http.ResponseWriter, r *http.Request) {
 		DomainName:  name + ".preview.example.com",
 		Environment: "preview",
 		IsAuto:      true,
+		IsPrimary:   true,
 		SSLStatus:   "pending",
 	}
 	h.DB.CreateDomain(previewDomain)

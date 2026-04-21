@@ -32,6 +32,11 @@ type addDomainRequest struct {
 	Environment string `json:"environment"`
 }
 
+type updateDomainRequest struct {
+	Environment *string `json:"environment,omitempty"`
+	IsPrimary   *bool   `json:"is_primary,omitempty"`
+}
+
 func (h *DomainHandler) List(w http.ResponseWriter, r *http.Request) {
 	projectID := chi.URLParam(r, "id")
 	if _, _, ok := loadAuthorizedProject(w, r, h.DB, projectID); !ok {
@@ -172,6 +177,122 @@ func (h *DomainHandler) Delete(w http.ResponseWriter, r *http.Request) {
 			"domain": domainName,
 		},
 	})
+}
+
+func (h *DomainHandler) Update(w http.ResponseWriter, r *http.Request) {
+	projectID := chi.URLParam(r, "id")
+	domainID := chi.URLParam(r, "did")
+
+	project, claims, ok := loadAuthorizedProject(w, r, h.DB, projectID)
+	if !ok {
+		return
+	}
+
+	target, err := h.DB.GetDomainByID(domainID)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to load domain"})
+		return
+	}
+	if target == nil || target.ProjectID != projectID {
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": "domain not found"})
+		return
+	}
+	if target.IsAuto {
+		writeJSON(w, http.StatusForbidden, map[string]string{"error": "auto domains cannot be modified"})
+		return
+	}
+
+	var req updateDomainRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request body"})
+		return
+	}
+	if req.Environment == nil && req.IsPrimary == nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "nothing to update"})
+		return
+	}
+	if req.IsPrimary != nil && !*req.IsPrimary {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "is_primary can only be set to true"})
+		return
+	}
+
+	if req.Environment != nil && *req.Environment != target.Environment {
+		newEnv := *req.Environment
+		if newEnv != "preview" && newEnv != "production" {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "environment must be preview or production"})
+			return
+		}
+
+		if _, loaded := h.verifying.LoadOrStore(projectID, domainID); loaded {
+			writeJSON(w, http.StatusConflict, map[string]string{"error": "a verification is already in progress for this project"})
+			return
+		}
+		defer h.verifying.Delete(projectID)
+
+		oldEnv := target.Environment
+		if err := h.DB.UpdateDomainEnvironment(domainID, newEnv); err != nil {
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to update environment"})
+			return
+		}
+
+		target.Environment = newEnv
+		target.IsPrimary = false
+
+		if h.Manager != nil && target.SSLStatus == "active" {
+			plan := domain.ResolveVariantPlan(target.DomainName, newEnv)
+			if err := h.Manager.ProvisionDomain(domain.ProvisionConfig{
+				ProjectID:      project.ID,
+				ProjectName:    project.Name,
+				Domain:         plan.CanonicalDomain,
+				RedirectDomain: plan.RedirectDomain,
+				SSLDomains:     plan.AllDomains(),
+				Environment:    newEnv,
+				ContainerName:  fmt.Sprintf("deployik-%s-%s", project.Name, newEnv),
+				Port:           project.Port,
+			}, false, nil); err != nil {
+				log.Printf("update domain: re-provision %s for %s: %v", target.DomainName, newEnv, err)
+			}
+		}
+
+		h.Audit.Record(audit.Entry{
+			UserID:       claims.UserID,
+			Action:       "domain.move",
+			ResourceType: "domain",
+			ResourceID:   domainID,
+			ProjectID:    projectID,
+			Metadata: map[string]any{
+				"domain": target.DomainName,
+				"from":   oldEnv,
+				"to":     newEnv,
+			},
+		})
+	}
+
+	if req.IsPrimary != nil && *req.IsPrimary {
+		if err := h.DB.SetDomainPrimary(projectID, target.Environment, domainID); err != nil {
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to set primary"})
+			return
+		}
+
+		h.Audit.Record(audit.Entry{
+			UserID:       claims.UserID,
+			Action:       "domain.set_primary",
+			ResourceType: "domain",
+			ResourceID:   domainID,
+			ProjectID:    projectID,
+			Metadata: map[string]any{
+				"domain":      target.DomainName,
+				"environment": target.Environment,
+			},
+		})
+	}
+
+	fresh, err := h.DB.GetDomainByID(domainID)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to load updated domain"})
+		return
+	}
+	writeJSON(w, http.StatusOK, fresh)
 }
 
 func (h *DomainHandler) Verify(w http.ResponseWriter, r *http.Request) {

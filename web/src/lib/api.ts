@@ -248,6 +248,17 @@ class ApiClient {
     });
   }
 
+  async updateDomain(
+    projectId: string,
+    domainId: string,
+    patch: { environment?: "preview" | "production"; is_primary?: boolean },
+  ): Promise<Domain> {
+    return this.request(`/projects/${projectId}/domains/${domainId}`, {
+      method: "PATCH",
+      body: JSON.stringify(patch),
+    });
+  }
+
   async verifyDomain(
     projectId: string,
     domainId: string,

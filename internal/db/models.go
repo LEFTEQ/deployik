@@ -65,30 +65,30 @@ type AuditLog struct {
 }
 
 type Project struct {
-	ID               string    `json:"id"`
-	Name             string    `json:"name"`
-	GithubRepo       string    `json:"github_repo"`
-	GithubOwner      string    `json:"github_owner"`
-	Branch           string    `json:"branch"`
-	UserID           string    `json:"user_id"`
-	OrganizationID   string    `json:"organization_id"`
-	OrganizationName string    `json:"organization_name,omitempty"`
-	Framework        string    `json:"framework"`
-	PackageManager   string    `json:"package_manager"`
-	RootDirectory    string    `json:"root_directory"`
-	OutputDirectory  string    `json:"output_directory"`
-	BuildCommand     string    `json:"build_command"`
-	InstallCommand   string    `json:"install_command"`
-	NodeVersion       string    `json:"node_version"`
-	Port              int       `json:"port"`
-	HostNetworkAccess bool      `json:"host_network_access"`
-	DataVolumeEnabled bool      `json:"data_volume_enabled"`
-	DataMountPath     string    `json:"data_mount_path"`
-	Status              string    `json:"status"`
-	PreviewPassword     string    `json:"-"` // encrypted, never expose in JSON
-	ProductionPassword  string    `json:"-"` // encrypted, never expose in JSON
-	CreatedAt           time.Time `json:"created_at"`
-	UpdatedAt           time.Time `json:"updated_at"`
+	ID                 string    `json:"id"`
+	Name               string    `json:"name"`
+	GithubRepo         string    `json:"github_repo"`
+	GithubOwner        string    `json:"github_owner"`
+	Branch             string    `json:"branch"`
+	UserID             string    `json:"user_id"`
+	OrganizationID     string    `json:"organization_id"`
+	OrganizationName   string    `json:"organization_name,omitempty"`
+	Framework          string    `json:"framework"`
+	PackageManager     string    `json:"package_manager"`
+	RootDirectory      string    `json:"root_directory"`
+	OutputDirectory    string    `json:"output_directory"`
+	BuildCommand       string    `json:"build_command"`
+	InstallCommand     string    `json:"install_command"`
+	NodeVersion        string    `json:"node_version"`
+	Port               int       `json:"port"`
+	HostNetworkAccess  bool      `json:"host_network_access"`
+	DataVolumeEnabled  bool      `json:"data_volume_enabled"`
+	DataMountPath      string    `json:"data_mount_path"`
+	Status             string    `json:"status"`
+	PreviewPassword    string    `json:"-"` // encrypted, never expose in JSON
+	ProductionPassword string    `json:"-"` // encrypted, never expose in JSON
+	CreatedAt          time.Time `json:"created_at"`
+	UpdatedAt          time.Time `json:"updated_at"`
 }
 
 type AnalyticsTrackingMode string
@@ -126,24 +126,24 @@ type ProjectAnalytics struct {
 }
 
 type Deployment struct {
-	ID            string       `json:"id"`
-	ProjectID     string       `json:"project_id"`
-	Environment   string       `json:"environment"`
-	CommitSHA     string       `json:"commit_sha"`
-	CommitMessage string       `json:"commit_message"`
-	Branch        string       `json:"branch"`
-	Status        string       `json:"status"`
-	ContainerID   string       `json:"container_id"`
-	ContainerName string       `json:"container_name"`
-	ImageTag      string       `json:"image_tag"`
-	BuildDuration int          `json:"build_duration"`
+	ID                  string       `json:"id"`
+	ProjectID           string       `json:"project_id"`
+	Environment         string       `json:"environment"`
+	CommitSHA           string       `json:"commit_sha"`
+	CommitMessage       string       `json:"commit_message"`
+	Branch              string       `json:"branch"`
+	Status              string       `json:"status"`
+	ContainerID         string       `json:"container_id"`
+	ContainerName       string       `json:"container_name"`
+	ImageTag            string       `json:"image_tag"`
+	BuildDuration       int          `json:"build_duration"`
 	TriggeredBy         string       `json:"triggered_by"`
 	TriggerSource       string       `json:"trigger_source"`
 	TriggeredByUsername string       `json:"triggered_by_username"`
 	ScreenshotPath      string       `json:"screenshot_path,omitempty"`
 	ErrorMessage        string       `json:"error_message,omitempty"`
-	CreatedAt     time.Time    `json:"created_at"`
-	FinishedAt    sql.NullTime `json:"finished_at"`
+	CreatedAt           time.Time    `json:"created_at"`
+	FinishedAt          sql.NullTime `json:"finished_at"`
 }
 
 type BuildLog struct {
@@ -161,6 +161,7 @@ type Domain struct {
 	DomainName   string       `json:"domain"`
 	Environment  string       `json:"environment"`
 	IsAuto       bool         `json:"is_auto"`
+	IsPrimary    bool         `json:"is_primary"`
 	DNSVerified  bool         `json:"dns_verified"`
 	SSLStatus    string       `json:"ssl_status"`
 	SSLExpiresAt sql.NullTime `json:"ssl_expires_at,omitempty"`

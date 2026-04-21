@@ -1,6 +1,7 @@
 package db
 
 import (
+	"sort"
 	"strings"
 	"testing"
 	"time"
@@ -829,6 +830,210 @@ func TestDomainCRUD(t *testing.T) {
 	domains, _ = db.ListDomains(project.ID)
 	if len(domains) != 1 {
 		t.Errorf("got %d domains after delete, want 1 (auto should remain)", len(domains))
+	}
+}
+
+func TestDomainIsPrimaryBackfill(t *testing.T) {
+	database, err := OpenMemory()
+	if err != nil {
+		t.Fatalf("OpenMemory: %v", err)
+	}
+	t.Cleanup(func() { database.Close() })
+
+	if _, err := database.Exec(`
+		CREATE TABLE IF NOT EXISTS _migrations (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			name TEXT UNIQUE NOT NULL,
+			applied_at DATETIME NOT NULL DEFAULT (datetime('now'))
+		)
+	`); err != nil {
+		t.Fatalf("create _migrations: %v", err)
+	}
+
+	entries, err := migrationsFS.ReadDir("migrations")
+	if err != nil {
+		t.Fatalf("ReadDir migrations: %v", err)
+	}
+	sort.Slice(entries, func(i, j int) bool {
+		return entries[i].Name() < entries[j].Name()
+	})
+
+	for _, entry := range entries {
+		name := entry.Name()
+		if name >= "014_" {
+			break
+		}
+
+		content, err := migrationsFS.ReadFile("migrations/" + name)
+		if err != nil {
+			t.Fatalf("ReadFile(%s): %v", name, err)
+		}
+		if _, err := database.Exec(string(content)); err != nil {
+			t.Fatalf("apply migration %s: %v", name, err)
+		}
+		if _, err := database.Exec(`INSERT INTO _migrations (name) VALUES (?)`, name); err != nil {
+			t.Fatalf("record migration %s: %v", name, err)
+		}
+	}
+
+	user := &User{ID: NewID(), GithubID: 2, Username: "primary-user", Role: "admin"}
+	if err := database.UpsertUser(user); err != nil {
+		t.Fatalf("UpsertUser: %v", err)
+	}
+
+	project := &Project{
+		Name:           "primary-backfill",
+		GithubRepo:     "repo",
+		GithubOwner:    "owner",
+		Branch:         "main",
+		UserID:         user.ID,
+		Framework:      "nextjs",
+		BuildCommand:   "bun run build",
+		InstallCommand: "bun install",
+		NodeVersion:    "22",
+		Status:         "active",
+	}
+	if err := database.CreateProject(project); err != nil {
+		t.Fatalf("CreateProject: %v", err)
+	}
+
+	base := time.Date(2026, 4, 21, 12, 0, 0, 0, time.UTC)
+	insert := func(id, domainName, environment string, isAuto bool, createdAt time.Time) {
+		t.Helper()
+		if _, err := database.Exec(
+			`INSERT INTO domains (id, project_id, domain, environment, is_auto, dns_verified, ssl_status, created_at)
+			 VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+			id, project.ID, domainName, environment, isAuto, true, "active", createdAt,
+		); err != nil {
+			t.Fatalf("insert domain %s: %v", domainName, err)
+		}
+	}
+
+	autoID := NewID()
+	autoDomain := "primary-backfill.preview.example.com"
+	insert(autoID, autoDomain, "preview", true, base)
+
+	previewCustomDomain := "preview.example.com"
+	insert(NewID(), previewCustomDomain, "preview", false, base.Add(time.Minute))
+
+	prodFirstID := NewID()
+	prodFirstDomain := "example.com"
+	insert(prodFirstID, prodFirstDomain, "production", false, base.Add(2*time.Minute))
+
+	prodSecondDomain := "www-alt.example.com"
+	insert(NewID(), prodSecondDomain, "production", false, base.Add(3*time.Minute))
+
+	if err := database.Migrate(); err != nil {
+		t.Fatalf("Migrate(reapply 014): %v", err)
+	}
+
+	got, err := database.ListDomains(project.ID)
+	if err != nil {
+		t.Fatalf("ListDomains: %v", err)
+	}
+
+	primaries := map[string]string{}
+	for _, d := range got {
+		if !d.IsPrimary {
+			continue
+		}
+		if prev, ok := primaries[d.Environment]; ok {
+			t.Fatalf("two primaries in %s: %q and %q", d.Environment, prev, d.DomainName)
+		}
+		primaries[d.Environment] = d.DomainName
+	}
+
+	if primaries["preview"] != autoDomain {
+		t.Fatalf("preview primary = %q, want %q", primaries["preview"], autoDomain)
+	}
+	if primaries["production"] != prodFirstDomain {
+		t.Fatalf("production primary = %q, want %q", primaries["production"], prodFirstDomain)
+	}
+}
+
+func TestUpdateDomainEnvironmentAndSetPrimary(t *testing.T) {
+	database := newTestDB(t)
+
+	user := &User{ID: NewID(), GithubID: 3, Username: "env-switcher", Role: "admin"}
+	if err := database.UpsertUser(user); err != nil {
+		t.Fatalf("UpsertUser: %v", err)
+	}
+
+	project := &Project{
+		Name:           "domain-mover",
+		GithubRepo:     "repo",
+		GithubOwner:    "owner",
+		Branch:         "main",
+		UserID:         user.ID,
+		Framework:      "nextjs",
+		BuildCommand:   "bun run build",
+		InstallCommand: "bun install",
+		NodeVersion:    "22",
+		Status:         "active",
+	}
+	if err := database.CreateProject(project); err != nil {
+		t.Fatalf("CreateProject: %v", err)
+	}
+
+	custom := &Domain{
+		ProjectID:   project.ID,
+		DomainName:  "switch.example.com",
+		Environment: "preview",
+		IsPrimary:   true,
+		SSLStatus:   "pending",
+	}
+	if err := database.CreateDomain(custom); err != nil {
+		t.Fatalf("CreateDomain(custom): %v", err)
+	}
+
+	if err := database.UpdateDomainEnvironment(custom.ID, "production"); err != nil {
+		t.Fatalf("UpdateDomainEnvironment: %v", err)
+	}
+
+	got, err := database.GetDomainByID(custom.ID)
+	if err != nil || got == nil {
+		t.Fatalf("GetDomainByID: %v", err)
+	}
+	if got.Environment != "production" {
+		t.Fatalf("environment = %q, want production", got.Environment)
+	}
+	if got.IsPrimary {
+		t.Fatalf("moved domain should no longer be primary in the new environment")
+	}
+
+	sibling := &Domain{
+		ProjectID:   project.ID,
+		DomainName:  "other.example.com",
+		Environment: "production",
+		SSLStatus:   "active",
+		IsPrimary:   true,
+	}
+	if err := database.CreateDomain(sibling); err != nil {
+		t.Fatalf("CreateDomain(sibling): %v", err)
+	}
+
+	if err := database.SetDomainPrimary(project.ID, "production", custom.ID); err != nil {
+		t.Fatalf("SetDomainPrimary: %v", err)
+	}
+
+	list, err := database.ListDomains(project.ID)
+	if err != nil {
+		t.Fatalf("ListDomains: %v", err)
+	}
+
+	primaries := 0
+	var primaryID string
+	for _, d := range list {
+		if d.Environment == "production" && d.IsPrimary {
+			primaries++
+			primaryID = d.ID
+		}
+	}
+	if primaries != 1 {
+		t.Fatalf("expected exactly 1 production primary, got %d", primaries)
+	}
+	if primaryID != custom.ID {
+		t.Fatalf("primary id = %q, want %q", primaryID, custom.ID)
 	}
 }
 
