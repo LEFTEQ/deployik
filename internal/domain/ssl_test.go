@@ -142,6 +142,114 @@ func TestWriteNginxConfigUsesExplicitSSLDomain(t *testing.T) {
 	}
 }
 
+func TestWriteNginxConfigSplitsStaticAndDynamicRateLimits(t *testing.T) {
+	t.Parallel()
+
+	confDir := t.TempDir()
+	manager := &Manager{NginxConfDir: confDir}
+
+	confPath, err := manager.WriteNginxConfig(ProvisionConfig{
+		ProjectID:     "01KNTESTPROJECT",
+		ProjectName:   "acme-web",
+		Domain:        "acme.io",
+		Environment:   "production",
+		ContainerName: "deployik-acme-web-production",
+	})
+	if err != nil {
+		t.Fatalf("WriteNginxConfig returned error: %v", err)
+	}
+
+	content, err := os.ReadFile(confPath)
+	if err != nil {
+		t.Fatalf("read nginx config: %v", err)
+	}
+
+	got := string(content)
+
+	// Locate the canonical HTTPS server — anchor on the json access_log
+	// directive, which only appears in that block.
+	canonicalIdx := strings.Index(got, "access_log /var/log/nginx/deployik-")
+	if canonicalIdx < 0 {
+		t.Fatalf("expected canonical HTTPS server block, got:\n%s", got)
+	}
+	canonical := got[canonicalIdx:]
+
+	staticIdx := strings.Index(canonical, "location ~* (^/_next/static/")
+	rootIdx := strings.Index(canonical, "location / {")
+	if staticIdx < 0 {
+		t.Fatalf("expected static-asset location block in canonical server, got:\n%s", canonical)
+	}
+	if rootIdx < 0 {
+		t.Fatalf("expected `location /` block in canonical server, got:\n%s", canonical)
+	}
+	if staticIdx >= rootIdx {
+		t.Fatalf("static-asset location must precede `location /` for readability")
+	}
+
+	// Static block: rate-limited by deployik_static, not deployik_dynamic.
+	staticBlock := canonical[staticIdx:rootIdx]
+	for _, want := range []string{
+		"limit_req zone=deployik_static burst=200 nodelay;",
+		"limit_req_status 429;",
+	} {
+		if !strings.Contains(staticBlock, want) {
+			t.Fatalf("expected %q in static block, got:\n%s", want, staticBlock)
+		}
+	}
+	if strings.Contains(staticBlock, "deployik_dynamic") {
+		t.Fatalf("static block must not use the dynamic zone, got:\n%s", staticBlock)
+	}
+
+	// Root block: rate-limited by deployik_dynamic with 429 status.
+	rootBlock := canonical[rootIdx:]
+	for _, want := range []string{
+		"limit_req zone=deployik_dynamic burst=100 nodelay;",
+		"limit_req_status 429;",
+	} {
+		if !strings.Contains(rootBlock, want) {
+			t.Fatalf("expected %q in `location /`, got:\n%s", want, rootBlock)
+		}
+	}
+
+	// Per-IP connection cap should be set on the canonical server.
+	if !strings.Contains(canonical, "limit_conn deployik_perip 50;") {
+		t.Fatalf("expected per-IP connection cap, got:\n%s", canonical)
+	}
+}
+
+func TestWriteNginxConfigUsesSmallerBurstsForPreview(t *testing.T) {
+	t.Parallel()
+
+	confDir := t.TempDir()
+	manager := &Manager{NginxConfDir: confDir}
+
+	confPath, err := manager.WriteNginxConfig(ProvisionConfig{
+		ProjectID:     "01KNTESTPROJECT",
+		ProjectName:   "acme-web",
+		Domain:        "acme-web.preview.example.com",
+		Environment:   "preview",
+		ContainerName: "deployik-acme-web-preview",
+	})
+	if err != nil {
+		t.Fatalf("WriteNginxConfig returned error: %v", err)
+	}
+
+	content, err := os.ReadFile(confPath)
+	if err != nil {
+		t.Fatalf("read nginx config: %v", err)
+	}
+
+	got := string(content)
+	for _, want := range []string{
+		"limit_req zone=deployik_dynamic burst=20 nodelay;",
+		"limit_req zone=deployik_static burst=50 nodelay;",
+	} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("expected preview to use smaller burst %q, got:\n%s", want, got)
+		}
+	}
+}
+
 func TestWriteNginxConfigAddsWWWRedirectWhenConfigured(t *testing.T) {
 	t.Parallel()
 

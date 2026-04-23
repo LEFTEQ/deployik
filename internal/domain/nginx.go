@@ -110,9 +110,37 @@ server {
     }
 {{- end }}
 
+    # Per-IP concurrent connection cap (defense against slowloris and
+    # connection-exhaustion regardless of request rate).
+    limit_conn deployik_perip {{.MaxConnPerIP}};
+
+    # Static assets (Next.js chunks, images, fonts, etc.) — generous rate limit.
+    # Framework prefetches (Next.js RSC, Nuxt islands, etc.) fan out dozens of
+    # these per page load, so we use a much higher rate than dynamic requests,
+    # but still cap to prevent bandwidth-DoS by a single IP. Password protection
+    # doesn't apply here — static chunks aren't sensitive, and auth would cause
+    # partial paints.
+    location ~* (^/_next/static/|^/favicon|\.(?:js|css|map|png|jpe?g|gif|webp|avif|svg|ico|woff2?|ttf|otf|eot)$) {
+        set $upstream {{.ContainerUpstream}};
+        limit_req zone=deployik_static burst={{.StaticBurst}} nodelay;
+        limit_req_status 429;
+        proxy_pass http://$upstream;
+
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+
+        proxy_connect_timeout 60s;
+        proxy_send_timeout 60s;
+        proxy_read_timeout 60s;
+    }
+
     location / {
         set $upstream {{.ContainerUpstream}};
-        limit_req zone=deployik_preview burst=20 nodelay;
+        limit_req zone=deployik_dynamic burst={{.RateLimitBurst}} nodelay;
+        limit_req_status 429;
 {{- if .PasswordProtected }}
         auth_request /_deployik/auth-check;
 {{- end }}
@@ -144,12 +172,45 @@ type NginxConfig struct {
 	ContainerName     string
 	ContainerUpstream string // "host:port" — preferred; falls back to ContainerName:3000
 	PasswordProtected bool
+	RateLimitBurst    int // burst for dynamic requests; defaults via defaultRateLimitBurst
+	StaticBurst       int // burst for static-asset requests; defaults via defaultStaticBurst
+	MaxConnPerIP      int // concurrent connections per IP cap; defaults to 50
+}
+
+// defaultRateLimitBurst returns the per-vhost limit_req burst for dynamic
+// requests, suited to the environment. Production sites get a larger burst
+// because real users (esp. with framework prefetches like Next.js App Router
+// RSC) easily fan out dozens of dynamic requests from a single page load.
+func defaultRateLimitBurst(environment string) int {
+	if strings.EqualFold(environment, "production") {
+		return 100
+	}
+	return 20
+}
+
+// defaultStaticBurst returns the per-vhost limit_req burst for static assets.
+// Higher than dynamic because a single page load on a Next.js / Nuxt-style
+// app fetches many JS chunks, fonts, and images in parallel.
+func defaultStaticBurst(environment string) int {
+	if strings.EqualFold(environment, "production") {
+		return 200
+	}
+	return 50
 }
 
 // GenerateNginxConfig creates an nginx config file for a domain.
 func GenerateNginxConfig(confDir string, cfg NginxConfig) (string, error) {
 	if cfg.ContainerUpstream == "" {
 		cfg.ContainerUpstream = cfg.ContainerName + ":3000"
+	}
+	if cfg.RateLimitBurst <= 0 {
+		cfg.RateLimitBurst = defaultRateLimitBurst(cfg.Environment)
+	}
+	if cfg.StaticBurst <= 0 {
+		cfg.StaticBurst = defaultStaticBurst(cfg.Environment)
+	}
+	if cfg.MaxConnPerIP <= 0 {
+		cfg.MaxConnPerIP = 50
 	}
 
 	tmpl, err := template.New("nginx").Parse(nginxProjectTemplate)
