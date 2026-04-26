@@ -135,3 +135,28 @@ func TestAuthenticateRejectsMissing(t *testing.T) {
 		t.Fatalf("status = %d, want 401", w.Code)
 	}
 }
+
+// TestAuthenticateRejectsPATViaCookie locks in the CSRF boundary: even a
+// valid PAT smuggled into the access cookie must be rejected, because cookies
+// are auto-attached by the browser on cross-site requests and bypass the
+// `Authorization: Bearer` opt-in.
+func TestAuthenticateRejectsPATViaCookie(t *testing.T) {
+	database := newAuthTestDB(t)
+	user := &db.User{ID: db.NewID(), GithubID: 4, Username: "cookie-attacker", Role: "user"}
+	if err := database.UpsertUser(user); err != nil {
+		t.Fatalf("upsert: %v", err)
+	}
+	raw, _ := auth.GenerateAPIToken()
+	if err := database.CreateAPIToken(&db.APIToken{
+		UserID: user.ID, Name: "valid-but-wrong-channel", TokenHash: auth.HashToken(raw),
+	}); err != nil {
+		t.Fatalf("create pat: %v", err)
+	}
+	req := httptest.NewRequest(http.MethodGet, "/api/something", nil)
+	req.AddCookie(&http.Cookie{Name: auth.AccessCookieName, Value: raw})
+	w := httptest.NewRecorder()
+	Authenticate(testJWTSecret, database)(sinkHandler()).ServeHTTP(w, req)
+	if w.Code != http.StatusUnauthorized {
+		t.Fatalf("status = %d, want 401 (PATs must not be accepted via cookie)", w.Code)
+	}
+}
