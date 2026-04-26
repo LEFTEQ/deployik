@@ -21,6 +21,7 @@ import (
 	"github.com/LEFTEQ/lovinka-deployik/internal/crypto"
 	"github.com/LEFTEQ/lovinka-deployik/internal/db"
 	"github.com/LEFTEQ/lovinka-deployik/internal/domain"
+	projectemail "github.com/LEFTEQ/lovinka-deployik/internal/email"
 	"github.com/LEFTEQ/lovinka-deployik/internal/github"
 	"github.com/LEFTEQ/lovinka-deployik/internal/version"
 	"github.com/LEFTEQ/lovinka-deployik/internal/ws"
@@ -124,6 +125,7 @@ func main() {
 		cfg.AnalyticsUmamiScriptURL,
 		analytics.NewLokiClient(cfg.AnalyticsLokiURL),
 	)
+	emailService := projectemail.NewService(database, encryptor, nil)
 
 	// Pipeline lifecycle: a long-lived context that graceful shutdown can cancel,
 	// plus a WaitGroup that tracks deploy + screenshot goroutines so the drain
@@ -185,6 +187,7 @@ func main() {
 		DomainManager:  domainManager,
 		WSHub:          wsHub,
 		Analytics:      analyticsService,
+		Email:          emailService,
 		WebhookURL:     cfg.WebhookURL,
 		ScreenshotDir:  cfg.ScreenshotDir,
 		DevMode:        os.Getenv("DEV_MODE") == "true",

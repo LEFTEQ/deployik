@@ -32,6 +32,11 @@ const ProjectIntegration = lazy(() =>
     default: m.ProjectIntegration,
   })),
 );
+const ProjectEmail = lazy(() =>
+  import("@/pages/ProjectEmail").then((m) => ({
+    default: m.ProjectEmail,
+  })),
+);
 const ProjectSettings = lazy(() =>
   import("@/pages/ProjectSettings").then((m) => ({
     default: m.ProjectSettings,
@@ -202,6 +207,12 @@ const projectIntegrationRoute = createRoute({
   component: ProjectIntegration,
 });
 
+const projectEmailRoute = createRoute({
+  getParentRoute: () => projectLayoutRoute,
+  path: "/email",
+  component: ProjectEmail,
+});
+
 const projectSettingsRoute = createRoute({
   getParentRoute: () => projectLayoutRoute,
   path: "/settings",
@@ -237,6 +248,7 @@ const routeTree = rootRoute.addChildren([
       projectDeploymentsRoute,
       deploymentDetailRoute,
       projectAnalyticsRoute,
+      projectEmailRoute,
       projectIntegrationRoute,
       projectSettingsRoute,
       projectSettingsDomainsRoute,

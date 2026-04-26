@@ -56,6 +56,9 @@ export const queryKeys = {
   projectAnalyticsIntegration: (projectId: string, timezone?: string) =>
     ["project-analytics-integration", projectId, timezone] as const,
 
+  // Email
+  projectEmail: (projectId: string) => ["project-email", projectId] as const,
+
   // GitHub
   githubRepos: () => ["github-repos"] as const,
   githubBranches: (owner: string, repo: string) =>

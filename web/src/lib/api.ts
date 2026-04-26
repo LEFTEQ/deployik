@@ -15,6 +15,8 @@ import type {
   AnalyticsEnvironmentFilter,
   AnalyticsRangePreset,
   ProjectAnalyticsPayload,
+  ProjectEmailPayload,
+  ProjectEmailSaveRequest,
   AutoBuildConfig,
   DeploymentListFilters,
   DeploymentListResponse,
@@ -385,6 +387,26 @@ class ApiClient {
       timezone: params.timezone,
     });
     return this.request(`/projects/${projectId}/analytics/verify?${search.toString()}`, {
+      method: "POST",
+    });
+  }
+
+  async getProjectEmail(projectId: string): Promise<ProjectEmailPayload> {
+    return this.request(`/projects/${projectId}/email`);
+  }
+
+  async saveProjectEmail(
+    projectId: string,
+    data: ProjectEmailSaveRequest,
+  ): Promise<ProjectEmailPayload> {
+    return this.request(`/projects/${projectId}/email`, {
+      method: "PUT",
+      body: JSON.stringify(data),
+    });
+  }
+
+  async testProjectEmailSmtp(projectId: string): Promise<ProjectEmailPayload> {
+    return this.request(`/projects/${projectId}/email/test-smtp`, {
       method: "POST",
     });
   }

@@ -56,6 +56,7 @@ internal/
       platform.go         GET /api/platform: returns VPS IP for DNS setup guides
       organizations.go    List organizations for current user
       analytics.go        Project analytics: combined Umami audience + Loki runtime data
+      email.go            Project email setup: get/update Webglobe SMTP + reCAPTCHA settings and trigger audited SMTP test sends
       volumes.go          VolumeHandler: list (name + on-disk size + in_use flag), delete, recreate per project-environment; errdefs-classified errors surface 409 on in-use volumes instead of masking as 500
       inspect.go          InspectHandler: GET /api/github/repos/{owner}/{repo}/inspect; uses user's OAuth token to detect monorepo structure via GitHub API
       access.go           loadAuthorizedProject/Deployment helpers (calls authz)
@@ -83,6 +84,9 @@ internal/
     audience.go           Audience aggregation helpers for multi-host/domain rollups
     options.go            Analytics range/environment/timezone normalization
                           Install payloads support a separate tracker script URL so audience tracking can be served from Lovinka CDN while events still post to Umami
+
+  email/
+    service.go            Project email onboarding orchestration: derives Webglobe SMTP defaults from domains, writes shared env/secrets, generates contact-form AI install prompts, and performs SMTP test sends through an injectable Sender
 
   authz/
     access.go             CanAccessProject, LoadProject, LoadDeployment (ownership + admin bypass)
@@ -121,6 +125,8 @@ internal/
       012_proxy_and_volumes.sql  Adds data_volume_enabled and data_mount_path (default `/app/data`) to projects
       013_project_port.sql     Adds port (default 3000) to projects; drives container ExposedPorts + nginx upstream for user-provided Dockerfiles that don't listen on 3000
       014_domain_primary.sql  Adds domains.is_primary with a partial unique index per `(project_id, environment)` and backfills existing rows from the legacy is_auto heuristic
+      015_env_variable_updated_at.sql  Adds env_variables.updated_at for changed-since-deploy signals
+      016_project_email_settings.sql  Adds project_email_settings for Webglobe SMTP/reCAPTCHA onboarding metadata; encrypted credentials remain in env_variables as secrets
     models.go             User, Organization, OrganizationMembership, RefreshSession, AuditLog, Project (with password fields, host_network_access, data_volume_enabled, data_mount_path), Deployment (with trigger/screenshot fields), BuildLog, Domain, ProjectVariable, VariableKind, AutoBuildConfig, WebhookEvent, ProjectWithLatestDeployment, DeploymentWithUser, DeploymentListResponse, DeploymentFilter
     queries_users.go      GetUserByGithubID, GetUserByID, UpsertUser
     queries_organizations.go  Personal workspace bootstrap, memberships, org listing
@@ -132,6 +138,7 @@ internal/
     queries_refresh_tokens.go  Create/GetActive/Rotate/Revoke refresh sessions
     queries_audit_logs.go CreateAuditLog
     queries_project_analytics.go  Get/Upsert/Delete project_analytics rows
+    queries_project_email.go  Get/Upsert/Delete project_email_settings rows
     queries_autobuild.go  GetAutoBuildConfig, UpsertAutoBuildConfig, DeleteAutoBuildConfig, ListActiveAutoBuildConfigsByRepo
     queries_webhook_events.go  CreateWebhookEvent, WebhookEventExists (idempotency)
 
@@ -172,6 +179,7 @@ web/src/
     ProjectOverview.tsx   Dual environment rows (preview + production), domain strips, recent deployments, release panel
     ProjectDeployments.tsx  Deployment history with filters (branch, environment, status, date range), pagination
     ProjectAnalytics.tsx  Thin wrapper around project-analytics component
+    ProjectEmail.tsx      Thin wrapper around project-email component
     ProjectIntegration.tsx  Thin wrapper around project-integration component
     ProjectSettings.tsx   Build settings page (framework, package manager, commands, directories)
     ProjectSettingsDomains.tsx  Domain management: inline add form, environment grouping, primary badge, verify + move/set-primary/delete actions, DNS setup guide, verification with real-time log streaming
@@ -197,6 +205,7 @@ web/src/
     projects/project-analytics.tsx  Analytics tab UI: 4 key stats + 2 collapsible sections (Audience + Runtime)
     projects/project-analytics-meta.ts  AUDIENCE_STATUS_META: badge styles and descriptions for analytics statuses
     projects/project-integration.tsx  Analytics setup stepper: Install -> Verify -> Events
+    projects/project-email.tsx  Email setup page: Webglobe SMTP/reCAPTCHA form, readiness cards, SMTP test action, and AI install prompt for app-owned Next.js contact routes
     projects/pick-app.tsx Monorepo app picker shown as Step 2 in NewProject when inspection detects workspaces; renders detected framework/output/build per app
     BuildLog.tsx          Log viewer with auto-scroll, stderr highlighting
     ui/                   shadcn/ui components (button, card, dialog, input, select, etc.)
@@ -224,7 +233,7 @@ web/src/
 
 ## Database Schema
 
-SQLite with 14 migrations. Tables:
+SQLite with 16 migrations. Tables:
 
 | Table | Key Fields | Notes |
 |---|---|---|
@@ -237,6 +246,7 @@ SQLite with 14 migrations. Tables:
 | `domains` | id (ULID), project_id (FK), domain (unique), environment, is_auto, is_primary (partial unique per project+environment), dns_verified, ssl_status (pending/active/error), ssl_expires_at | Auto-domains cannot be deleted or moved; `is_primary` drives canonical URL selection per environment |
 | `env_variables` | id (ULID), project_id (FK), environment (shared/preview/production), kind (env/secret), key, value (encrypted) | UNIQUE(project_id, environment, key) |
 | `project_analytics` | project_id (PK/FK), audience_enabled, tracking_mode, audience_status, umami_website_id, last_event_at, verified_at | One linked Umami website per project; stores audience analytics health/provisioning state |
+| `project_email_settings` | project_id (PK/FK), provider, smtp_host/port/security/user, from identity, contact recipients, recaptcha site key/mode/threshold, status, last_tested_at/error | Non-secret email onboarding metadata; SMTP password and reCAPTCHA secret live in encrypted `env_variables` secrets |
 | `refresh_tokens` | id (ULID), user_id (FK), token_hash, expires_at, last_used_at, revoked_at | Opaque refresh tokens are hashed at rest and rotated on use |
 | `audit_logs` | id (auto), user_id (nullable FK), action, resource_type, resource_id, project_id, deployment_id, metadata | Records login/refresh/logout and sensitive mutating actions |
 | `auto_build_configs` | id (ULID), project_id (unique FK), enabled, production_branch, preview_branches, webhook_id, webhook_secret (encrypted) | One config per project; webhook_id links to GitHub webhook |
@@ -273,6 +283,9 @@ SQLite with 14 migrations. Tables:
 - `DELETE /api/projects/{id}` -- Soft-delete project (stops containers, removes nginx configs, cleans domains)
 - `GET    /api/projects/{id}/analytics?environment=&range=&timezone=` -- Combined project analytics payload (Umami audience + Loki runtime)
 - `POST   /api/projects/{id}/analytics/verify?environment=&range=&timezone=` -- Force an analytics refresh / verification cycle
+- `GET    /api/projects/{id}/email` -- Email setup payload with Webglobe SMTP defaults, required env/secret status, and AI install prompt
+- `PUT    /api/projects/{id}/email` -- Save Webglobe SMTP + reCAPTCHA settings; writes shared env vars and encrypted secrets
+- `POST   /api/projects/{id}/email/test-smtp` -- Send audited SMTP test email using stored settings/secrets
 
 **Deployments:**
 - `GET  /api/projects/{id}/deployments?branch=&environment=&status=&triggered_by=&from=&to=&limit=&offset=` -- List deployments with filtering and pagination

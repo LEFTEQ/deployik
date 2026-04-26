@@ -14,6 +14,7 @@ import (
 	"github.com/LEFTEQ/lovinka-deployik/internal/crypto"
 	"github.com/LEFTEQ/lovinka-deployik/internal/db"
 	"github.com/LEFTEQ/lovinka-deployik/internal/domain"
+	projectemail "github.com/LEFTEQ/lovinka-deployik/internal/email"
 	"github.com/LEFTEQ/lovinka-deployik/internal/github"
 	"github.com/LEFTEQ/lovinka-deployik/internal/version"
 	"github.com/LEFTEQ/lovinka-deployik/internal/ws"
@@ -34,6 +35,7 @@ type RouterConfig struct {
 	DomainManager  *domain.Manager
 	WSHub          *ws.Hub
 	Analytics      *analytics.Service
+	Email          *projectemail.Service
 	WebhookURL     string
 	ScreenshotDir  string
 	DevMode        bool
@@ -154,6 +156,10 @@ func NewRouter(cfg *RouterConfig) *chi.Mux {
 			projectAnalyticsHandler := &handlers.ProjectAnalyticsHandler{DB: cfg.DB, Analytics: cfg.Analytics}
 			r.Get("/projects/{id}/analytics", projectAnalyticsHandler.Get)
 			r.With(mutationLimiter.Middleware("project_analytics_verify")).Post("/projects/{id}/analytics/verify", projectAnalyticsHandler.Verify)
+			projectEmailHandler := &handlers.ProjectEmailHandler{DB: cfg.DB, Email: cfg.Email, Audit: auditRecorder}
+			r.Get("/projects/{id}/email", projectEmailHandler.Get)
+			r.With(mutationLimiter.Middleware("project_email_update")).Put("/projects/{id}/email", projectEmailHandler.Update)
+			r.With(mutationLimiter.Middleware("project_email_test_smtp")).Post("/projects/{id}/email/test-smtp", projectEmailHandler.TestSMTP)
 
 			// Deployments
 			deployHandler := &handlers.DeploymentHandler{DB: cfg.DB, Encryptor: cfg.Encryptor, Pipeline: cfg.Pipeline, Audit: auditRecorder}

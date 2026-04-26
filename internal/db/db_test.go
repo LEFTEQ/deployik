@@ -24,7 +24,7 @@ func TestMigrations(t *testing.T) {
 	db := newTestDB(t)
 
 	// Verify tables exist
-	tables := []string{"users", "organizations", "organization_memberships", "projects", "project_analytics", "deployments", "build_logs", "domains", "env_variables", "refresh_tokens", "audit_logs", "_migrations"}
+	tables := []string{"users", "organizations", "organization_memberships", "projects", "project_analytics", "project_email_settings", "deployments", "build_logs", "domains", "env_variables", "refresh_tokens", "audit_logs", "_migrations"}
 	for _, table := range tables {
 		var count int
 		err := db.QueryRow("SELECT COUNT(*) FROM " + table).Scan(&count)
@@ -36,6 +36,86 @@ func TestMigrations(t *testing.T) {
 	// Running migrations again should be idempotent
 	if err := db.Migrate(); err != nil {
 		t.Fatalf("second Migrate: %v", err)
+	}
+}
+
+func TestMigration015HandlesExistingEnvVariables(t *testing.T) {
+	database, err := OpenMemory()
+	if err != nil {
+		t.Fatalf("OpenMemory: %v", err)
+	}
+	t.Cleanup(func() { database.Close() })
+
+	if _, err := database.Exec(`
+		CREATE TABLE IF NOT EXISTS _migrations (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			name TEXT UNIQUE NOT NULL,
+			applied_at DATETIME NOT NULL DEFAULT (datetime('now'))
+		)
+	`); err != nil {
+		t.Fatalf("create migrations table: %v", err)
+	}
+
+	entries, err := migrationsFS.ReadDir("migrations")
+	if err != nil {
+		t.Fatalf("ReadDir migrations: %v", err)
+	}
+	sort.Slice(entries, func(i, j int) bool { return entries[i].Name() < entries[j].Name() })
+	for _, entry := range entries {
+		if entry.IsDir() || entry.Name() >= "015_env_variable_updated_at.sql" {
+			continue
+		}
+		content, err := migrationsFS.ReadFile("migrations/" + entry.Name())
+		if err != nil {
+			t.Fatalf("ReadFile(%s): %v", entry.Name(), err)
+		}
+		if _, err := database.Exec(string(content)); err != nil {
+			t.Fatalf("exec migration %s: %v", entry.Name(), err)
+		}
+		if _, err := database.Exec("INSERT INTO _migrations (name) VALUES (?)", entry.Name()); err != nil {
+			t.Fatalf("record migration %s: %v", entry.Name(), err)
+		}
+	}
+
+	user := &User{ID: NewID(), GithubID: 42, Username: "pre-migration", Role: "admin"}
+	if err := database.UpsertUser(user); err != nil {
+		t.Fatalf("UpsertUser: %v", err)
+	}
+	project := &Project{Name: "pre-migration-project", GithubRepo: "repo", GithubOwner: "owner", Branch: "main",
+		UserID: user.ID, Framework: "nextjs", BuildCommand: "build", InstallCommand: "install",
+		NodeVersion: "22", Status: "active"}
+	if err := database.CreateProject(project); err != nil {
+		t.Fatalf("CreateProject: %v", err)
+	}
+	if _, err := database.Exec(
+		`INSERT INTO env_variables (id, project_id, environment, kind, key, value)
+		 VALUES (?, ?, 'preview', 'env', 'LEGACY_KEY', 'legacy-value')`,
+		NewID(), project.ID,
+	); err != nil {
+		t.Fatalf("insert legacy env var: %v", err)
+	}
+
+	if err := database.Migrate(); err != nil {
+		t.Fatalf("Migrate with existing env vars: %v", err)
+	}
+
+	var createdAt, updatedAt time.Time
+	if err := database.QueryRow(
+		`SELECT created_at, updated_at FROM env_variables WHERE project_id = ? AND key = 'LEGACY_KEY'`,
+		project.ID,
+	).Scan(&createdAt, &updatedAt); err != nil {
+		t.Fatalf("select migrated env var: %v", err)
+	}
+	if !updatedAt.Equal(createdAt) {
+		t.Fatalf("updated_at = %v, want created_at %v", updatedAt, createdAt)
+	}
+
+	var applied int
+	if err := database.QueryRow(`SELECT COUNT(*) FROM _migrations WHERE name = ?`, "015_env_variable_updated_at.sql").Scan(&applied); err != nil {
+		t.Fatalf("count migration 015: %v", err)
+	}
+	if applied != 1 {
+		t.Fatalf("migration 015 applied count = %d, want 1", applied)
 	}
 }
 
@@ -1213,7 +1293,7 @@ func TestProjectLatestPerEnvDeployTimestamps(t *testing.T) {
 	}
 
 	base := time.Date(2026, 4, 26, 12, 0, 0, 0, time.UTC)
-	insert("preview", "live", base)                   // first preview live
+	insert("preview", "live", base)                      // first preview live
 	insert("preview", "replaced", base.Add(time.Minute)) // newer but replaced — should be ignored
 	insert("preview", "live", base.Add(2*time.Minute))   // newest live preview
 	insert("preview", "failed", base.Add(3*time.Minute)) // newer but failed — should be ignored

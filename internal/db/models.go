@@ -130,6 +130,56 @@ type ProjectAnalytics struct {
 	UpdatedAt        time.Time               `json:"updated_at"`
 }
 
+type EmailProvider string
+
+const (
+	EmailProviderWebglobe EmailProvider = "webglobe"
+	EmailProviderSMTP     EmailProvider = "smtp"
+)
+
+type EmailSMTPSecurity string
+
+const (
+	EmailSMTPSecurityStartTLS EmailSMTPSecurity = "starttls"
+	EmailSMTPSecurityTLS      EmailSMTPSecurity = "tls"
+	EmailSMTPSecurityNone     EmailSMTPSecurity = "none"
+)
+
+type EmailRecaptchaMode string
+
+const (
+	EmailRecaptchaModeV3 EmailRecaptchaMode = "v3"
+)
+
+type EmailStatus string
+
+const (
+	EmailStatusNotConfigured  EmailStatus = "not_configured"
+	EmailStatusReadyToInstall EmailStatus = "ready_to_install"
+	EmailStatusSMTPTested     EmailStatus = "smtp_tested"
+	EmailStatusError          EmailStatus = "error"
+)
+
+type ProjectEmailSettings struct {
+	ProjectID               string             `json:"project_id"`
+	Provider                EmailProvider      `json:"provider"`
+	SMTPHost                string             `json:"smtp_host"`
+	SMTPPort                int                `json:"smtp_port"`
+	SMTPSecurity            EmailSMTPSecurity  `json:"smtp_security"`
+	SMTPUser                string             `json:"smtp_user"`
+	EmailFrom               string             `json:"email_from"`
+	EmailFromName           string             `json:"email_from_name"`
+	ContactEmailTo          string             `json:"contact_email_to"`
+	RecaptchaSiteKey        string             `json:"recaptcha_site_key"`
+	RecaptchaMode           EmailRecaptchaMode `json:"recaptcha_mode"`
+	RecaptchaScoreThreshold float64            `json:"recaptcha_score_threshold"`
+	Status                  EmailStatus        `json:"status"`
+	LastTestedAt            sql.NullTime       `json:"last_tested_at"`
+	LastTestError           string             `json:"last_test_error"`
+	CreatedAt               time.Time          `json:"created_at"`
+	UpdatedAt               time.Time          `json:"updated_at"`
+}
+
 type Deployment struct {
 	ID                  string       `json:"id"`
 	ProjectID           string       `json:"project_id"`

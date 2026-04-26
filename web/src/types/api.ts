@@ -259,6 +259,64 @@ export interface ProjectAnalyticsPayload {
   runtime: RuntimeAnalyticsPayload;
 }
 
+export type ProjectEmailStatus =
+  | "not_configured"
+  | "ready_to_install"
+  | "smtp_tested"
+  | "error";
+
+export interface ProjectEmailSettings {
+  project_id: string;
+  provider: "webglobe" | "smtp";
+  smtp_host: string;
+  smtp_port: number;
+  smtp_security: "starttls" | "tls" | "none";
+  smtp_user: string;
+  email_from: string;
+  email_from_name: string;
+  contact_email_to: string;
+  recaptcha_site_key: string;
+  recaptcha_mode: "v3";
+  recaptcha_score_threshold: number;
+  status: ProjectEmailStatus;
+  last_tested_at?: string | null;
+  last_test_error?: string;
+}
+
+export interface ProjectEmailRequiredStatus {
+  env_missing: boolean;
+  secrets_missing: boolean;
+  missing_env: string[];
+  missing_secrets: string[];
+}
+
+export interface ProjectEmailPayload {
+  settings: ProjectEmailSettings;
+  status: {
+    configured: boolean;
+    required: ProjectEmailRequiredStatus;
+  };
+  install: {
+    ai_prompt: string;
+    env_keys: string[];
+  };
+}
+
+export interface ProjectEmailSaveRequest {
+  provider: "webglobe" | "smtp";
+  smtp_host: string;
+  smtp_port: number;
+  smtp_security: "starttls" | "tls" | "none";
+  smtp_user: string;
+  smtp_password?: string;
+  email_from: string;
+  email_from_name: string;
+  contact_email_to: string;
+  recaptcha_site_key: string;
+  recaptcha_secret_key?: string;
+  recaptcha_score_threshold: number;
+}
+
 // Auto-build configuration
 export interface AutoBuildConfig {
   enabled: boolean;

@@ -10,6 +10,7 @@ import {
   KeyRound,
   LayoutGrid,
   LogOut,
+  Mail,
   Plus,
   Rocket,
   Settings,
@@ -114,6 +115,13 @@ function getProjectItems(projectId: string): NavItem[] {
       to: "/projects/$id/analytics",
       params: { id: projectId },
       matchPath: (p) => p === `${base}/analytics`,
+    },
+    {
+      label: "Email",
+      icon: Mail,
+      to: "/projects/$id/email",
+      params: { id: projectId },
+      matchPath: (p) => p === `${base}/email`,
     },
     {
       label: "Integration",
