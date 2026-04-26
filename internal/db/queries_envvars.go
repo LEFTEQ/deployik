@@ -7,7 +7,7 @@ import (
 
 func (db *DB) ListProjectVariables(projectID, environment string, kind VariableKind) ([]ProjectVariable, error) {
 	rows, err := db.Query(
-		`SELECT id, project_id, environment, kind, key, value, created_at
+		`SELECT id, project_id, environment, kind, key, value, created_at, updated_at
 		 FROM env_variables WHERE project_id = ? AND environment = ? AND kind = ?
 		 ORDER BY key ASC`, projectID, environment, kind,
 	)
@@ -19,7 +19,7 @@ func (db *DB) ListProjectVariables(projectID, environment string, kind VariableK
 	var vars []ProjectVariable
 	for rows.Next() {
 		var v ProjectVariable
-		if err := rows.Scan(&v.ID, &v.ProjectID, &v.Environment, &v.Kind, &v.Key, &v.Value, &v.CreatedAt); err != nil {
+		if err := rows.Scan(&v.ID, &v.ProjectID, &v.Environment, &v.Kind, &v.Key, &v.Value, &v.CreatedAt, &v.UpdatedAt); err != nil {
 			return nil, fmt.Errorf("scan project variable: %w", err)
 		}
 		vars = append(vars, v)
@@ -114,10 +114,10 @@ func (db *DB) UpsertProjectVariable(v *ProjectVariable) error {
 		v.Kind = VariableKindEnv
 	}
 	_, err := db.Exec(
-		`INSERT INTO env_variables (id, project_id, environment, kind, key, value)
-		 VALUES (?, ?, ?, ?, ?, ?)
+		`INSERT INTO env_variables (id, project_id, environment, kind, key, value, updated_at)
+		 VALUES (?, ?, ?, ?, ?, ?, datetime('now'))
 		 ON CONFLICT(project_id, environment, key) DO UPDATE SET
-		   value = excluded.value, id = excluded.id, kind = excluded.kind`,
+		   value = excluded.value, id = excluded.id, kind = excluded.kind, updated_at = datetime('now')`,
 		v.ID, v.ProjectID, v.Environment, v.Kind, v.Key, v.Value,
 	)
 	if err != nil {
@@ -151,8 +151,8 @@ func (db *DB) BulkSetProjectVariables(projectID, environment string, kind Variab
 	for _, v := range vars {
 		id := NewID()
 		if _, err := tx.Exec(
-			`INSERT INTO env_variables (id, project_id, environment, kind, key, value)
-			 VALUES (?, ?, ?, ?, ?, ?)`,
+			`INSERT INTO env_variables (id, project_id, environment, kind, key, value, updated_at)
+			 VALUES (?, ?, ?, ?, ?, ?, datetime('now'))`,
 			id, projectID, environment, kind, v.Key, v.Value,
 		); err != nil {
 			tx.Rollback()

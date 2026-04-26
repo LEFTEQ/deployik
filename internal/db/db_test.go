@@ -1112,3 +1112,164 @@ func TestProjectNewFields(t *testing.T) {
 		t.Errorf("list: expected data_mount_path=/app/data, got %s", projects[0].DataMountPath)
 	}
 }
+
+func TestEnvVarUpdatedAtRefresh(t *testing.T) {
+	db := newTestDB(t)
+
+	user := &User{ID: NewID(), GithubID: 1, Username: "u", Role: "admin"}
+	db.UpsertUser(user)
+
+	project := &Project{Name: "ts-project", GithubRepo: "r", GithubOwner: "o", Branch: "main",
+		UserID: user.ID, Framework: "nextjs", PackageManager: "auto", BuildCommand: "b", InstallCommand: "i",
+		NodeVersion: "22", Status: "active"}
+	if err := db.CreateProject(project); err != nil {
+		t.Fatalf("CreateProject: %v", err)
+	}
+
+	v := &EnvVariable{ProjectID: project.ID, Environment: "preview", Key: "API_KEY", Value: "v1"}
+	if err := db.UpsertEnvVar(v); err != nil {
+		t.Fatalf("UpsertEnvVar(create): %v", err)
+	}
+	first, _ := db.ListEnvVars(project.ID, "preview")
+	if len(first) != 1 {
+		t.Fatalf("got %d vars, want 1", len(first))
+	}
+	if first[0].UpdatedAt.IsZero() {
+		t.Fatal("updated_at should be set after upsert")
+	}
+	originalUpdatedAt := first[0].UpdatedAt
+
+	// SQLite datetime('now') resolves to second precision; sleep past one second
+	// so a second upsert produces a strictly greater timestamp.
+	time.Sleep(1100 * time.Millisecond)
+
+	v2 := &EnvVariable{ProjectID: project.ID, Environment: "preview", Key: "API_KEY", Value: "v2"}
+	if err := db.UpsertEnvVar(v2); err != nil {
+		t.Fatalf("UpsertEnvVar(update): %v", err)
+	}
+	second, _ := db.ListEnvVars(project.ID, "preview")
+	if len(second) != 1 {
+		t.Fatalf("got %d vars after second upsert, want 1", len(second))
+	}
+	if !second[0].UpdatedAt.After(originalUpdatedAt) {
+		t.Fatalf("updated_at did not advance: was %v, now %v", originalUpdatedAt, second[0].UpdatedAt)
+	}
+	if second[0].Value != "v2" {
+		t.Fatalf("value = %q, want v2", second[0].Value)
+	}
+
+	// Bulk set should also stamp updated_at on inserted rows.
+	bulkBefore := time.Now().Add(-time.Second)
+	if err := db.BulkSetEnvVars(project.ID, "production", []EnvVariable{
+		{Key: "BULK_KEY", Value: "bulk-val"},
+	}); err != nil {
+		t.Fatalf("BulkSetEnvVars: %v", err)
+	}
+	bulk, _ := db.ListEnvVars(project.ID, "production")
+	if len(bulk) != 1 {
+		t.Fatalf("bulk: got %d vars, want 1", len(bulk))
+	}
+	if !bulk[0].UpdatedAt.After(bulkBefore) {
+		t.Fatalf("bulk updated_at = %v, want > %v", bulk[0].UpdatedAt, bulkBefore)
+	}
+}
+
+func TestProjectLatestPerEnvDeployTimestamps(t *testing.T) {
+	db := newTestDB(t)
+
+	user := &User{ID: NewID(), GithubID: 1, Username: "u", Role: "admin"}
+	db.UpsertUser(user)
+
+	project := &Project{Name: "deploy-ts-project", GithubRepo: "r", GithubOwner: "o", Branch: "main",
+		UserID: user.ID, Framework: "nextjs", PackageManager: "auto", BuildCommand: "b", InstallCommand: "i",
+		NodeVersion: "22", Status: "active"}
+	if err := db.CreateProject(project); err != nil {
+		t.Fatalf("CreateProject: %v", err)
+	}
+
+	// No deployments yet → both timestamps nil.
+	got, err := db.GetProject(project.ID)
+	if err != nil {
+		t.Fatalf("GetProject(empty): %v", err)
+	}
+	if got.LatestPreviewDeployAt != nil || got.LatestProductionDeployAt != nil {
+		t.Fatalf("expected nil per-env timestamps with no deploys, got preview=%v prod=%v",
+			got.LatestPreviewDeployAt, got.LatestProductionDeployAt)
+	}
+
+	// Insert deployments with controlled created_at and statuses.
+	// We pass created_at as a SQLite-format string ("YYYY-MM-DD HH:MM:SS")
+	// instead of a time.Time so the stored TEXT matches production rows
+	// (which are always written via datetime('now')).
+	insert := func(env, status string, createdAt time.Time) {
+		t.Helper()
+		if _, err := db.Exec(
+			`INSERT INTO deployments (id, project_id, environment, status, branch, triggered_by, created_at)
+			 VALUES (?, ?, ?, ?, 'main', ?, ?)`,
+			NewID(), project.ID, env, status, user.ID, createdAt.UTC().Format("2006-01-02 15:04:05"),
+		); err != nil {
+			t.Fatalf("insert deployment env=%s status=%s: %v", env, status, err)
+		}
+	}
+
+	base := time.Date(2026, 4, 26, 12, 0, 0, 0, time.UTC)
+	insert("preview", "live", base)                   // first preview live
+	insert("preview", "replaced", base.Add(time.Minute)) // newer but replaced — should be ignored
+	insert("preview", "live", base.Add(2*time.Minute))   // newest live preview
+	insert("preview", "failed", base.Add(3*time.Minute)) // newer but failed — should be ignored
+
+	insert("production", "failed", base.Add(time.Minute)) // failed only → no live timestamp
+	// Intentionally no live production deploys yet.
+
+	got, err = db.GetProject(project.ID)
+	if err != nil {
+		t.Fatalf("GetProject(after deploys): %v", err)
+	}
+	if got.LatestPreviewDeployAt == nil {
+		t.Fatal("expected latest preview deploy timestamp, got nil")
+	}
+	expectedPreview := base.Add(2 * time.Minute)
+	if !got.LatestPreviewDeployAt.Equal(expectedPreview) {
+		t.Fatalf("latest preview deploy = %v, want %v", *got.LatestPreviewDeployAt, expectedPreview)
+	}
+	if got.LatestProductionDeployAt != nil {
+		t.Fatalf("expected nil production timestamp (no live deploys), got %v", *got.LatestProductionDeployAt)
+	}
+
+	// Add a live production deploy → both timestamps populated.
+	prodLive := base.Add(5 * time.Minute)
+	insert("production", "live", prodLive)
+
+	got, err = db.GetProject(project.ID)
+	if err != nil {
+		t.Fatalf("GetProject(after prod live): %v", err)
+	}
+	if got.LatestProductionDeployAt == nil || !got.LatestProductionDeployAt.Equal(prodLive) {
+		t.Fatalf("latest production deploy = %v, want %v", got.LatestProductionDeployAt, prodLive)
+	}
+
+	// Same data must surface through ListProjectsWithLatestDeployment.
+	listed, err := db.ListProjectsWithLatestDeployment(user.ID, "")
+	if err != nil {
+		t.Fatalf("ListProjectsWithLatestDeployment: %v", err)
+	}
+	if len(listed) == 0 {
+		t.Fatal("expected at least one project")
+	}
+	var pw *ProjectWithLatestDeployment
+	for i := range listed {
+		if listed[i].ID == project.ID {
+			pw = &listed[i]
+			break
+		}
+	}
+	if pw == nil {
+		t.Fatal("project missing from list")
+	}
+	if pw.LatestPreviewDeployAt == nil || !pw.LatestPreviewDeployAt.Equal(expectedPreview) {
+		t.Fatalf("list latest preview = %v, want %v", pw.LatestPreviewDeployAt, expectedPreview)
+	}
+	if pw.LatestProductionDeployAt == nil || !pw.LatestProductionDeployAt.Equal(prodLive) {
+		t.Fatalf("list latest production = %v, want %v", pw.LatestProductionDeployAt, prodLive)
+	}
+}

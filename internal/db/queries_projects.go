@@ -4,7 +4,33 @@ import (
 	"database/sql"
 	"fmt"
 	"strings"
+	"time"
 )
+
+// parseSQLiteDateTime parses a datetime string returned by a SQLite scalar
+// aggregate (e.g. MAX(created_at)). The modernc.org/sqlite driver hands these
+// back as strings even when the source column would be auto-converted as a
+// direct reference. Production rows are always written via datetime('now')
+// which stores "YYYY-MM-DD HH:MM:SS"; the Go-default format is included as a
+// fallback for any rows inserted by passing a time.Time directly through
+// database/sql. Returns nil when val is invalid (caller has already guarded
+// sql.NullString.Valid).
+func parseSQLiteDateTime(val string) *time.Time {
+	formats := []string{
+		"2006-01-02 15:04:05",
+		"2006-01-02 15:04:05.999999999",
+		time.RFC3339Nano,
+		time.RFC3339,
+		"2006-01-02 15:04:05 -0700 MST",        // time.Time.String() default
+		"2006-01-02 15:04:05.999999999 -0700 MST",
+	}
+	for _, layout := range formats {
+		if t, err := time.Parse(layout, val); err == nil {
+			return &t
+		}
+	}
+	return nil
+}
 
 func (db *DB) ListProjects(userID, organizationID string) ([]Project, error) {
 	baseQuery := `
@@ -58,6 +84,7 @@ func (db *DB) ListProjects(userID, organizationID string) ([]Project, error) {
 
 func (db *DB) GetProject(id string) (*Project, error) {
 	p := &Project{}
+	var previewDeploy, productionDeploy sql.NullString
 	err := db.QueryRow(
 		`SELECT p.id, p.name, p.github_repo, p.github_owner, p.branch, p.user_id,
 		        COALESCE(p.organization_id, ''), COALESCE(o.name, ''), p.framework, p.package_manager,
@@ -65,7 +92,11 @@ func (db *DB) GetProject(id string) (*Project, error) {
 		        COALESCE(p.preview_password, ''), COALESCE(p.production_password, ''),
 		        p.created_at, p.updated_at,
 		        p.host_network_access, p.data_volume_enabled, COALESCE(p.data_mount_path, '/app/data'),
-		        p.port
+		        p.port,
+		        (SELECT MAX(created_at) FROM deployments
+		         WHERE project_id = p.id AND environment = 'preview' AND status = 'live'),
+		        (SELECT MAX(created_at) FROM deployments
+		         WHERE project_id = p.id AND environment = 'production' AND status = 'live')
 		 FROM projects p
 		 LEFT JOIN organizations o ON o.id = p.organization_id
 		 WHERE p.id = ?`, id,
@@ -74,18 +105,26 @@ func (db *DB) GetProject(id string) (*Project, error) {
 		&p.Status, &p.PreviewPassword, &p.ProductionPassword,
 		&p.CreatedAt, &p.UpdatedAt,
 		&p.HostNetworkAccess, &p.DataVolumeEnabled, &p.DataMountPath,
-		&p.Port)
+		&p.Port,
+		&previewDeploy, &productionDeploy)
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}
 	if err != nil {
 		return nil, fmt.Errorf("get project: %w", err)
 	}
+	if previewDeploy.Valid {
+		p.LatestPreviewDeployAt = parseSQLiteDateTime(previewDeploy.String)
+	}
+	if productionDeploy.Valid {
+		p.LatestProductionDeployAt = parseSQLiteDateTime(productionDeploy.String)
+	}
 	return p, nil
 }
 
 func (db *DB) GetProjectForUser(id, userID string) (*Project, error) {
 	p := &Project{}
+	var previewDeploy, productionDeploy sql.NullString
 	err := db.QueryRow(
 		`SELECT p.id, p.name, p.github_repo, p.github_owner, p.branch, p.user_id,
 		        COALESCE(p.organization_id, ''), COALESCE(o.name, ''), p.framework, p.package_manager,
@@ -93,7 +132,11 @@ func (db *DB) GetProjectForUser(id, userID string) (*Project, error) {
 		        COALESCE(p.preview_password, ''), COALESCE(p.production_password, ''),
 		        p.created_at, p.updated_at,
 		        p.host_network_access, p.data_volume_enabled, COALESCE(p.data_mount_path, '/app/data'),
-		        p.port
+		        p.port,
+		        (SELECT MAX(created_at) FROM deployments
+		         WHERE project_id = p.id AND environment = 'preview' AND status = 'live'),
+		        (SELECT MAX(created_at) FROM deployments
+		         WHERE project_id = p.id AND environment = 'production' AND status = 'live')
 		 FROM projects p
 		 LEFT JOIN organizations o ON o.id = p.organization_id
 		 WHERE p.id = ?
@@ -110,12 +153,19 @@ func (db *DB) GetProjectForUser(id, userID string) (*Project, error) {
 		&p.Status, &p.PreviewPassword, &p.ProductionPassword,
 		&p.CreatedAt, &p.UpdatedAt,
 		&p.HostNetworkAccess, &p.DataVolumeEnabled, &p.DataMountPath,
-		&p.Port)
+		&p.Port,
+		&previewDeploy, &productionDeploy)
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}
 	if err != nil {
 		return nil, fmt.Errorf("get project for user: %w", err)
+	}
+	if previewDeploy.Valid {
+		p.LatestPreviewDeployAt = parseSQLiteDateTime(previewDeploy.String)
+	}
+	if productionDeploy.Valid {
+		p.LatestProductionDeployAt = parseSQLiteDateTime(productionDeploy.String)
 	}
 	return p, nil
 }
@@ -199,6 +249,10 @@ func (db *DB) ListProjectsWithLatestDeployment(userID, orgID string) ([]ProjectW
 		       p.created_at, p.updated_at,
 		       p.host_network_access, p.data_volume_enabled, COALESCE(p.data_mount_path, '/app/data'),
 		       p.port,
+		       (SELECT MAX(created_at) FROM deployments
+		        WHERE project_id = p.id AND environment = 'preview' AND status = 'live'),
+		       (SELECT MAX(created_at) FROM deployments
+		        WHERE project_id = p.id AND environment = 'production' AND status = 'live'),
 		       ld.id, ld.status, ld.branch, ld.commit_sha, ld.commit_message, ld.created_at
 		FROM projects p
 		LEFT JOIN organizations o ON o.id = p.organization_id
@@ -240,6 +294,7 @@ func (db *DB) ListProjectsWithLatestDeployment(userID, orgID string) ([]ProjectW
 		p := &pw.Project
 		var ldID, ldStatus, ldBranch, ldCommitSHA, ldCommitMsg sql.NullString
 		var ldCreatedAt sql.NullTime
+		var previewDeploy, productionDeploy sql.NullString
 		if err := rows.Scan(
 			&p.ID, &p.Name, &p.GithubRepo, &p.GithubOwner, &p.Branch,
 			&p.UserID, &p.OrganizationID, &p.OrganizationName, &p.Framework, &p.PackageManager,
@@ -248,9 +303,16 @@ func (db *DB) ListProjectsWithLatestDeployment(userID, orgID string) ([]ProjectW
 			&p.CreatedAt, &p.UpdatedAt,
 			&p.HostNetworkAccess, &p.DataVolumeEnabled, &p.DataMountPath,
 			&p.Port,
+			&previewDeploy, &productionDeploy,
 			&ldID, &ldStatus, &ldBranch, &ldCommitSHA, &ldCommitMsg, &ldCreatedAt,
 		); err != nil {
 			return nil, fmt.Errorf("scan project with latest deployment: %w", err)
+		}
+		if previewDeploy.Valid {
+			p.LatestPreviewDeployAt = parseSQLiteDateTime(previewDeploy.String)
+		}
+		if productionDeploy.Valid {
+			p.LatestProductionDeployAt = parseSQLiteDateTime(productionDeploy.String)
 		}
 		if ldID.Valid {
 			pw.LatestDeploymentID = &ldID.String

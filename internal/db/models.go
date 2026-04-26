@@ -89,6 +89,11 @@ type Project struct {
 	ProductionPassword string    `json:"-"` // encrypted, never expose in JSON
 	CreatedAt          time.Time `json:"created_at"`
 	UpdatedAt          time.Time `json:"updated_at"`
+	// Per-environment timestamps of the most recent deployment that reached
+	// status='live'. Nil when the environment has never had a live deploy.
+	// Drives the "variables changed since last deploy" UI signal.
+	LatestPreviewDeployAt    *time.Time `json:"latest_preview_deploy_at,omitempty"`
+	LatestProductionDeployAt *time.Time `json:"latest_production_deploy_at,omitempty"`
 }
 
 type AnalyticsTrackingMode string
@@ -192,6 +197,7 @@ type ProjectVariable struct {
 	Key         string       `json:"key"`
 	Value       string       `json:"value"` // encrypted at rest, masked in API responses
 	CreatedAt   time.Time    `json:"created_at"`
+	UpdatedAt   time.Time    `json:"updated_at"`
 }
 
 type EnvVariable = ProjectVariable
