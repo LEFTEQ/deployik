@@ -1,6 +1,7 @@
 package db
 
 import (
+	"database/sql"
 	"sort"
 	"strings"
 	"testing"
@@ -1351,5 +1352,106 @@ func TestProjectLatestPerEnvDeployTimestamps(t *testing.T) {
 	}
 	if pw.LatestProductionDeployAt == nil || !pw.LatestProductionDeployAt.Equal(prodLive) {
 		t.Fatalf("list latest production = %v, want %v", pw.LatestProductionDeployAt, prodLive)
+	}
+}
+
+func TestAPITokenCRUD(t *testing.T) {
+	database := newTestDB(t)
+
+	user := &User{ID: NewID(), GithubID: 100, Username: "tokenowner", Role: "user"}
+	if err := database.UpsertUser(user); err != nil {
+		t.Fatalf("upsert user: %v", err)
+	}
+
+	// Create.
+	token := &APIToken{
+		UserID:    user.ID,
+		Name:      "skill-action-mode",
+		TokenHash: "hash-abc",
+	}
+	if err := database.CreateAPIToken(token); err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	if token.ID == "" {
+		t.Fatalf("CreateAPIToken did not assign an ID")
+	}
+
+	// GetByHash returns the token.
+	got, err := database.GetAPITokenByHash("hash-abc")
+	if err != nil {
+		t.Fatalf("get: %v", err)
+	}
+	if got == nil || got.ID != token.ID {
+		t.Fatalf("get returned %v, want token %s", got, token.ID)
+	}
+
+	// ListForUser returns it.
+	list, err := database.ListAPITokensForUser(user.ID)
+	if err != nil {
+		t.Fatalf("list: %v", err)
+	}
+	if len(list) != 1 || list[0].ID != token.ID {
+		t.Fatalf("list = %v, want 1 entry with id %s", list, token.ID)
+	}
+
+	// TouchLastUsed sets last_used_at.
+	if err := database.TouchAPITokenLastUsed(token.ID); err != nil {
+		t.Fatalf("touch: %v", err)
+	}
+	got, err = database.GetAPITokenByHash("hash-abc")
+	if err != nil {
+		t.Fatalf("get after touch: %v", err)
+	}
+	if !got.LastUsedAt.Valid {
+		t.Fatalf("last_used_at not set after touch")
+	}
+
+	// Revoke makes it invisible to GetByHash.
+	if err := database.RevokeAPIToken(token.ID, user.ID); err != nil {
+		t.Fatalf("revoke: %v", err)
+	}
+	got, err = database.GetAPITokenByHash("hash-abc")
+	if err != nil {
+		t.Fatalf("get after revoke: %v", err)
+	}
+	if got != nil {
+		t.Fatalf("get returned token after revoke")
+	}
+
+	// But ListForUser still includes it (so the UI can show it as revoked).
+	list, _ = database.ListAPITokensForUser(user.ID)
+	if len(list) != 1 {
+		t.Fatalf("list after revoke = %d, want 1 (still visible)", len(list))
+	}
+	if !list[0].RevokedAt.Valid {
+		t.Fatalf("revoked_at not set on listed entry")
+	}
+
+	// Revoking someone else's token must error.
+	other := &User{ID: NewID(), GithubID: 101, Username: "stranger", Role: "user"}
+	if err := database.UpsertUser(other); err != nil {
+		t.Fatalf("upsert other: %v", err)
+	}
+	otherToken := &APIToken{UserID: other.ID, Name: "x", TokenHash: "hash-other"}
+	if err := database.CreateAPIToken(otherToken); err != nil {
+		t.Fatalf("create other token: %v", err)
+	}
+	if err := database.RevokeAPIToken(otherToken.ID, user.ID); err == nil {
+		t.Fatalf("expected error when revoking another user's token")
+	}
+
+	// Expired tokens disappear from GetByHash even before revoke.
+	expired := &APIToken{
+		UserID:    user.ID,
+		Name:      "expired",
+		TokenHash: "hash-expired",
+		ExpiresAt: sql.NullTime{Time: time.Now().Add(-1 * time.Hour), Valid: true},
+	}
+	if err := database.CreateAPIToken(expired); err != nil {
+		t.Fatalf("create expired: %v", err)
+	}
+	got, _ = database.GetAPITokenByHash("hash-expired")
+	if got != nil {
+		t.Fatalf("get returned expired token")
 	}
 }
