@@ -293,7 +293,7 @@ func (db *DB) ListProjectsWithLatestDeployment(userID, orgID string) ([]ProjectW
 		var pw ProjectWithLatestDeployment
 		p := &pw.Project
 		var ldID, ldStatus, ldBranch, ldCommitSHA, ldCommitMsg sql.NullString
-		var ldCreatedAt sql.NullTime
+		var ldCreatedAt NullableTime
 		var previewDeploy, productionDeploy sql.NullString
 		if err := rows.Scan(
 			&p.ID, &p.Name, &p.GithubRepo, &p.GithubOwner, &p.Branch,

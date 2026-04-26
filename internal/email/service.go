@@ -3,7 +3,6 @@ package email
 import (
 	"context"
 	"crypto/tls"
-	"database/sql"
 	"fmt"
 	"io"
 	"net"
@@ -650,8 +649,8 @@ func firstNonEmpty(values ...string) string {
 	return ""
 }
 
-func nullTimeNow() sql.NullTime {
-	return sql.NullTime{Time: time.Now().UTC(), Valid: true}
+func nullTimeNow() db.NullableTime {
+	return db.NullableTimeNow()
 }
 
 type SMTPSender struct{}

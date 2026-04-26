@@ -2,7 +2,6 @@ package analytics
 
 import (
 	"context"
-	"database/sql"
 	"fmt"
 	"net/url"
 	"regexp"
@@ -314,7 +313,7 @@ func (s *Service) populateAudience(ctx context.Context, project *db.Project, gro
 
 	if daterange, err := s.Umami.GetDateRange(ctx, record.UmamiWebsiteID); err == nil && daterange != nil {
 		if parsed, parseErr := time.Parse(time.RFC3339, daterange.EndDate); parseErr == nil {
-			record.LastEventAt = sql.NullTime{Time: parsed.UTC(), Valid: true}
+			record.LastEventAt = db.NewNullableTime(parsed)
 			payload.LastEventAt = &record.LastEventAt.Time
 		}
 	}
@@ -369,7 +368,7 @@ func (s *Service) populateAudience(ctx context.Context, project *db.Project, gro
 	case payload.Summary.Pageviews > 0 || payload.Summary.Visitors > 0 || payload.Summary.Visits > 0:
 		record.AudienceStatus = db.AnalyticsAudienceStatusReceivingData
 		if !record.VerifiedAt.Valid {
-			record.VerifiedAt = sql.NullTime{Time: time.Now().UTC(), Valid: true}
+			record.VerifiedAt = db.NullableTimeNow()
 		}
 	case record.LastEventAt.Valid && time.Since(record.LastEventAt.Time) > opts.Range.ComparisonThreshold():
 		record.AudienceStatus = db.AnalyticsAudienceStatusStale

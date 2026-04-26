@@ -2,7 +2,6 @@ package db
 
 import (
 	"crypto/rand"
-	"database/sql"
 	"time"
 
 	"github.com/oklog/ulid/v2"
@@ -47,8 +46,8 @@ type RefreshSession struct {
 	UserID     string       `json:"user_id"`
 	TokenHash  string       `json:"-"`
 	ExpiresAt  time.Time    `json:"expires_at"`
-	LastUsedAt sql.NullTime `json:"last_used_at"`
-	RevokedAt  sql.NullTime `json:"revoked_at"`
+	LastUsedAt NullableTime `json:"last_used_at"`
+	RevokedAt  NullableTime `json:"revoked_at"`
 	CreatedAt  time.Time    `json:"created_at"`
 }
 
@@ -69,9 +68,9 @@ type APIToken struct {
 	UserID     string       `json:"user_id"`
 	Name       string       `json:"name"`
 	TokenHash  string       `json:"-"`
-	LastUsedAt sql.NullTime `json:"last_used_at"`
-	ExpiresAt  sql.NullTime `json:"expires_at"`
-	RevokedAt  sql.NullTime `json:"revoked_at"`
+	LastUsedAt NullableTime `json:"last_used_at"`
+	ExpiresAt  NullableTime `json:"expires_at"`
+	RevokedAt  NullableTime `json:"revoked_at"`
 	CreatedAt  time.Time    `json:"created_at"`
 }
 
@@ -134,8 +133,8 @@ type ProjectAnalytics struct {
 	AudienceStatus   AnalyticsAudienceStatus `json:"audience_status"`
 	UmamiWebsiteID   string                  `json:"umami_website_id"`
 	UmamiWebsiteName string                  `json:"umami_website_name"`
-	LastEventAt      sql.NullTime            `json:"last_event_at"`
-	VerifiedAt       sql.NullTime            `json:"verified_at"`
+	LastEventAt      NullableTime            `json:"last_event_at"`
+	VerifiedAt       NullableTime            `json:"verified_at"`
 	LastError        string                  `json:"last_error"`
 	CreatedAt        time.Time               `json:"created_at"`
 	UpdatedAt        time.Time               `json:"updated_at"`
@@ -185,7 +184,7 @@ type ProjectEmailSettings struct {
 	RecaptchaMode           EmailRecaptchaMode `json:"recaptcha_mode"`
 	RecaptchaScoreThreshold float64            `json:"recaptcha_score_threshold"`
 	Status                  EmailStatus        `json:"status"`
-	LastTestedAt            sql.NullTime       `json:"last_tested_at"`
+	LastTestedAt            NullableTime       `json:"last_tested_at"`
 	LastTestError           string             `json:"last_test_error"`
 	CreatedAt               time.Time          `json:"created_at"`
 	UpdatedAt               time.Time          `json:"updated_at"`
@@ -209,7 +208,7 @@ type Deployment struct {
 	ScreenshotPath      string       `json:"screenshot_path,omitempty"`
 	ErrorMessage        string       `json:"error_message,omitempty"`
 	CreatedAt           time.Time    `json:"created_at"`
-	FinishedAt          sql.NullTime `json:"finished_at"`
+	FinishedAt          NullableTime `json:"finished_at"`
 }
 
 type BuildLog struct {
@@ -230,7 +229,7 @@ type Domain struct {
 	IsPrimary    bool         `json:"is_primary"`
 	DNSVerified  bool         `json:"dns_verified"`
 	SSLStatus    string       `json:"ssl_status"`
-	SSLExpiresAt sql.NullTime `json:"ssl_expires_at,omitempty"`
+	SSLExpiresAt NullableTime `json:"ssl_expires_at,omitempty"`
 	CreatedAt    time.Time    `json:"created_at"`
 }
 

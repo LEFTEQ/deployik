@@ -81,7 +81,7 @@ func (db *DB) UpdateDomainDNS(id string, verified bool) error {
 	return nil
 }
 
-func (db *DB) UpdateDomainSSL(id, status string, expiresAt sql.NullTime) error {
+func (db *DB) UpdateDomainSSL(id, status string, expiresAt NullableTime) error {
 	_, err := db.Exec(`UPDATE domains SET ssl_status = ?, ssl_expires_at = ? WHERE id = ?`, status, expiresAt, id)
 	if err != nil {
 		return fmt.Errorf("update domain ssl: %w", err)
