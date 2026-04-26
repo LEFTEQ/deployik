@@ -110,7 +110,7 @@ func NewRouter(cfg *RouterConfig) *chi.Mux {
 
 		// Protected routes
 		r.Group(func(r chi.Router) {
-			r.Use(middleware.Authenticate(cfg.JWTSecret))
+			r.Use(middleware.Authenticate(cfg.JWTSecret, cfg.DB))
 			r.Get("/auth/me", authHandler.GetMe)
 
 			// GitHub
