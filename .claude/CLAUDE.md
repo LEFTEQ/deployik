@@ -7,7 +7,7 @@ Self-hosted Vercel alternative for the Lovinka VPS. Deploys Next.js and static w
 - **Backend:** Go 1.25 (chi router, Docker SDK, SQLite via modernc.org/sqlite -- pure Go, no CGO)
 - **Frontend:** React 19 + Vite 7 + TanStack Router/Query + Zustand + shadcn/ui (new-york style, zinc dark theme) + Tailwind CSS 4
 - **Database:** SQLite (embedded, WAL mode, ULID primary keys)
-- **Auth:** GitHub OAuth (scope: `repo,read:user,admin:repo_hook`) -> JWT (HS256, 1h access / 7d refresh tokens)
+- **Auth:** GitHub OAuth (scope: `repo,read:user,admin:repo_hook`) -> JWT (HS256, 1h access / 7d refresh tokens). Personal Access Tokens (`dpk_<...>`) accepted via `Authorization: Bearer` for non-browser clients.
 - **Encryption:** AES-256-GCM (SHA-256 key derivation) for env vars, secrets, and GitHub tokens at rest
 - **Deployment:** Single Go binary embeds React SPA via `//go:embed`; Docker multi-stage build; CI/CD via GitHub Actions to GHCR + VPS
 
@@ -127,6 +127,7 @@ internal/
       014_domain_primary.sql  Adds domains.is_primary with a partial unique index per `(project_id, environment)` and backfills existing rows from the legacy is_auto heuristic
       015_env_variable_updated_at.sql  Adds env_variables.updated_at for changed-since-deploy signals
       016_project_email_settings.sql  Adds project_email_settings for Webglobe SMTP/reCAPTCHA onboarding metadata; encrypted credentials remain in env_variables as secrets
+      017_api_tokens.sql        Adds api_tokens for Personal Access Tokens (Bearer auth alongside JWT)
     models.go             User, Organization, OrganizationMembership, RefreshSession, AuditLog, Project (with password fields, host_network_access, data_volume_enabled, data_mount_path), Deployment (with trigger/screenshot fields), BuildLog, Domain, ProjectVariable, VariableKind, AutoBuildConfig, WebhookEvent, ProjectWithLatestDeployment, DeploymentWithUser, DeploymentListResponse, DeploymentFilter
     queries_users.go      GetUserByGithubID, GetUserByID, UpsertUser
     queries_organizations.go  Personal workspace bootstrap, memberships, org listing
@@ -233,7 +234,7 @@ web/src/
 
 ## Database Schema
 
-SQLite with 16 migrations. Tables:
+SQLite with 17 migrations. Tables:
 
 | Table | Key Fields | Notes |
 |---|---|---|
@@ -249,6 +250,7 @@ SQLite with 16 migrations. Tables:
 | `project_email_settings` | project_id (PK/FK), provider, smtp_host/port/security/user, from identity, contact recipients, recaptcha site key/mode/threshold, status, last_tested_at/error | Non-secret email onboarding metadata; SMTP password and reCAPTCHA secret live in encrypted `env_variables` secrets |
 | `refresh_tokens` | id (ULID), user_id (FK), token_hash, expires_at, last_used_at, revoked_at | Opaque refresh tokens are hashed at rest and rotated on use |
 | `audit_logs` | id (auto), user_id (nullable FK), action, resource_type, resource_id, project_id, deployment_id, metadata | Records login/refresh/logout and sensitive mutating actions |
+| `api_tokens` | id (ULID), user_id (FK), name, token_hash, last_used_at, expires_at, revoked_at | SHA-256 hashed at rest; raw token shown once at creation; routed by `dpk_` prefix in middleware |
 | `auto_build_configs` | id (ULID), project_id (unique FK), enabled, production_branch, preview_branches, webhook_id, webhook_secret (encrypted) | One config per project; webhook_id links to GitHub webhook |
 | `webhook_events` | id (auto), project_id (FK), github_delivery_id (unique), event_type, branch, commit_sha, commit_message, pusher, deployment_id (nullable FK), status (received/processed/ignored/failed), error_message | Idempotency via unique github_delivery_id |
 
@@ -315,6 +317,11 @@ SQLite with 16 migrations. Tables:
 - `PATCH  /api/projects/{id}/domains/{did}` -- Update domain `{environment?, is_primary?}`; move re-provisions the proxy target and rejects `is_auto=1` rows
 - `DELETE /api/projects/{id}/domains/{did}` -- Delete domain (not auto-domains)
 - `POST   /api/projects/{id}/domains/{did}/verify` -- Verify DNS + provision SSL (async, streams logs via WebSocket)
+
+**Personal Access Tokens (PATs):**
+- `GET    /api/me/tokens` -- List the caller's tokens (raw values never returned)
+- `POST   /api/me/tokens` -- Create a token `{name}`; returns `{id, name, token}` once
+- `DELETE /api/me/tokens/{id}` -- Revoke a token (soft delete; 404 for foreign tokens)
 
 **Environment Variables:**
 - `GET    /api/projects/{id}/env?environment=` -- List env vars (values masked)
