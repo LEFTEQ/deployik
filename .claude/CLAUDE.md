@@ -230,6 +230,13 @@ web/src/
     organization.ts       Persisted selected workspace/org id
   types/
     api.ts                TypeScript interfaces matching Go models (includes AutoBuildConfig, ProtectionStatus, DeploymentListFilters, DeploymentListResponse, DomainLogEvent, VerifyDomainResponse)
+
+.claude/skills/
+  deployik-howto/         User-facing dashboard help skill (project-scoped)
+    SKILL.md              Router: triggers, when-to-use, tone, guide vs action mode, safety rules
+    click-paths.md        7 v1 recipes — goal-indexed (route + sidebar + click steps + "stuck?" footer)
+    api-actions.md        Endpoint catalog with safety tiers (read silent, mutate confirm, destructive typed-confirm)
+    helpers/deployik      Bash wrapper for Bearer-auth API calls; reads ~/.config/deployik/config
 ```
 
 ## Database Schema
@@ -575,3 +582,4 @@ Production runs via `docker/docker-compose.yml` with:
 - **Volumes via `/system/df`:** `VolumeInspect` and `VolumeList` leave `UsageData` nil, so the only way to show real on-disk sizes is `DiskUsage`. The volumes handler calls it once per request and keys the result by volume name for both preview and production.
 - **Volume name keyed by project.Name (for now):** Volume naming is `deployik-{project.Name}-{env}-data` to match the container. Because `project.Name` is mutable via `PATCH /api/projects/{id}`, renaming would silently orphan the data. The Update handler therefore rejects rename requests when `data_volume_enabled=true` (409); a follow-up will re-key by `project.ID`.
 - **Host-port port instability is documented, not masked:** Each deployed container binds to a random localhost port via `nat.PortBinding{HostIP: "127.0.0.1", HostPort: "0"}`. Docker re-assigns on restart, so the reconcile path reads the live port from `inspect.NetworkSettings.Ports` on boot and skips writing targets whose container isn't up yet — better to have no vhost than a vhost pointing nowhere. Restart-time port drift is called out in README Known Limitations with a TODO for deterministic ports.
+- **`deployik-howto` skill is project-scoped, not global:** the skill lives at `.claude/skills/deployik-howto/` and is committed to the repo. UI changes to `web/src/pages/*` and skill updates ship in the same PR — no doc-vs-code drift across deploys. Action mode requires a Personal Access Token (see migration `017_api_tokens.sql`); guide mode works without one. v1 covers seven goals: GitHub repo connection, custom domain, env vars/secrets, auto-deploy, password protection, contact-form email (Webglobe SMTP + reCAPTCHA v3 + AI install prompt), and rollback. Tone is intentionally non-technical — every recipe ends with "Stuck on any of these steps? Tell me which one and I'll walk through it with you."
