@@ -1445,7 +1445,7 @@ func TestAPITokenCRUD(t *testing.T) {
 		UserID:    user.ID,
 		Name:      "expired",
 		TokenHash: "hash-expired",
-		ExpiresAt: NullableTime{NullTime: sql.NullTime{Time: time.Now().Add(-1 * time.Hour), Valid: true}},
+		ExpiresAt: NewNullableTime(time.Now().Add(-1 * time.Hour)),
 	}
 	if err := database.CreateAPIToken(expired); err != nil {
 		t.Fatalf("create expired: %v", err)
