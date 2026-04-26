@@ -11,7 +11,6 @@ import {
   GitCommit,
   Globe2,
   GlobeLock,
-  Rocket,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -274,15 +273,6 @@ export function ProjectOverview() {
             Environments
           </h2>
           <div className="flex gap-2">
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => triggerDeploy({ environment: "preview" })}
-              disabled={deployMutation.isPending}
-            >
-              <Rocket className="mr-1.5 h-3.5 w-3.5" />
-              Deploy Preview
-            </Button>
             <Button
               size="sm"
               variant="outline"

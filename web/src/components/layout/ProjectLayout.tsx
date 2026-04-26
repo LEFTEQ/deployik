@@ -8,6 +8,7 @@ import { queryKeys } from "@/lib/queryKeys";
 import { AppSidebar } from "@/components/layout/AppSidebar";
 import { CommandPalette } from "@/components/layout/CommandPalette";
 import { ErrorBoundary } from "@/components/layout/ErrorBoundary";
+import { FastDeployActions } from "@/components/projects/fast-deploy-actions";
 import { LoadingState } from "@/components/ui/spinner";
 import { useAuthStore } from "@/store/auth";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -75,6 +76,7 @@ export function ProjectLayout() {
             </BreadcrumbList>
           </Breadcrumb>
           <div className="ml-auto flex items-center gap-2">
+            {project ? <FastDeployActions projectId={id} /> : null}
             <CommandPalette />
             <Avatar className="h-7 w-7 rounded-lg">
               <AvatarImage src={user?.avatar_url} alt={user?.username} />

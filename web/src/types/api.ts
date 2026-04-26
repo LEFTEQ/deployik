@@ -54,6 +54,8 @@ export interface Project {
   latest_deployment_commit_sha: string | null;
   latest_deployment_commit_message: string | null;
   latest_deployment_created_at: string | null;
+  latest_preview_deploy_at: string | null;
+  latest_production_deploy_at: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -125,6 +127,7 @@ export interface ProjectVariable {
   key: string;
   value: string; // masked in responses
   created_at: string;
+  updated_at: string;
 }
 
 export type EnvVariable = ProjectVariable;
