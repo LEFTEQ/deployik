@@ -264,7 +264,7 @@ export function ProjectAnalyticsTab({
                     pageviews.
                   </CardTitle>
                   <CardDescription>
-                    Go to the Integration tab to install the tracking snippet.
+                    Use the setup section below to install the tracking snippet.
                   </CardDescription>
                 </div>
                 <CardAction className="flex shrink-0 gap-2">
@@ -304,7 +304,7 @@ export function ProjectAnalyticsTab({
                   onClick={onSetupAnalytics}
                   className="ml-auto"
                 >
-                  Integration
+                  Setup
                 </Button>
               </div>
 

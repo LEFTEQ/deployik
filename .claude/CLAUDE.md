@@ -178,9 +178,8 @@ web/src/
     NewProject.tsx        Three-step state machine: (A) pick repo -> (B) pick app from monorepo (skipped for single-app repos) -> (C) configure build settings
     ProjectOverview.tsx   Dual environment rows (preview + production), domain strips, recent deployments, release panel
     ProjectDeployments.tsx  Deployment history with filters (branch, environment, status, date range), pagination
-    ProjectAnalytics.tsx  Thin wrapper around project-analytics component
-    ProjectEmail.tsx      Thin wrapper around project-email component
-    ProjectIntegration.tsx  Thin wrapper around project-integration component
+    ProjectAnalytics.tsx  Integrations/Analytics route: dashboard plus embedded setup/how-to section
+    ProjectEmail.tsx      Integrations/Email route: Webglobe SMTP/reCAPTCHA setup
     ProjectSettings.tsx   Build settings page (framework, package manager, commands, directories)
     ProjectSettingsDomains.tsx  Domain management: inline add form, environment grouping, primary badge, verify + move/set-primary/delete actions, DNS setup guide, verification with real-time log streaming
     ProjectSettingsEnv.tsx  Environment variables + secrets with Vercel-style individual add/edit/delete, .env import
@@ -190,7 +189,7 @@ web/src/
     analytics/metric-chart.tsx  Reusable shadcn chart-card wrapper built on ui/chart
     analytics/stat-card.tsx  Reusable shadcn KPI summary card with CardAction/CardFooter layout
     layout/AppLayout.tsx  SidebarProvider wrapper -- renders <Outlet> for nested layouts
-    layout/AppSidebar.tsx Sidebar navigation: context-aware (workspace vs project), collapsible Settings section with sub-items, workspace switcher in footer, project picker in header
+    layout/AppSidebar.tsx Sidebar navigation: context-aware (workspace vs project), collapsible Integrations and Settings sections with sub-items, workspace switcher in footer, project picker in header
     layout/WorkspaceLayout.tsx  Sidebar + header + content for workspace-level pages (projects list)
     layout/ProjectLayout.tsx  Sidebar + breadcrumb header + content for project-level pages
     layout/ProjectPicker.tsx  Command-based project switcher in sidebar header (search + navigate)
@@ -199,13 +198,14 @@ web/src/
     layout/VersionRow.tsx Sidebar footer row showing commit SHA + GH Actions run; collapses to icon + tooltip in icon-only sidebar mode
     projects/build-settings.tsx  Reusable BuildSettingsFields component with framework + package manager presets
     projects/variable-store.tsx  Vercel-style variable store: individual add/edit/delete rows, .env import, scope badges
+    projects/integration-variable-checklist.tsx  Shared integration helper that syncs suggested env vars/secrets through the same APIs as Settings -> Environments
     projects/dns-setup-guide.tsx  Collapsible DNS setup instructions with platform IP lookup
     projects/overview-stat-card.tsx  Overview page stat card for environment status
     projects/release-panel.tsx  Production release panel with tag creation
     projects/project-analytics.tsx  Analytics tab UI: 4 key stats + 2 collapsible sections (Audience + Runtime)
     projects/project-analytics-meta.ts  AUDIENCE_STATUS_META: badge styles and descriptions for analytics statuses
-    projects/project-integration.tsx  Analytics setup stepper: Install -> Verify -> Events
-    projects/project-email.tsx  Email setup page: Webglobe SMTP/reCAPTCHA form, readiness cards, SMTP test action, and AI install prompt for app-owned Next.js contact routes
+    projects/project-integration.tsx  Analytics setup/how-to section embedded into Integrations -> Analytics: Install -> Verify -> Events
+    projects/project-email.tsx  Email setup page: Webglobe SMTP/reCAPTCHA form, quick env setup, readiness cards, SMTP test action, help/how-to, and AI install prompt for app-owned Next.js contact routes
     projects/pick-app.tsx Monorepo app picker shown as Step 2 in NewProject when inspection detects workspaces; renders detected framework/output/build per app
     BuildLog.tsx          Log viewer with auto-scroll, stderr highlighting
     ui/                   shadcn/ui components (button, card, dialog, input, select, etc.)
@@ -283,7 +283,7 @@ SQLite with 16 migrations. Tables:
 - `DELETE /api/projects/{id}` -- Soft-delete project (stops containers, removes nginx configs, cleans domains)
 - `GET    /api/projects/{id}/analytics?environment=&range=&timezone=` -- Combined project analytics payload (Umami audience + Loki runtime)
 - `POST   /api/projects/{id}/analytics/verify?environment=&range=&timezone=` -- Force an analytics refresh / verification cycle
-- `GET    /api/projects/{id}/email` -- Email setup payload with Webglobe SMTP defaults, required env/secret status, and AI install prompt
+- `GET    /api/projects/{id}/email` -- Email setup payload with Webglobe SMTP defaults, required env/secret status, variable suggestions, and AI install prompt
 - `PUT    /api/projects/{id}/email` -- Save Webglobe SMTP + reCAPTCHA settings; writes shared env vars and encrypted secrets
 - `POST   /api/projects/{id}/email/test-smtp` -- Send audited SMTP test email using stored settings/secrets
 
@@ -344,7 +344,8 @@ SQLite with 16 migrations. Tables:
 - **Perimeter controls:** `cors.go` blocks origins outside `Config.AllowedOrigins`, `ratelimit.go` applies per-IP limits to auth/mutation/ws routes, and `audit/recorder.go` records security-relevant mutations to `audit_logs`.
 - **Usage telemetry:** Deployik-managed nginx configs now emit per-project JSON access logs at `/var/log/nginx/deployik-<project-id>-<project-name>-<environment>.json`; the monitoring stack can ship these to Loki for request, bandwidth, latency, and API-path analytics without writing raw events into SQLite.
 - **Audience analytics:** Each project maps to one Umami website via `project_analytics`. Provisioning is best-effort on project create/update and lazy on analytics reads, so existing projects gain analytics without a manual migration. Deployik segments preview vs production in the UI by hostname/domain filters instead of using separate Umami websites.
-- **Install with AI:** `projects/project-analytics.tsx` surfaces a generated AI-install prompt and exact manual Umami snippet. The prompt is built from project settings (`framework`, `package_manager`, `root_directory`) plus the linked website ID so users can hand it to any coding AI instead of relying on brittle proxy injection.
+- **Install with AI:** Integrations -> Analytics embeds `projects/project-integration.tsx`, which surfaces a generated AI-install prompt and exact manual Umami snippet. The prompt is built from project settings (`framework`, `package_manager`, `root_directory`) plus the linked website ID so users can hand it to any coding AI instead of relying on brittle proxy injection.
+- **Integration env setup:** Use `components/projects/integration-variable-checklist.tsx` whenever an integration needs one-click project env/secret provisioning. It calls the same `/env` and `/secrets` endpoints as Settings -> Environments and invalidates the central `queryKeys.projectVariables(...)` caches.
 - **Reusable analytics UI:** `components/analytics/stat-card.tsx` and `components/analytics/metric-chart.tsx` are the shared primitives for KPI cards and chart cards. Reuse them for future dashboard work instead of building one-off chart wrappers inside each page.
 - **IDs:** ULIDs generated via `db.NewID()` (time-sortable, no collision risk)
 - **Encryption:** All sensitive values (GitHub tokens, env vars, secrets, webhook secrets, passwords) encrypted with AES-256-GCM before storage. Key derived from `ENCRYPTION_KEY` env var via SHA-256.

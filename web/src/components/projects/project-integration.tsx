@@ -1,7 +1,14 @@
 import { useMemo, useState } from "react";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Check, ChevronDown, ChevronRight, RefreshCcw } from "lucide-react";
+import {
+  Check,
+  ChevronDown,
+  ChevronRight,
+  CircleHelp,
+  ExternalLink,
+  RefreshCcw,
+} from "lucide-react";
 import { toast } from "sonner";
 
 import { Badge } from "@/components/ui/badge";
@@ -17,7 +24,13 @@ import { api } from "@/lib/api";
 import { queryKeys } from "@/lib/queryKeys";
 import { cn } from "@/lib/utils";
 
-export function ProjectIntegrationTab({ projectId }: { projectId: string }) {
+export function ProjectIntegrationTab({
+  projectId,
+  embedded = false,
+}: {
+  projectId: string;
+  embedded?: boolean;
+}) {
   const queryClient = useQueryClient();
   const timezone =
     Intl.DateTimeFormat().resolvedOptions().timeZone?.trim() || "UTC";
@@ -117,13 +130,13 @@ export function ProjectIntegrationTab({ projectId }: { projectId: string }) {
   const step2Verified = Boolean(data.audience.verified_at);
 
   return (
-    <div className="space-y-8">
+    <div className="flex flex-col gap-8">
       <div>
         <h2 className="text-lg font-semibold tracking-tight text-foreground">
-          Analytics Integration
+          {embedded ? "Analytics Setup" : "Analytics Integration"}
         </h2>
         <p className="mt-1 text-sm text-muted-foreground">
-          Set up audience tracking for your project.
+          Install, verify, and maintain audience tracking for this project.
         </p>
       </div>
 
@@ -237,6 +250,74 @@ export function ProjectIntegrationTab({ projectId }: { projectId: string }) {
             onCopy={() => copyValue(eventHelperSnippet, "Event helper")}
           />
         </WizardStep>
+      </div>
+
+      <AnalyticsHelpPanel />
+    </div>
+  );
+}
+
+function AnalyticsHelpPanel() {
+  const items = [
+    {
+      title: "Where the snippet belongs",
+      body:
+        "For Next.js apps, add the script in the root layout head or via next/script so every public page loads the tracker once.",
+    },
+    {
+      title: "How verification works",
+      body:
+        "Deploy the app after installing the snippet, visit the public site, then run Verify. The badge turns live after Umami receives pageview data for the tracked domain.",
+    },
+    {
+      title: "Custom event naming",
+      body:
+        "Use a tiny wrapper for conversion events such as contact_submitted, signup_started, checkout_completed, and plan_upgraded.",
+    },
+    {
+      title: "When data is missing",
+      body:
+        "Check that the domain is verified in Deployik, the script tag is present in production HTML, browser blockers are not hiding the request, and the app has been redeployed after the change.",
+    },
+  ];
+
+  return (
+    <div className="rounded-lg border bg-card text-card-foreground">
+      <div className="flex flex-col gap-2 border-b px-5 py-4 sm:flex-row sm:items-start sm:justify-between">
+        <div className="min-w-0">
+          <div className="flex items-center gap-2">
+            <CircleHelp className="text-muted-foreground" />
+            <h3 className="font-medium">Help and how-to</h3>
+          </div>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Practical checks for installing and validating audience analytics.
+          </p>
+        </div>
+        <Button variant="outline" size="sm" asChild>
+          <a
+            href="https://docs.umami.is/docs/tracker-configuration"
+            target="_blank"
+            rel="noreferrer"
+          >
+            Umami docs
+            <ExternalLink data-icon="inline-end" />
+          </a>
+        </Button>
+      </div>
+      <div className="grid gap-0 md:grid-cols-2">
+        {items.map((item, index) => (
+          <div
+            key={item.title}
+            className={cn(
+              "flex flex-col gap-1 px-5 py-4",
+              index % 2 === 0 && "md:border-r",
+              index < 2 && "border-b",
+            )}
+          >
+            <h4 className="text-sm font-medium">{item.title}</h4>
+            <p className="text-sm text-muted-foreground">{item.body}</p>
+          </div>
+        ))}
       </div>
     </div>
   );

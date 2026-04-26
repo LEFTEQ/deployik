@@ -27,11 +27,6 @@ const ProjectAnalytics = lazy(() =>
     default: m.ProjectAnalytics,
   })),
 );
-const ProjectIntegration = lazy(() =>
-  import("@/pages/ProjectIntegration").then((m) => ({
-    default: m.ProjectIntegration,
-  })),
-);
 const ProjectEmail = lazy(() =>
   import("@/pages/ProjectEmail").then((m) => ({
     default: m.ProjectEmail,
@@ -197,19 +192,13 @@ const deploymentDetailRoute = createRoute({
 
 const projectAnalyticsRoute = createRoute({
   getParentRoute: () => projectLayoutRoute,
-  path: "/analytics",
+  path: "/integrations/analytics",
   component: ProjectAnalytics,
-});
-
-const projectIntegrationRoute = createRoute({
-  getParentRoute: () => projectLayoutRoute,
-  path: "/integration",
-  component: ProjectIntegration,
 });
 
 const projectEmailRoute = createRoute({
   getParentRoute: () => projectLayoutRoute,
-  path: "/email",
+  path: "/integrations/email",
   component: ProjectEmail,
 });
 
@@ -249,7 +238,6 @@ const routeTree = rootRoute.addChildren([
       deploymentDetailRoute,
       projectAnalyticsRoute,
       projectEmailRoute,
-      projectIntegrationRoute,
       projectSettingsRoute,
       projectSettingsDomainsRoute,
       projectSettingsEnvRoute,

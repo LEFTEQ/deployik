@@ -4,6 +4,8 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   CheckCircle2,
   CircleAlert,
+  CircleHelp,
+  ExternalLink,
   Mail,
   RefreshCcw,
   Save,
@@ -24,6 +26,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { CodePanel } from "@/components/ui/code-panel";
+import { IntegrationVariableChecklist } from "@/components/projects/integration-variable-checklist";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -44,6 +47,7 @@ import type {
   ProjectEmailPayload,
   ProjectEmailSaveRequest,
   ProjectEmailSettings,
+  InstallVariableSuggestion,
 } from "@/types/api";
 
 type EmailFormState = ProjectEmailSaveRequest;
@@ -117,6 +121,22 @@ export function ProjectEmailTab({ projectId }: { projectId: string }) {
     if (!data) return [];
     return buildStatusCards(data);
   }, [data]);
+
+  const envSuggestions = useMemo(
+    () =>
+      data
+        ? buildEmailEnvSuggestions(data.install.env_variables, form)
+        : [],
+    [data, form],
+  );
+
+  const secretValues = useMemo(
+    () => ({
+      SMTP_PASSWORD: form.smtp_password,
+      RECAPTCHA_SECRET_KEY: form.recaptcha_secret_key,
+    }),
+    [form.smtp_password, form.recaptcha_secret_key],
+  );
 
   if (isLoading) {
     return (
@@ -355,54 +375,70 @@ export function ProjectEmailTab({ projectId }: { projectId: string }) {
           </CardContent>
         </Card>
 
-        <Card>
-          <CardHeader>
-            <CardTitle>Install Readiness</CardTitle>
-            <CardDescription>
-              Save settings first, then test SMTP before pasting the prompt into
-              the target app repository.
-            </CardDescription>
-            <CardAction>
-              <Badge variant={data.status.configured ? "secondary" : "outline"}>
-                {data.status.configured ? "Configured" : "Needs values"}
-              </Badge>
-            </CardAction>
-          </CardHeader>
-          <CardContent>
-            <div className="flex flex-col gap-4">
-              <MissingKeys
-                title="Environment"
-                keys={data.status.required.missing_env}
-              />
-              <MissingKeys
-                title="Secrets"
-                keys={data.status.required.missing_secrets}
-              />
-              {data.settings.last_test_error ? (
-                <div className="rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive-foreground">
-                  {data.settings.last_test_error}
-                </div>
-              ) : null}
-              {data.settings.last_tested_at ? (
-                <p className="text-xs text-muted-foreground">
-                  Last SMTP test:{" "}
-                  {new Date(data.settings.last_tested_at).toLocaleString()}
-                </p>
-              ) : null}
-              <Button
-                variant="outline"
-                onClick={() => {
-                  queryClient.invalidateQueries({
-                    queryKey: queryKeys.projectEmail(projectId),
-                  });
-                }}
-              >
-                <RefreshCcw data-icon="inline-start" />
-                Refresh status
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
+        <div className="flex flex-col gap-6">
+          <IntegrationVariableChecklist
+            projectId={projectId}
+            title="Quick Environment Setup"
+            description="Add the email integration keys to the shared environment and secret stores."
+            envVariables={envSuggestions}
+            secretVariables={data.install.secret_variables}
+            secretValues={secretValues}
+            onApplied={() =>
+              queryClient.invalidateQueries({
+                queryKey: queryKeys.projectEmail(projectId),
+              })
+            }
+          />
+
+          <Card>
+            <CardHeader>
+              <CardTitle>Install Readiness</CardTitle>
+              <CardDescription>
+                Save settings first, then test SMTP before pasting the prompt into
+                the target app repository.
+              </CardDescription>
+              <CardAction>
+                <Badge variant={data.status.configured ? "secondary" : "outline"}>
+                  {data.status.configured ? "Configured" : "Needs values"}
+                </Badge>
+              </CardAction>
+            </CardHeader>
+            <CardContent>
+              <div className="flex flex-col gap-4">
+                <MissingKeys
+                  title="Environment"
+                  keys={data.status.required.missing_env}
+                />
+                <MissingKeys
+                  title="Secrets"
+                  keys={data.status.required.missing_secrets}
+                />
+                {data.settings.last_test_error ? (
+                  <div className="rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive-foreground">
+                    {data.settings.last_test_error}
+                  </div>
+                ) : null}
+                {data.settings.last_tested_at ? (
+                  <p className="text-xs text-muted-foreground">
+                    Last SMTP test:{" "}
+                    {new Date(data.settings.last_tested_at).toLocaleString()}
+                  </p>
+                ) : null}
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    queryClient.invalidateQueries({
+                      queryKey: queryKeys.projectEmail(projectId),
+                    });
+                  }}
+                >
+                  <RefreshCcw data-icon="inline-start" />
+                  Refresh status
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
       </div>
 
       <CodePanel
@@ -412,12 +448,102 @@ export function ProjectEmailTab({ projectId }: { projectId: string }) {
         onCopy={() => copyValue(data.install.ai_prompt, "AI install prompt")}
         heightClassName="h-[30rem]"
       />
+
+      <EmailHelpPanel />
     </div>
   );
 
   function patchForm(patch: Partial<EmailFormState>) {
     setForm((current) => ({ ...current, ...patch }));
   }
+}
+
+function buildEmailEnvSuggestions(
+  suggestions: InstallVariableSuggestion[],
+  form: EmailFormState,
+) {
+  const values: Record<string, string> = {
+    SMTP_HOST: form.smtp_host,
+    SMTP_PORT: String(form.smtp_port || ""),
+    SMTP_SECURE: form.smtp_security,
+    SMTP_USER: form.smtp_user,
+    EMAIL_FROM: form.email_from,
+    EMAIL_FROM_NAME: form.email_from_name,
+    CONTACT_EMAIL_TO: form.contact_email_to,
+    NEXT_PUBLIC_RECAPTCHA_SITE_KEY: form.recaptcha_site_key,
+    RECAPTCHA_SCORE_THRESHOLD: String(form.recaptcha_score_threshold || ""),
+  };
+
+  return suggestions.map((suggestion) => ({
+    ...suggestion,
+    value: values[suggestion.key] ?? suggestion.value ?? "",
+  }));
+}
+
+function EmailHelpPanel() {
+  const items = [
+    {
+      title: "Webglobe SMTP",
+      body:
+        "Use the mailbox address as SMTP_USER. Webglobe lists mail.webglobe.cz with port 587 for TLS, port 465 for SSL, and authenticated outgoing mail.",
+    },
+    {
+      title: "Google reCAPTCHA v3",
+      body:
+        "Create a v3 key pair, add the production and preview domains, store the site key as NEXT_PUBLIC_RECAPTCHA_SITE_KEY, and keep the secret server-only.",
+    },
+    {
+      title: "Next.js contact route",
+      body:
+        "Use a Node runtime API route for Nodemailer. Verify reCAPTCHA before validation passes into the mail send, and never accept recipients from the browser.",
+    },
+    {
+      title: "Troubleshooting",
+      body:
+        "Authentication failures usually mean a mailbox password mismatch. Missing submissions usually mean the app was not redeployed after env changes or the route is running on Edge.",
+    },
+  ];
+
+  return (
+    <div className="rounded-lg border bg-card text-card-foreground">
+      <div className="flex flex-col gap-2 border-b px-5 py-4 sm:flex-row sm:items-start sm:justify-between">
+        <div className="min-w-0">
+          <div className="flex items-center gap-2">
+            <CircleHelp className="text-muted-foreground" />
+            <h3 className="font-medium">Help and how-to</h3>
+          </div>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Operational notes for Webglobe mailboxes, reCAPTCHA, and Next.js contact forms.
+          </p>
+        </div>
+        <Button variant="outline" size="sm" asChild>
+          <a
+            href="https://www.webglobe.cz/poradna/jake-parametry-pro-nastaveni-emailoveho-klienta-pouzit"
+            target="_blank"
+            rel="noreferrer"
+          >
+            Webglobe SMTP
+            <ExternalLink data-icon="inline-end" />
+          </a>
+        </Button>
+      </div>
+      <div className="grid gap-0 md:grid-cols-2">
+        {items.map((item, index) => (
+          <div
+            key={item.title}
+            className={cn(
+              "flex flex-col gap-1 px-5 py-4",
+              index % 2 === 0 && "md:border-r",
+              index < 2 && "border-b",
+            )}
+          >
+            <h4 className="text-sm font-medium">{item.title}</h4>
+            <p className="text-sm text-muted-foreground">{item.body}</p>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
 }
 
 function formFromSettings(settings: ProjectEmailSettings): EmailFormState {

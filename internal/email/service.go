@@ -122,8 +122,18 @@ type RequiredStatus struct {
 }
 
 type InstallPayload struct {
-	AIPrompt string   `json:"ai_prompt"`
-	EnvKeys  []string `json:"env_keys"`
+	AIPrompt        string                      `json:"ai_prompt"`
+	EnvKeys         []string                    `json:"env_keys"`
+	EnvVariables    []InstallVariableSuggestion `json:"env_variables"`
+	SecretVariables []InstallVariableSuggestion `json:"secret_variables"`
+}
+
+type InstallVariableSuggestion struct {
+	Key         string `json:"key"`
+	Value       string `json:"value,omitempty"`
+	Environment string `json:"environment"`
+	Kind        string `json:"kind"`
+	Description string `json:"description,omitempty"`
 }
 
 func NewService(database *db.DB, encryptor *crypto.Encryptor, sender Sender) *Service {
@@ -424,10 +434,98 @@ func (s *Service) buildPayload(project *db.Project, record *db.ProjectEmailSetti
 			Required:   required,
 		},
 		Install: InstallPayload{
-			AIPrompt: buildAIPrompt(project, record),
-			EnvKeys:  append(append([]string{}, requiredEnvKeys...), requiredSecretKeys...),
+			AIPrompt:        buildAIPrompt(project, record),
+			EnvKeys:         append(append([]string{}, requiredEnvKeys...), requiredSecretKeys...),
+			EnvVariables:    buildEnvSuggestions(record),
+			SecretVariables: buildSecretSuggestions(),
 		},
 	}, nil
+}
+
+func buildEnvSuggestions(record *db.ProjectEmailSettings) []InstallVariableSuggestion {
+	values := []InstallVariableSuggestion{
+		{
+			Key:         "SMTP_HOST",
+			Value:       record.SMTPHost,
+			Environment: sharedEnvironment,
+			Kind:        string(db.VariableKindEnv),
+			Description: "Outgoing SMTP host.",
+		},
+		{
+			Key:         "SMTP_PORT",
+			Value:       strconv.Itoa(record.SMTPPort),
+			Environment: sharedEnvironment,
+			Kind:        string(db.VariableKindEnv),
+			Description: "Outgoing SMTP port.",
+		},
+		{
+			Key:         "SMTP_SECURE",
+			Value:       string(record.SMTPSecurity),
+			Environment: sharedEnvironment,
+			Kind:        string(db.VariableKindEnv),
+			Description: "Nodemailer security mode: starttls, tls, or none.",
+		},
+		{
+			Key:         "SMTP_USER",
+			Value:       record.SMTPUser,
+			Environment: sharedEnvironment,
+			Kind:        string(db.VariableKindEnv),
+			Description: "Mailbox used for SMTP authentication.",
+		},
+		{
+			Key:         "EMAIL_FROM",
+			Value:       record.EmailFrom,
+			Environment: sharedEnvironment,
+			Kind:        string(db.VariableKindEnv),
+			Description: "Sender address shown to recipients.",
+		},
+		{
+			Key:         "EMAIL_FROM_NAME",
+			Value:       record.EmailFromName,
+			Environment: sharedEnvironment,
+			Kind:        string(db.VariableKindEnv),
+			Description: "Sender display name.",
+		},
+		{
+			Key:         "CONTACT_EMAIL_TO",
+			Value:       record.ContactEmailTo,
+			Environment: sharedEnvironment,
+			Kind:        string(db.VariableKindEnv),
+			Description: "Comma-separated owner notification recipients.",
+		},
+		{
+			Key:         "NEXT_PUBLIC_RECAPTCHA_SITE_KEY",
+			Value:       record.RecaptchaSiteKey,
+			Environment: sharedEnvironment,
+			Kind:        string(db.VariableKindEnv),
+			Description: "Public Google reCAPTCHA v3 site key.",
+		},
+		{
+			Key:         "RECAPTCHA_SCORE_THRESHOLD",
+			Value:       strconv.FormatFloat(record.RecaptchaScoreThreshold, 'f', -1, 64),
+			Environment: sharedEnvironment,
+			Kind:        string(db.VariableKindEnv),
+			Description: "Minimum accepted reCAPTCHA score.",
+		},
+	}
+	return values
+}
+
+func buildSecretSuggestions() []InstallVariableSuggestion {
+	return []InstallVariableSuggestion{
+		{
+			Key:         smtpPasswordKey,
+			Environment: sharedEnvironment,
+			Kind:        string(db.VariableKindSecret),
+			Description: "Webglobe mailbox password.",
+		},
+		{
+			Key:         recaptchaSecretKeyName,
+			Environment: sharedEnvironment,
+			Kind:        string(db.VariableKindSecret),
+			Description: "Private Google reCAPTCHA v3 secret key.",
+		},
+	}
 }
 
 func (s *Service) requiredStatus(projectID string) (RequiredStatus, error) {
