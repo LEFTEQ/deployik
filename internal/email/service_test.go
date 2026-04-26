@@ -289,6 +289,303 @@ func TestSplitRecipientsIgnoresDelimiterOnlyInput(t *testing.T) {
 	}
 }
 
+func TestPickPrimaryProductionDomainPrecedence(t *testing.T) {
+	cases := []struct {
+		name    string
+		domains []db.Domain
+		want    string
+	}{
+		{
+			name:    "empty",
+			domains: nil,
+			want:    "",
+		},
+		{
+			name: "primary production wins even when auto",
+			domains: []db.Domain{
+				{DomainName: "z-custom.com", Environment: "production", IsAuto: false},
+				{DomainName: "auto.preview.example.com", Environment: "production", IsAuto: true, IsPrimary: true},
+			},
+			want: "auto.preview.example.com",
+		},
+		{
+			name: "no primary: production non-auto beats production auto",
+			domains: []db.Domain{
+				{DomainName: "auto.preview.example.com", Environment: "production", IsAuto: true},
+				{DomainName: "acmesite.cz", Environment: "production", IsAuto: false},
+			},
+			want: "acmesite.cz",
+		},
+		{
+			name: "no primary: only production auto exists",
+			domains: []db.Domain{
+				{DomainName: "auto.preview.example.com", Environment: "production", IsAuto: true},
+			},
+			want: "auto.preview.example.com",
+		},
+		{
+			name: "primary preview is ignored when production exists",
+			domains: []db.Domain{
+				{DomainName: "preview-primary.com", Environment: "preview", IsPrimary: true, IsAuto: false},
+				{DomainName: "prod.com", Environment: "production", IsAuto: false},
+			},
+			want: "prod.com",
+		},
+		{
+			name: "no production: prefer non-auto preview",
+			domains: []db.Domain{
+				{DomainName: "auto.preview.example.com", Environment: "preview", IsAuto: true},
+				{DomainName: "staging.acmesite.cz", Environment: "preview", IsAuto: false},
+			},
+			want: "staging.acmesite.cz",
+		},
+		{
+			name: "fallback to first when only auto preview exists",
+			domains: []db.Domain{
+				{DomainName: "auto.preview.example.com", Environment: "preview", IsAuto: true},
+			},
+			want: "auto.preview.example.com",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := pickPrimaryProductionDomain(tc.domains)
+			if got != tc.want {
+				t.Fatalf("got %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestBuildSiteContext(t *testing.T) {
+	t.Run("empty domains", func(t *testing.T) {
+		ctx := buildSiteContext(nil)
+		if ctx.SiteURL != "" {
+			t.Fatalf("SiteURL = %q, want empty", ctx.SiteURL)
+		}
+		if len(ctx.AllowedHosts) != 0 || len(ctx.ProductionHosts) != 0 || len(ctx.PreviewHosts) != 0 {
+			t.Fatalf("expected all host slices empty, got %#v", ctx)
+		}
+	})
+
+	t.Run("mixed preview + production + auto + duplicates", func(t *testing.T) {
+		ctx := buildSiteContext([]db.Domain{
+			{DomainName: "acmesite.preview.example.com", Environment: "preview", IsAuto: true},
+			{DomainName: "acmegym.cz", Environment: "production", IsAuto: false, IsPrimary: true},
+			{DomainName: "www.acmegym.cz", Environment: "production", IsAuto: false},
+			{DomainName: "acmegym.cz", Environment: "production", IsAuto: false, IsPrimary: true}, // dup
+			{DomainName: "  ", Environment: "production"},                                           // blank — ignored
+		})
+		if ctx.SiteURL != "https://acmegym.cz" {
+			t.Fatalf("SiteURL = %q, want https://acmegym.cz", ctx.SiteURL)
+		}
+		wantAll := []string{"acmesite.preview.example.com", "acmegym.cz", "www.acmegym.cz"}
+		if !equalStrings(ctx.AllowedHosts, wantAll) {
+			t.Fatalf("AllowedHosts = %#v, want %#v", ctx.AllowedHosts, wantAll)
+		}
+		wantProd := []string{"acmegym.cz", "www.acmegym.cz"}
+		if !equalStrings(ctx.ProductionHosts, wantProd) {
+			t.Fatalf("ProductionHosts = %#v, want %#v", ctx.ProductionHosts, wantProd)
+		}
+		wantPrev := []string{"acmesite.preview.example.com"}
+		if !equalStrings(ctx.PreviewHosts, wantPrev) {
+			t.Fatalf("PreviewHosts = %#v, want %#v", ctx.PreviewHosts, wantPrev)
+		}
+	})
+}
+
+func TestServiceWritesSiteVariablesAndPromptIncludesContext(t *testing.T) {
+	database, encryptor, project := newServiceTestDB(t)
+	// Add a www variant + a preview auto-domain so the allowlist is non-trivial.
+	if err := database.CreateDomain(&db.Domain{
+		ProjectID:   project.ID,
+		DomainName:  "www.acmegym.cz",
+		Environment: "production",
+		DNSVerified: true,
+		SSLStatus:   "active",
+	}); err != nil {
+		t.Fatalf("CreateDomain www: %v", err)
+	}
+	if err := database.CreateDomain(&db.Domain{
+		ProjectID:   project.ID,
+		DomainName:  "acmegym.preview.example.com",
+		Environment: "preview",
+		IsAuto:      true,
+		DNSVerified: true,
+		SSLStatus:   "active",
+	}); err != nil {
+		t.Fatalf("CreateDomain preview: %v", err)
+	}
+
+	service := NewService(database, encryptor, nil)
+	payload, err := service.SaveProjectSettings(context.Background(), project, SaveRequest{
+		SMTPHost:                "mail.webglobe.cz",
+		SMTPPort:                587,
+		SMTPSecurity:            string(db.EmailSMTPSecurityStartTLS),
+		SMTPUser:                "noreply@acmegym.cz",
+		SMTPPassword:            "smtp-password",
+		EmailFrom:               "noreply@acmegym.cz",
+		EmailFromName:           "acmegym",
+		ContactEmailTo:          "owner@acmegym.cz",
+		RecaptchaSiteKey:        "site-key",
+		RecaptchaSecretKey:      "secret-key",
+		RecaptchaScoreThreshold: 0.5,
+	})
+	if err != nil {
+		t.Fatalf("SaveProjectSettings: %v", err)
+	}
+
+	envs, err := database.ListProjectVariables(project.ID, "shared", db.VariableKindEnv)
+	if err != nil {
+		t.Fatalf("ListProjectVariables: %v", err)
+	}
+	if !hasEncryptedVariable(t, encryptor, envs, "SITE_URL", "https://acmegym.cz") {
+		t.Fatal("SITE_URL not provisioned to https://acmegym.cz")
+	}
+	if !hasEncryptedVariable(t, encryptor, envs, "RECAPTCHA_ALLOWED_HOSTS",
+		"acmegym.cz,acmegym.preview.example.com,www.acmegym.cz") {
+		t.Fatalf("RECAPTCHA_ALLOWED_HOSTS not provisioned with all hostnames; envs=%#v", envs)
+	}
+
+	// 9 original + SITE_URL + RECAPTCHA_ALLOWED_HOSTS = 11 env keys
+	if len(envs) != len(requiredEnvKeys) {
+		t.Fatalf("env count = %d, want %d", len(envs), len(requiredEnvKeys))
+	}
+
+	prompt := payload.Install.AIPrompt
+	for _, expected := range []string{
+		"Deployment context",
+		"Production hostnames: acmegym.cz, www.acmegym.cz",
+		"Preview hostnames: acmegym.preview.example.com",
+		"Canonical site URL: https://acmegym.cz",
+		"X-Real-IP",
+		"APPENDS to X-Forwarded-For",
+		"SITE_URL",
+		"RECAPTCHA_ALLOWED_HOSTS",
+		"5 requests per 10 minutes",
+		"i18n / locale setup",
+		"Use SITE_URL to build absolute URLs",
+		"Do not invent a new env var for this",
+	} {
+		if !strings.Contains(prompt, expected) {
+			t.Fatalf("prompt missing %q\n--- prompt ---\n%s", expected, prompt)
+		}
+	}
+}
+
+func TestGetProjectPayloadBackfillsSiteVariablesForLegacyProjects(t *testing.T) {
+	database, encryptor, project := newServiceTestDB(t)
+
+	// Persist email settings WITHOUT writing the new env vars (simulates a
+	// project that was email-configured before this change).
+	record := &db.ProjectEmailSettings{
+		ProjectID:               project.ID,
+		Provider:                db.EmailProviderWebglobe,
+		SMTPHost:                "mail.webglobe.cz",
+		SMTPPort:                587,
+		SMTPSecurity:            db.EmailSMTPSecurityStartTLS,
+		SMTPUser:                "noreply@acmegym.cz",
+		EmailFrom:               "noreply@acmegym.cz",
+		EmailFromName:           "acmegym",
+		ContactEmailTo:          "owner@acmegym.cz",
+		RecaptchaSiteKey:        "site-key",
+		RecaptchaMode:           db.EmailRecaptchaModeV3,
+		RecaptchaScoreThreshold: 0.5,
+		Status:                  db.EmailStatusReadyToInstall,
+	}
+	if err := database.UpsertProjectEmailSettings(record); err != nil {
+		t.Fatalf("UpsertProjectEmailSettings: %v", err)
+	}
+
+	// Confirm the env table is empty before backfill.
+	envsBefore, err := database.ListProjectVariableKeys(project.ID, db.VariableKindEnv)
+	if err != nil {
+		t.Fatalf("ListProjectVariableKeys before: %v", err)
+	}
+	if len(envsBefore) != 0 {
+		t.Fatalf("expected no env vars before backfill, got %#v", envsBefore)
+	}
+
+	service := NewService(database, encryptor, nil)
+	if _, err := service.GetProjectPayload(context.Background(), project); err != nil {
+		t.Fatalf("GetProjectPayload: %v", err)
+	}
+
+	// After the read, only SITE_URL + RECAPTCHA_ALLOWED_HOSTS should be backfilled
+	// (the other 9 are filled by Save, not by Get).
+	envsAfter, err := database.ListProjectVariables(project.ID, "shared", db.VariableKindEnv)
+	if err != nil {
+		t.Fatalf("ListProjectVariables after: %v", err)
+	}
+	if !hasEncryptedVariable(t, encryptor, envsAfter, "SITE_URL", "https://acmegym.cz") {
+		t.Fatalf("SITE_URL not backfilled; envs=%#v", envsAfter)
+	}
+	if !hasEncryptedVariable(t, encryptor, envsAfter, "RECAPTCHA_ALLOWED_HOSTS", "acmegym.cz") {
+		t.Fatalf("RECAPTCHA_ALLOWED_HOSTS not backfilled; envs=%#v", envsAfter)
+	}
+	if len(envsAfter) != 2 {
+		t.Fatalf("expected only the 2 backfilled vars, got %d: %#v", len(envsAfter), envsAfter)
+	}
+
+	// Idempotency: a second read should not duplicate or change anything.
+	if _, err := service.GetProjectPayload(context.Background(), project); err != nil {
+		t.Fatalf("GetProjectPayload (second): %v", err)
+	}
+	envsAfterSecond, _ := database.ListProjectVariables(project.ID, "shared", db.VariableKindEnv)
+	if len(envsAfterSecond) != 2 {
+		t.Fatalf("backfill is not idempotent: %d vars after second read", len(envsAfterSecond))
+	}
+}
+
+func TestGetProjectPayloadEmptyDomainsDoesNotPanic(t *testing.T) {
+	database, encryptor, _ := newServiceTestDB(t)
+
+	user := &db.User{ID: db.NewID(), GithubID: 99, Username: "lonely", Role: "admin"}
+	if err := database.UpsertUser(user); err != nil {
+		t.Fatalf("UpsertUser: %v", err)
+	}
+	bare := &db.Project{
+		Name:           "noprod",
+		GithubRepo:     "x",
+		GithubOwner:    "y",
+		Branch:         "main",
+		UserID:         user.ID,
+		Framework:      "nextjs",
+		PackageManager: "auto",
+		BuildCommand:   "b",
+		InstallCommand: "i",
+		NodeVersion:    "22",
+		Status:         "active",
+	}
+	if err := database.CreateProject(bare); err != nil {
+		t.Fatalf("CreateProject: %v", err)
+	}
+
+	service := NewService(database, encryptor, nil)
+	payload, err := service.GetProjectPayload(context.Background(), bare)
+	if err != nil {
+		t.Fatalf("GetProjectPayload: %v", err)
+	}
+	if !strings.Contains(payload.Install.AIPrompt, "Production hostnames: (none)") {
+		t.Fatalf("expected '(none)' for empty production hostnames\n%s", payload.Install.AIPrompt)
+	}
+	if !strings.Contains(payload.Install.AIPrompt, "Canonical site URL: (none yet") {
+		t.Fatalf("expected fallback for empty SITE_URL\n%s", payload.Install.AIPrompt)
+	}
+}
+
+func equalStrings(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
+}
+
 func hasEncryptedVariable(t *testing.T, encryptor *crypto.Encryptor, variables []db.ProjectVariable, key, want string) bool {
 	t.Helper()
 	for _, variable := range variables {

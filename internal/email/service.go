@@ -18,12 +18,14 @@ import (
 )
 
 const (
-	defaultSMTPHost        = "mail.webglobe.cz"
-	defaultSMTPPort        = 587
-	defaultRecaptchaScore  = 0.5
-	sharedEnvironment      = "shared"
-	smtpPasswordKey        = "SMTP_PASSWORD"
-	recaptchaSecretKeyName = "RECAPTCHA_SECRET_KEY"
+	defaultSMTPHost          = "mail.webglobe.cz"
+	defaultSMTPPort          = 587
+	defaultRecaptchaScore    = 0.5
+	sharedEnvironment        = "shared"
+	smtpPasswordKey          = "SMTP_PASSWORD"
+	recaptchaSecretKeyName   = "RECAPTCHA_SECRET_KEY"
+	siteURLKey               = "SITE_URL"
+	recaptchaAllowedHostsKey = "RECAPTCHA_ALLOWED_HOSTS"
 )
 
 var requiredEnvKeys = []string{
@@ -36,6 +38,8 @@ var requiredEnvKeys = []string{
 	"CONTACT_EMAIL_TO",
 	"NEXT_PUBLIC_RECAPTCHA_SITE_KEY",
 	"RECAPTCHA_SCORE_THRESHOLD",
+	siteURLKey,
+	recaptchaAllowedHostsKey,
 }
 
 var requiredSecretKeys = []string{
@@ -143,8 +147,45 @@ func (s *Service) GetProjectPayload(ctx context.Context, project *db.Project) (P
 	}
 	if record == nil {
 		record = s.defaultSettings(ctx, project)
+	} else {
+		// Best-effort: heal already-configured projects that predate
+		// SITE_URL / RECAPTCHA_ALLOWED_HOSTS. Failures here (e.g. an
+		// env-vs-secret collision on a hand-created key) must not block
+		// the read — the user can always re-save to surface the error.
+		_ = s.backfillSiteVariables(record)
 	}
 	return s.buildPayload(project, record)
+}
+
+func (s *Service) backfillSiteVariables(record *db.ProjectEmailSettings) error {
+	if record == nil || record.ProjectID == "" {
+		return nil
+	}
+	envKeys, err := s.DB.ListProjectVariableKeys(record.ProjectID, db.VariableKindEnv)
+	if err != nil {
+		return err
+	}
+	have := map[string]struct{}{}
+	for _, k := range envKeys {
+		have[k] = struct{}{}
+	}
+	_, hasURL := have[siteURLKey]
+	_, hasHosts := have[recaptchaAllowedHostsKey]
+	if hasURL && hasHosts {
+		return nil
+	}
+	site := s.siteContextFor(record.ProjectID)
+	if !hasURL {
+		if err := s.upsertEncryptedVariable(record.ProjectID, db.VariableKindEnv, siteURLKey, site.SiteURL); err != nil {
+			return err
+		}
+	}
+	if !hasHosts {
+		if err := s.upsertEncryptedVariable(record.ProjectID, db.VariableKindEnv, recaptchaAllowedHostsKey, strings.Join(site.AllowedHosts, ",")); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (s *Service) SaveProjectSettings(ctx context.Context, project *db.Project, req SaveRequest) (ProjectPayload, error) {
@@ -249,29 +290,99 @@ func (s *Service) primaryProductionDomain(projectID string) string {
 	if err != nil {
 		return ""
 	}
-	sort.SliceStable(domains, func(i, j int) bool {
-		if domains[i].IsPrimary != domains[j].IsPrimary {
-			return domains[i].IsPrimary
-		}
-		if domains[i].Environment != domains[j].Environment {
-			return domains[i].Environment == "production"
-		}
-		return domains[i].DomainName < domains[j].DomainName
-	})
-	for _, domain := range domains {
-		if domain.Environment == "production" && !domain.IsAuto {
-			return domain.DomainName
+	return pickPrimaryProductionDomain(domains)
+}
+
+// pickPrimaryProductionDomain walks domains in deliberate precedence so that an
+// explicit primary always wins, custom domains beat auto-generated preview
+// hostnames, and production is preferred over preview at every tier.
+func pickPrimaryProductionDomain(domains []db.Domain) string {
+	for _, d := range domains {
+		if d.IsPrimary && d.Environment == "production" {
+			return d.DomainName
 		}
 	}
-	for _, domain := range domains {
-		if domain.Environment == "production" {
-			return domain.DomainName
+	for _, d := range domains {
+		if d.Environment == "production" && !d.IsAuto {
+			return d.DomainName
+		}
+	}
+	for _, d := range domains {
+		if d.Environment == "production" {
+			return d.DomainName
+		}
+	}
+	for _, d := range domains {
+		if !d.IsAuto {
+			return d.DomainName
 		}
 	}
 	if len(domains) > 0 {
 		return domains[0].DomainName
 	}
 	return ""
+}
+
+// siteContext is the runtime-derived view of a project's domains used to
+// provision SITE_URL / RECAPTCHA_ALLOWED_HOSTS and to enrich the AI prompt.
+type siteContext struct {
+	SiteURL         string
+	AllowedHosts    []string
+	ProductionHosts []string
+	PreviewHosts    []string
+}
+
+func (s *Service) siteContextFor(projectID string) siteContext {
+	domains, err := s.DB.ListDomains(projectID)
+	if err != nil {
+		return siteContext{}
+	}
+	return buildSiteContext(domains)
+}
+
+func buildSiteContext(domains []db.Domain) siteContext {
+	primary := pickPrimaryProductionDomain(domains)
+	siteURL := ""
+	if primary != "" {
+		siteURL = "https://" + primary
+	}
+
+	seenAll := map[string]struct{}{}
+	seenProd := map[string]struct{}{}
+	seenPrev := map[string]struct{}{}
+	var all, prod, prev []string
+	for _, d := range domains {
+		host := strings.TrimSpace(d.DomainName)
+		if host == "" {
+			continue
+		}
+		if _, ok := seenAll[host]; !ok {
+			seenAll[host] = struct{}{}
+			all = append(all, host)
+		}
+		switch d.Environment {
+		case "production":
+			if _, ok := seenProd[host]; !ok {
+				seenProd[host] = struct{}{}
+				prod = append(prod, host)
+			}
+		case "preview":
+			if _, ok := seenPrev[host]; !ok {
+				seenPrev[host] = struct{}{}
+				prev = append(prev, host)
+			}
+		}
+	}
+	sort.Strings(all)
+	sort.Strings(prod)
+	sort.Strings(prev)
+
+	return siteContext{
+		SiteURL:         siteURL,
+		AllowedHosts:    all,
+		ProductionHosts: prod,
+		PreviewHosts:    prev,
+	}
 }
 
 func (s *Service) recordFromRequest(project *db.Project, req SaveRequest) *db.ProjectEmailSettings {
@@ -318,6 +429,7 @@ func (s *Service) recordFromRequest(project *db.Project, req SaveRequest) *db.Pr
 }
 
 func (s *Service) writeVariables(record *db.ProjectEmailSettings, req SaveRequest) error {
+	site := s.siteContextFor(record.ProjectID)
 	envValues := map[string]string{
 		"SMTP_HOST":                      record.SMTPHost,
 		"SMTP_PORT":                      strconv.Itoa(record.SMTPPort),
@@ -328,6 +440,8 @@ func (s *Service) writeVariables(record *db.ProjectEmailSettings, req SaveReques
 		"CONTACT_EMAIL_TO":               record.ContactEmailTo,
 		"NEXT_PUBLIC_RECAPTCHA_SITE_KEY": record.RecaptchaSiteKey,
 		"RECAPTCHA_SCORE_THRESHOLD":      strconv.FormatFloat(record.RecaptchaScoreThreshold, 'f', -1, 64),
+		siteURLKey:                       site.SiteURL,
+		recaptchaAllowedHostsKey:         strings.Join(site.AllowedHosts, ","),
 	}
 	for key, value := range envValues {
 		if err := s.upsertEncryptedVariable(record.ProjectID, db.VariableKindEnv, key, value); err != nil {
@@ -429,7 +543,7 @@ func (s *Service) buildPayload(project *db.Project, record *db.ProjectEmailSetti
 			Required:   required,
 		},
 		Install: InstallPayload{
-			AIPrompt: buildAIPrompt(project, record),
+			AIPrompt: buildAIPrompt(project, record, s.siteContextFor(project.ID)),
 			EnvKeys:  append(append([]string{}, requiredEnvKeys...), requiredSecretKeys...),
 		},
 	}, nil
@@ -453,7 +567,7 @@ func (s *Service) requiredStatus(projectID string) (RequiredStatus, error) {
 	return status, nil
 }
 
-func buildAIPrompt(project *db.Project, record *db.ProjectEmailSettings) string {
+func buildAIPrompt(project *db.Project, record *db.ProjectEmailSettings, site siteContext) string {
 	projectName := "this project"
 	framework := "unknown"
 	packageManager := "auto"
@@ -474,26 +588,34 @@ func buildAIPrompt(project *db.Project, record *db.ProjectEmailSettings) string 
 	prompt.WriteString(fmt.Sprintf("- Framework preset: %s\n", framework))
 	prompt.WriteString(fmt.Sprintf("- Package manager: %s\n", packageManager))
 	prompt.WriteString(fmt.Sprintf("- Root directory: %s\n\n", rootDirectory))
-	prompt.WriteString("Email config is already provisioned as environment variables and secrets:\n")
+
+	prompt.WriteString("Deployment context (this app runs on Deployik on the Lovinka VPS):\n")
+	prompt.WriteString(fmt.Sprintf("- Production hostnames: %s\n", joinHosts(site.ProductionHosts)))
+	prompt.WriteString(fmt.Sprintf("- Preview hostnames: %s\n", joinHosts(site.PreviewHosts)))
+	prompt.WriteString(fmt.Sprintf("- Canonical site URL: %s\n", firstNonEmpty(site.SiteURL, "(none yet — production domain not configured)")))
+	prompt.WriteString("- Reverse proxy: nginx in front of the Next.js container. nginx sets X-Real-IP to the connecting client and APPENDS to X-Forwarded-For (so the real client IP is the rightmost entry, not the leftmost). For rate limiting and audit logging, prefer X-Real-IP. If you must read X-Forwarded-For, parse from the right (last entry), never the left.\n\n")
+
+	prompt.WriteString("Email config is already provisioned as environment variables and secrets. Use these directly; do not invent new env vars:\n")
 	for _, key := range requiredEnvKeys {
 		prompt.WriteString(fmt.Sprintf("- %s\n", key))
 	}
 	for _, key := range requiredSecretKeys {
-		prompt.WriteString(fmt.Sprintf("- %s\n", key))
+		prompt.WriteString(fmt.Sprintf("- %s (secret)\n", key))
 	}
 	prompt.WriteString("\nRequirements:\n")
 	prompt.WriteString("1. Inspect the existing contact form, homepage, design tokens, and routing style before editing.\n")
 	prompt.WriteString("2. Add or update a Next.js Node runtime API route for contact submissions; do not use Edge runtime for nodemailer.\n")
 	prompt.WriteString("3. Use nodemailer with SMTP_HOST, SMTP_PORT, SMTP_SECURE, SMTP_USER, and SMTP_PASSWORD.\n")
 	prompt.WriteString("   Interpret SMTP_SECURE=tls as Nodemailer secure: true. Interpret SMTP_SECURE=starttls as secure: false with requireTLS: true.\n")
-	prompt.WriteString("4. Verify Google reCAPTCHA v3 server-side before sending mail. Check success, action, hostname, and RECAPTCHA_SCORE_THRESHOLD.\n")
+	prompt.WriteString("4. Verify Google reCAPTCHA v3 server-side before sending mail. Check success, action, score >= RECAPTCHA_SCORE_THRESHOLD, and that the verified hostname is in RECAPTCHA_ALLOWED_HOSTS (comma-separated). Do not invent a new env var for the hostname allowlist.\n")
 	prompt.WriteString("5. Validate submitted fields and adapt to the existing form shape. Never let the browser choose recipients or raw HTML.\n")
 	prompt.WriteString("6. Send an owner notification email to CONTACT_EMAIL_TO with Reply-To set to the submitter email when valid.\n")
 	prompt.WriteString("7. Send a branded confirmation email to the submitter after the owner notification succeeds.\n")
-	prompt.WriteString("8. Create HTML emails that match the app's visual language and include a plain-text fallback for both email flows.\n")
-	prompt.WriteString("9. Add a small in-memory IP rate limit for the contact route suitable for low-volume Docker-hosted sites.\n")
+	prompt.WriteString("8. Create HTML emails that match the app's visual language and include a plain-text fallback for both email flows. Use SITE_URL to build absolute URLs (logo src, links back to the site). Do not invent a new env var for this.\n")
+	prompt.WriteString("9. Add a small in-memory IP rate limit for the contact route (recommended: 5 requests per 10 minutes per client IP). Key it on X-Real-IP. Single-instance Docker deploy; do not introduce Redis.\n")
 	prompt.WriteString("10. Do not expose SMTP credentials or RECAPTCHA_SECRET_KEY to the browser. Only NEXT_PUBLIC_RECAPTCHA_SITE_KEY may be client-visible.\n")
-	prompt.WriteString("11. Return changed files and a short verification checklist.\n\n")
+	prompt.WriteString("11. Detect the app's existing i18n / locale setup before deciding the language of the submitter's confirmation email. If the app is single-locale, match it; if bilingual, accept a locale field from the form and respond accordingly. Do not invent a locale.\n")
+	prompt.WriteString("12. Return changed files and a short verification checklist.\n\n")
 	prompt.WriteString("Provider defaults:\n")
 	prompt.WriteString(fmt.Sprintf("- SMTP host: %s\n", record.SMTPHost))
 	prompt.WriteString(fmt.Sprintf("- SMTP port: %d\n", record.SMTPPort))
@@ -501,6 +623,13 @@ func buildAIPrompt(project *db.Project, record *db.ProjectEmailSettings) string 
 	prompt.WriteString(fmt.Sprintf("- From address: %s\n", record.EmailFrom))
 	prompt.WriteString(fmt.Sprintf("- Owner recipients: %s\n", record.ContactEmailTo))
 	return prompt.String()
+}
+
+func joinHosts(hosts []string) string {
+	if len(hosts) == 0 {
+		return "(none)"
+	}
+	return strings.Join(hosts, ", ")
 }
 
 func missingKeys(required, existing []string) []string {
