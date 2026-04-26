@@ -12,16 +12,10 @@ func (db *DB) CreateAPIToken(token *APIToken) error {
 	if token.ID == "" {
 		token.ID = NewID()
 	}
-	var expiresAt any
-	if token.ExpiresAt.Valid {
-		expiresAt = token.ExpiresAt.Time
-	} else {
-		expiresAt = nil
-	}
 	_, err := db.Exec(
 		`INSERT INTO api_tokens (id, user_id, name, token_hash, expires_at)
 		 VALUES (?, ?, ?, ?, ?)`,
-		token.ID, token.UserID, token.Name, token.TokenHash, expiresAt,
+		token.ID, token.UserID, token.Name, token.TokenHash, token.ExpiresAt,
 	)
 	if err != nil {
 		return fmt.Errorf("create api token: %w", err)
