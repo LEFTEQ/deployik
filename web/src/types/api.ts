@@ -307,8 +307,8 @@ export interface ProjectEmailSettings {
 export interface ProjectEmailRequiredStatus {
   env_missing: boolean;
   secrets_missing: boolean;
-  missing_env: string[];
-  missing_secrets: string[];
+  missing_env: string[] | null;
+  missing_secrets: string[] | null;
 }
 
 export interface ProjectEmailPayload {

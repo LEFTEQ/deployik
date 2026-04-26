@@ -508,7 +508,7 @@ func missingKeys(required, existing []string) []string {
 	for _, key := range existing {
 		seen[key] = struct{}{}
 	}
-	var missing []string
+	missing := make([]string, 0, len(required))
 	for _, key := range required {
 		if _, ok := seen[key]; !ok {
 			missing = append(missing, key)

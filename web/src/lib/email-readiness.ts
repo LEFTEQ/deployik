@@ -62,7 +62,7 @@ function hasSMTPSettings(settings: ProjectEmailSettings) {
 }
 
 function hasMissingSecret(data: ProjectEmailPayload, key: string) {
-  return data.status.required.missing_secrets.includes(key);
+  return (data.status.required.missing_secrets ?? []).includes(key);
 }
 
 function hasText(value: string | null | undefined) {
