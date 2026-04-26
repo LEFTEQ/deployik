@@ -57,6 +57,9 @@ const DeploymentDetail = lazy(() =>
     default: m.DeploymentDetail,
   })),
 );
+const UserTokens = lazy(() =>
+  import("@/pages/UserTokens").then((m) => ({ default: m.UserTokens })),
+);
 import { AppLayout } from "@/components/layout/AppLayout";
 import { WorkspaceLayout } from "@/components/layout/WorkspaceLayout";
 import { ProjectLayout } from "@/components/layout/ProjectLayout";
@@ -157,6 +160,12 @@ const indexRoute = createRoute({
   component: Projects,
 });
 
+const userTokensRoute = createRoute({
+  getParentRoute: () => workspaceLayoutRoute,
+  path: "/account/tokens",
+  component: UserTokens,
+});
+
 // New project (no sidebar context needed, uses workspace layout)
 const newProjectRoute = createRoute({
   getParentRoute: () => protectedRoute,
@@ -230,7 +239,7 @@ const routeTree = rootRoute.addChildren([
   loginRoute,
   authCallbackRoute,
   protectedRoute.addChildren([
-    workspaceLayoutRoute.addChildren([indexRoute]),
+    workspaceLayoutRoute.addChildren([indexRoute, userTokensRoute]),
     newProjectRoute,
     projectLayoutRoute.addChildren([
       projectOverviewRoute,

@@ -88,6 +88,12 @@ function getWorkspaceItems(): NavItem[] {
       to: "/",
       matchPath: (p) => p === "/",
     },
+    {
+      label: "Access tokens",
+      icon: KeyRound,
+      to: "/account/tokens",
+      matchPath: (p) => p === "/account/tokens",
+    },
   ];
 }
 
