@@ -168,39 +168,6 @@ func TestServiceSaveSettingsWritesEnvAndSecretsAndBuildsPrompt(t *testing.T) {
 	}
 }
 
-func TestServicePayloadIncludesVariableSuggestions(t *testing.T) {
-	database, encryptor, project := newServiceTestDB(t)
-	service := NewService(database, encryptor, nil)
-
-	payload, err := service.SaveProjectSettings(context.Background(), project, SaveRequest{
-		Provider:                string(db.EmailProviderWebglobe),
-		SMTPHost:                "mail.webglobe.cz",
-		SMTPPort:                587,
-		SMTPSecurity:            string(db.EmailSMTPSecurityStartTLS),
-		SMTPUser:                "noreply@acmegym.cz",
-		SMTPPassword:            "smtp-password",
-		EmailFrom:               "noreply@acmegym.cz",
-		EmailFromName:           "acmegym",
-		ContactEmailTo:          "owner@acmegym.cz",
-		RecaptchaSiteKey:        "site-key",
-		RecaptchaSecretKey:      "secret-key",
-		RecaptchaScoreThreshold: 0.5,
-	})
-	if err != nil {
-		t.Fatalf("SaveProjectSettings: %v", err)
-	}
-
-	if got := findInstallVariable(payload.Install.EnvVariables, "SMTP_HOST"); got == nil || got.Value != "mail.webglobe.cz" || got.Kind != string(db.VariableKindEnv) || got.Environment != "shared" {
-		t.Fatalf("SMTP_HOST suggestion = %#v, want shared env value", got)
-	}
-	if got := findInstallVariable(payload.Install.EnvVariables, "NEXT_PUBLIC_RECAPTCHA_SITE_KEY"); got == nil || got.Value != "site-key" {
-		t.Fatalf("NEXT_PUBLIC_RECAPTCHA_SITE_KEY suggestion = %#v, want site-key", got)
-	}
-	if got := findInstallVariable(payload.Install.SecretVariables, "SMTP_PASSWORD"); got == nil || got.Value != "" || got.Kind != string(db.VariableKindSecret) || got.Environment != "shared" {
-		t.Fatalf("SMTP_PASSWORD suggestion = %#v, want shared secret without value", got)
-	}
-}
-
 func TestServiceTestSMTPUsesStoredSecretsAndRecordsSuccess(t *testing.T) {
 	database, encryptor, project := newServiceTestDB(t)
 	sender := &fakeSender{}
@@ -299,13 +266,4 @@ func hasEncryptedVariable(t *testing.T, encryptor *crypto.Encryptor, variables [
 		return got == want
 	}
 	return false
-}
-
-func findInstallVariable(variables []InstallVariableSuggestion, key string) *InstallVariableSuggestion {
-	for i := range variables {
-		if variables[i].Key == key {
-			return &variables[i]
-		}
-	}
-	return nil
 }

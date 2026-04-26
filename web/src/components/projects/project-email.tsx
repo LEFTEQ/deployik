@@ -2,12 +2,9 @@ import { useEffect, useMemo, useState } from "react";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
-  CheckCircle2,
-  CircleAlert,
   CircleHelp,
   ExternalLink,
   Mail,
-  RefreshCcw,
   Save,
   Send,
   ShieldCheck,
@@ -19,14 +16,12 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   Card,
-  CardAction,
   CardContent,
   CardDescription,
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
 import { CodePanel } from "@/components/ui/code-panel";
-import { IntegrationVariableChecklist } from "@/components/projects/integration-variable-checklist";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -47,7 +42,6 @@ import type {
   ProjectEmailPayload,
   ProjectEmailSaveRequest,
   ProjectEmailSettings,
-  InstallVariableSuggestion,
 } from "@/types/api";
 
 type EmailFormState = ProjectEmailSaveRequest;
@@ -122,22 +116,6 @@ export function ProjectEmailTab({ projectId }: { projectId: string }) {
     return buildStatusCards(data);
   }, [data]);
 
-  const envSuggestions = useMemo(
-    () =>
-      data
-        ? buildEmailEnvSuggestions(data.install.env_variables, form)
-        : [],
-    [data, form],
-  );
-
-  const secretValues = useMemo(
-    () => ({
-      SMTP_PASSWORD: form.smtp_password,
-      RECAPTCHA_SECRET_KEY: form.recaptcha_secret_key,
-    }),
-    [form.smtp_password, form.recaptcha_secret_key],
-  );
-
   if (isLoading) {
     return (
       <LoadingState
@@ -203,243 +181,195 @@ export function ProjectEmailTab({ projectId }: { projectId: string }) {
         ))}
       </div>
 
-      <div className="grid gap-6 xl:grid-cols-[minmax(0,1.15fr)_minmax(340px,0.85fr)]">
-        <Card>
-          <CardHeader>
-            <CardTitle>Setup Checklist</CardTitle>
-            <CardDescription>
-              Values are written into the shared project environment. Secrets
-              are encrypted and are not returned after saving.
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="flex flex-col gap-6">
-              <FormSection
-                icon={Mail}
-                title="Sender"
-                description="Use the Webglobe mailbox that will authenticate SMTP."
-              >
-                <div className="grid gap-4 md:grid-cols-2">
-                  <Field label="SMTP Host" htmlFor="smtp-host">
-                    <Input
-                      id="smtp-host"
-                      value={form.smtp_host}
-                      onChange={(event) =>
-                        patchForm({ smtp_host: event.target.value })
-                      }
-                      placeholder="mail.webglobe.cz"
-                    />
-                  </Field>
-                  <Field label="SMTP Port" htmlFor="smtp-port">
-                    <Input
-                      id="smtp-port"
-                      type="number"
-                      min={1}
-                      value={form.smtp_port}
-                      onChange={(event) =>
-                        patchForm({ smtp_port: Number(event.target.value) })
-                      }
-                    />
-                  </Field>
-                  <Field label="Security" htmlFor="smtp-security">
-                    <Select
-                      value={form.smtp_security}
-                      onValueChange={(value) =>
-                        patchForm({
-                          smtp_security: value as EmailFormState["smtp_security"],
-                        })
-                      }
-                    >
-                      <SelectTrigger id="smtp-security" className="w-full">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectGroup>
-                          <SelectItem value="starttls">STARTTLS</SelectItem>
-                          <SelectItem value="tls">TLS / SSL</SelectItem>
-                          <SelectItem value="none">None</SelectItem>
-                        </SelectGroup>
-                      </SelectContent>
-                    </Select>
-                  </Field>
-                  <Field label="SMTP User" htmlFor="smtp-user">
-                    <Input
-                      id="smtp-user"
-                      type="email"
-                      value={form.smtp_user}
-                      onChange={(event) =>
-                        patchForm({ smtp_user: event.target.value })
-                      }
-                      placeholder="noreply@acmegym.cz"
-                    />
-                  </Field>
-                  <Field label="SMTP Password" htmlFor="smtp-password">
-                    <Input
-                      id="smtp-password"
-                      type="password"
-                      value={form.smtp_password ?? ""}
-                      onChange={(event) =>
-                        patchForm({ smtp_password: event.target.value })
-                      }
-                      placeholder="Leave blank to keep existing secret"
-                    />
-                  </Field>
-                  <Field label="From Name" htmlFor="email-from-name">
-                    <Input
-                      id="email-from-name"
-                      value={form.email_from_name}
-                      onChange={(event) =>
-                        patchForm({ email_from_name: event.target.value })
-                      }
-                      placeholder="acmegym"
-                    />
-                  </Field>
-                  <Field label="From Address" htmlFor="email-from">
-                    <Input
-                      id="email-from"
-                      type="email"
-                      value={form.email_from}
-                      onChange={(event) =>
-                        patchForm({ email_from: event.target.value })
-                      }
-                      placeholder="noreply@acmegym.cz"
-                    />
-                  </Field>
-                </div>
-              </FormSection>
-
-              <Separator />
-
-              <FormSection
-                icon={ShieldCheck}
-                title="Recipients and reCAPTCHA"
-                description="Owner notifications go to explicit recipients. reCAPTCHA v3 protects the route before any email is sent."
-              >
-                <div className="grid gap-4 md:grid-cols-2">
-                  <Field
-                    label="Owner Recipients"
-                    htmlFor="contact-email-to"
-                    className="md:col-span-2"
-                  >
-                    <Textarea
-                      id="contact-email-to"
-                      value={form.contact_email_to}
-                      onChange={(event) =>
-                        patchForm({ contact_email_to: event.target.value })
-                      }
-                      placeholder="owner@acmegym.cz, sales@acmegym.cz"
-                      className="min-h-20"
-                    />
-                  </Field>
-                  <Field label="reCAPTCHA Site Key" htmlFor="recaptcha-site-key">
-                    <Input
-                      id="recaptcha-site-key"
-                      value={form.recaptcha_site_key}
-                      onChange={(event) =>
-                        patchForm({ recaptcha_site_key: event.target.value })
-                      }
-                    />
-                  </Field>
-                  <Field
-                    label="reCAPTCHA Secret Key"
-                    htmlFor="recaptcha-secret-key"
-                  >
-                    <Input
-                      id="recaptcha-secret-key"
-                      type="password"
-                      value={form.recaptcha_secret_key ?? ""}
-                      onChange={(event) =>
-                        patchForm({ recaptcha_secret_key: event.target.value })
-                      }
-                      placeholder="Leave blank to keep existing secret"
-                    />
-                  </Field>
-                  <Field label="Score Threshold" htmlFor="recaptcha-threshold">
-                    <Input
-                      id="recaptcha-threshold"
-                      type="number"
-                      min={0}
-                      max={1}
-                      step={0.1}
-                      value={form.recaptcha_score_threshold}
-                      onChange={(event) =>
-                        patchForm({
-                          recaptcha_score_threshold: Number(event.target.value),
-                        })
-                      }
-                    />
-                  </Field>
-                </div>
-              </FormSection>
-            </div>
-          </CardContent>
-        </Card>
-
-        <div className="flex flex-col gap-6">
-          <IntegrationVariableChecklist
-            projectId={projectId}
-            title="Quick Environment Setup"
-            description="Add the email integration keys to the shared environment and secret stores."
-            envVariables={envSuggestions}
-            secretVariables={data.install.secret_variables}
-            secretValues={secretValues}
-            onApplied={() =>
-              queryClient.invalidateQueries({
-                queryKey: queryKeys.projectEmail(projectId),
-              })
-            }
-          />
-
-          <Card>
-            <CardHeader>
-              <CardTitle>Install Readiness</CardTitle>
+      <Card>
+        <CardHeader>
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+            <div>
+              <CardTitle>Configuration</CardTitle>
               <CardDescription>
-                Save settings first, then test SMTP before pasting the prompt into
-                the target app repository.
+                Saving writes these values into the shared project environment.
+                Secrets are encrypted and are not returned after saving.
               </CardDescription>
-              <CardAction>
-                <Badge variant={data.status.configured ? "secondary" : "outline"}>
-                  {data.status.configured ? "Configured" : "Needs values"}
-                </Badge>
-              </CardAction>
-            </CardHeader>
-            <CardContent>
-              <div className="flex flex-col gap-4">
-                <MissingKeys
-                  title="Environment"
-                  keys={data.status.required.missing_env}
-                />
-                <MissingKeys
-                  title="Secrets"
-                  keys={data.status.required.missing_secrets}
-                />
-                {data.settings.last_test_error ? (
-                  <div className="rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive-foreground">
-                    {data.settings.last_test_error}
-                  </div>
-                ) : null}
-                {data.settings.last_tested_at ? (
-                  <p className="text-xs text-muted-foreground">
-                    Last SMTP test:{" "}
-                    {new Date(data.settings.last_tested_at).toLocaleString()}
-                  </p>
-                ) : null}
-                <Button
-                  variant="outline"
-                  onClick={() => {
-                    queryClient.invalidateQueries({
-                      queryKey: queryKeys.projectEmail(projectId),
-                    });
-                  }}
-                >
-                  <RefreshCcw data-icon="inline-start" />
-                  Refresh status
-                </Button>
+            </div>
+            <Badge variant={data.status.configured ? "secondary" : "outline"}>
+              {data.status.configured ? "Configured" : "Needs values"}
+            </Badge>
+          </div>
+        </CardHeader>
+        <CardContent>
+          <div className="flex flex-col gap-6">
+            <FormSection
+              icon={Mail}
+              title="Sender"
+              description="Use the Webglobe mailbox that will authenticate SMTP."
+            >
+              <div className="grid gap-4 md:grid-cols-2">
+                <Field label="SMTP Host" htmlFor="smtp-host">
+                  <Input
+                    id="smtp-host"
+                    value={form.smtp_host}
+                    onChange={(event) =>
+                      patchForm({ smtp_host: event.target.value })
+                    }
+                    placeholder="mail.webglobe.cz"
+                  />
+                </Field>
+                <Field label="SMTP Port" htmlFor="smtp-port">
+                  <Input
+                    id="smtp-port"
+                    type="number"
+                    min={1}
+                    value={form.smtp_port}
+                    onChange={(event) =>
+                      patchForm({ smtp_port: Number(event.target.value) })
+                    }
+                  />
+                </Field>
+                <Field label="Security" htmlFor="smtp-security">
+                  <Select
+                    value={form.smtp_security}
+                    onValueChange={(value) =>
+                      patchForm({
+                        smtp_security: value as EmailFormState["smtp_security"],
+                      })
+                    }
+                  >
+                    <SelectTrigger id="smtp-security" className="w-full">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectGroup>
+                        <SelectItem value="starttls">STARTTLS</SelectItem>
+                        <SelectItem value="tls">TLS / SSL</SelectItem>
+                        <SelectItem value="none">None</SelectItem>
+                      </SelectGroup>
+                    </SelectContent>
+                  </Select>
+                </Field>
+                <Field label="SMTP User" htmlFor="smtp-user">
+                  <Input
+                    id="smtp-user"
+                    type="email"
+                    value={form.smtp_user}
+                    onChange={(event) =>
+                      patchForm({ smtp_user: event.target.value })
+                    }
+                    placeholder="noreply@acmegym.cz"
+                  />
+                </Field>
+                <Field label="SMTP Password" htmlFor="smtp-password">
+                  <Input
+                    id="smtp-password"
+                    type="password"
+                    value={form.smtp_password ?? ""}
+                    onChange={(event) =>
+                      patchForm({ smtp_password: event.target.value })
+                    }
+                    placeholder="Leave blank to keep existing secret"
+                  />
+                </Field>
+                <Field label="From Name" htmlFor="email-from-name">
+                  <Input
+                    id="email-from-name"
+                    value={form.email_from_name}
+                    onChange={(event) =>
+                      patchForm({ email_from_name: event.target.value })
+                    }
+                    placeholder="acmegym"
+                  />
+                </Field>
+                <Field label="From Address" htmlFor="email-from">
+                  <Input
+                    id="email-from"
+                    type="email"
+                    value={form.email_from}
+                    onChange={(event) =>
+                      patchForm({ email_from: event.target.value })
+                    }
+                    placeholder="noreply@acmegym.cz"
+                  />
+                </Field>
               </div>
-            </CardContent>
-          </Card>
-        </div>
-      </div>
+            </FormSection>
+
+            <Separator />
+
+            <FormSection
+              icon={ShieldCheck}
+              title="Recipients and reCAPTCHA"
+              description="Owner notifications go to explicit recipients. reCAPTCHA v3 protects the route before any email is sent."
+            >
+              <div className="grid gap-4 md:grid-cols-2">
+                <Field
+                  label="Owner Recipients"
+                  htmlFor="contact-email-to"
+                  className="md:col-span-2"
+                >
+                  <Textarea
+                    id="contact-email-to"
+                    value={form.contact_email_to}
+                    onChange={(event) =>
+                      patchForm({ contact_email_to: event.target.value })
+                    }
+                    placeholder="owner@acmegym.cz, sales@acmegym.cz"
+                    className="min-h-20"
+                  />
+                </Field>
+                <Field label="reCAPTCHA Site Key" htmlFor="recaptcha-site-key">
+                  <Input
+                    id="recaptcha-site-key"
+                    value={form.recaptcha_site_key}
+                    onChange={(event) =>
+                      patchForm({ recaptcha_site_key: event.target.value })
+                    }
+                  />
+                </Field>
+                <Field
+                  label="reCAPTCHA Secret Key"
+                  htmlFor="recaptcha-secret-key"
+                >
+                  <Input
+                    id="recaptcha-secret-key"
+                    type="password"
+                    value={form.recaptcha_secret_key ?? ""}
+                    onChange={(event) =>
+                      patchForm({ recaptcha_secret_key: event.target.value })
+                    }
+                    placeholder="Leave blank to keep existing secret"
+                  />
+                </Field>
+                <Field label="Score Threshold" htmlFor="recaptcha-threshold">
+                  <Input
+                    id="recaptcha-threshold"
+                    type="number"
+                    min={0}
+                    max={1}
+                    step={0.1}
+                    value={form.recaptcha_score_threshold}
+                    onChange={(event) =>
+                      patchForm({
+                        recaptcha_score_threshold: Number(event.target.value),
+                      })
+                    }
+                  />
+                </Field>
+              </div>
+            </FormSection>
+
+            {data.settings.last_test_error ? (
+              <div className="rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive-foreground">
+                {data.settings.last_test_error}
+              </div>
+            ) : null}
+            {data.settings.last_tested_at ? (
+              <p className="text-xs text-muted-foreground">
+                Last SMTP test:{" "}
+                {new Date(data.settings.last_tested_at).toLocaleString()}
+              </p>
+            ) : null}
+          </div>
+        </CardContent>
+      </Card>
 
       <CodePanel
         title="AI Install Prompt"
@@ -456,28 +386,6 @@ export function ProjectEmailTab({ projectId }: { projectId: string }) {
   function patchForm(patch: Partial<EmailFormState>) {
     setForm((current) => ({ ...current, ...patch }));
   }
-}
-
-function buildEmailEnvSuggestions(
-  suggestions: InstallVariableSuggestion[],
-  form: EmailFormState,
-) {
-  const values: Record<string, string> = {
-    SMTP_HOST: form.smtp_host,
-    SMTP_PORT: String(form.smtp_port || ""),
-    SMTP_SECURE: form.smtp_security,
-    SMTP_USER: form.smtp_user,
-    EMAIL_FROM: form.email_from,
-    EMAIL_FROM_NAME: form.email_from_name,
-    CONTACT_EMAIL_TO: form.contact_email_to,
-    NEXT_PUBLIC_RECAPTCHA_SITE_KEY: form.recaptcha_site_key,
-    RECAPTCHA_SCORE_THRESHOLD: String(form.recaptcha_score_threshold || ""),
-  };
-
-  return suggestions.map((suggestion) => ({
-    ...suggestion,
-    value: values[suggestion.key] ?? suggestion.value ?? "",
-  }));
 }
 
 function EmailHelpPanel() {
@@ -695,36 +603,6 @@ function Field({
     <div className={cn("flex flex-col gap-2", className)}>
       <Label htmlFor={htmlFor}>{label}</Label>
       {children}
-    </div>
-  );
-}
-
-function MissingKeys({ title, keys }: { title: string; keys: string[] }) {
-  const ready = keys.length === 0;
-  return (
-    <div className="rounded-lg border px-3 py-3">
-      <div className="flex items-center justify-between gap-3">
-        <div className="flex items-center gap-2 text-sm font-medium">
-          {ready ? <CheckCircle2 /> : <CircleAlert />}
-          {title}
-        </div>
-        <Badge variant={ready ? "secondary" : "outline"}>
-          {ready ? "Ready" : `${keys.length} missing`}
-        </Badge>
-      </div>
-      {ready ? (
-        <p className="mt-2 text-xs text-muted-foreground">
-          Required {title.toLowerCase()} are provisioned.
-        </p>
-      ) : (
-        <div className="mt-3 flex flex-wrap gap-2">
-          {keys.map((key) => (
-            <Badge key={key} variant="outline" className="font-mono text-xs">
-              {key}
-            </Badge>
-          ))}
-        </div>
-      )}
     </div>
   );
 }

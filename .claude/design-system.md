@@ -26,7 +26,6 @@
 | Sidebar shell | `web/src/components/layout/AppSidebar.tsx` | Workspace/project navigation, collapsible project sections. |
 | Project shell | `web/src/components/layout/ProjectLayout.tsx` | Breadcrumb header, fast deploy actions, project content width. |
 | Variable store | `web/src/components/projects/variable-store.tsx` | Canonical env/secret CRUD UX. |
-| Integration variable checklist | `web/src/components/projects/integration-variable-checklist.tsx` | Reusable quick env/secret sync for integration pages. |
 | Code panel | `web/src/components/ui/code-panel.tsx` | Copyable snippets and AI prompts. |
 | Analytics stat/chart | `web/src/components/analytics/*` | Dashboard KPI and chart primitives. |
 

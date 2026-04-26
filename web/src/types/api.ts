@@ -320,17 +320,7 @@ export interface ProjectEmailPayload {
   install: {
     ai_prompt: string;
     env_keys: string[];
-    env_variables: InstallVariableSuggestion[];
-    secret_variables: InstallVariableSuggestion[];
   };
-}
-
-export interface InstallVariableSuggestion {
-  key: string;
-  value?: string;
-  environment: VariableScope;
-  kind: ProjectVariableKind;
-  description?: string;
 }
 
 export interface ProjectEmailSaveRequest {
