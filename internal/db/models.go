@@ -64,6 +64,17 @@ type AuditLog struct {
 	CreatedAt    time.Time `json:"created_at"`
 }
 
+type APIToken struct {
+	ID         string       `json:"id"`
+	UserID     string       `json:"user_id"`
+	Name       string       `json:"name"`
+	TokenHash  string       `json:"-"`
+	LastUsedAt sql.NullTime `json:"last_used_at"`
+	ExpiresAt  sql.NullTime `json:"expires_at"`
+	RevokedAt  sql.NullTime `json:"revoked_at"`
+	CreatedAt  time.Time    `json:"created_at"`
+}
+
 type Project struct {
 	ID                 string    `json:"id"`
 	Name               string    `json:"name"`
