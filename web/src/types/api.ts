@@ -11,6 +11,27 @@ export interface AuthResponse {
   user: User;
 }
 
+export interface APIToken {
+  id: string;
+  user_id: string;
+  name: string;
+  last_used_at: string | null;
+  expires_at: string | null;
+  revoked_at: string | null;
+  created_at: string;
+}
+
+export interface CreateAPITokenRequest {
+  name: string;
+}
+
+export interface CreateAPITokenResponse {
+  id: string;
+  name: string;
+  /** Raw token value — shown to the user once at creation, never stored. */
+  token: string;
+}
+
 export interface Organization {
   id: string;
   name: string;

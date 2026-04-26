@@ -10,6 +10,9 @@ export const queryKeys = {
   platform: () => ["platform"] as const,
   health: () => ["health"] as const,
 
+  // Personal Access Tokens (account-scoped, not project-scoped)
+  myTokens: () => ["me", "tokens"] as const,
+
   // Projects
   projects: (organizationId: string | null | undefined) =>
     ["projects", organizationId ?? "all"] as const,

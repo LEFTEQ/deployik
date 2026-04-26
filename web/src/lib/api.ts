@@ -26,6 +26,9 @@ import type {
   VolumeInfo,
   HealthResponse,
   RepoInspection,
+  APIToken,
+  CreateAPITokenRequest,
+  CreateAPITokenResponse,
 } from "@/types/api";
 
 const API_URL = import.meta.env.VITE_API_URL || "/api";
@@ -119,6 +122,21 @@ class ApiClient {
 
   async getMe(): Promise<User> {
     return this.request("/auth/me");
+  }
+
+  async listMyTokens(): Promise<APIToken[]> {
+    return this.request<APIToken[]>("/me/tokens");
+  }
+
+  async createMyToken(req: CreateAPITokenRequest): Promise<CreateAPITokenResponse> {
+    return this.request<CreateAPITokenResponse>("/me/tokens", {
+      method: "POST",
+      body: JSON.stringify(req),
+    });
+  }
+
+  async revokeMyToken(id: string): Promise<void> {
+    await this.request<void>(`/me/tokens/${id}`, { method: "DELETE" });
   }
 
   async getHealth(): Promise<HealthResponse> {
