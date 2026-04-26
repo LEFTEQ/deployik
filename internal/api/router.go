@@ -113,6 +113,13 @@ func NewRouter(cfg *RouterConfig) *chi.Mux {
 			r.Use(middleware.Authenticate(cfg.JWTSecret, cfg.DB))
 			r.Get("/auth/me", authHandler.GetMe)
 
+			// Personal Access Tokens — used by the deployik-howto skill and any
+			// future external tooling that needs Bearer auth without a browser session.
+			tokenHandler := &handlers.TokenHandler{DB: cfg.DB, Audit: auditRecorder}
+			r.Get("/me/tokens", tokenHandler.List)
+			r.With(mutationLimiter.Middleware("token_create")).Post("/me/tokens", tokenHandler.Create)
+			r.With(mutationLimiter.Middleware("token_revoke")).Delete("/me/tokens/{id}", tokenHandler.Revoke)
+
 			// GitHub
 			var dockerClient *build.DockerClient
 			if cfg.Pipeline != nil {
