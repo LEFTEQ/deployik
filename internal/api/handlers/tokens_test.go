@@ -62,8 +62,8 @@ func TestTokenCreateReturnsRawTokenOnce(t *testing.T) {
 	if !strings.HasPrefix(raw, "dpk_") {
 		t.Fatalf("token field missing dpk_ prefix: %q", raw)
 	}
-	if resp["id"] == "" {
-		t.Fatalf("id missing")
+	if id, _ := resp["id"].(string); id == "" {
+		t.Fatalf("id missing or wrong type: %v", resp["id"])
 	}
 
 	// Verify the token actually authenticates: hash it, look it up.
