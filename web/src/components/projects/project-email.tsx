@@ -36,6 +36,10 @@ import { Separator } from "@/components/ui/separator";
 import { Textarea } from "@/components/ui/textarea";
 import { LoadingState, Spinner } from "@/components/ui/spinner";
 import { api } from "@/lib/api";
+import {
+  getEmailReadiness,
+  getSMTPTestBlocker,
+} from "@/lib/email-readiness";
 import { queryKeys } from "@/lib/queryKeys";
 import { cn } from "@/lib/utils";
 import type {
@@ -86,7 +90,11 @@ export function ProjectEmailTab({ projectId }: { projectId: string }) {
   });
 
   const testMutation = useMutation({
-    mutationFn: () => api.testProjectEmailSmtp(projectId),
+    mutationFn: async () => {
+      const saved = await api.saveProjectEmail(projectId, normalizeForm(form));
+      queryClient.setQueryData(queryKeys.projectEmail(projectId), saved);
+      return api.testProjectEmailSmtp(projectId);
+    },
     onSuccess: (payload) => {
       queryClient.setQueryData(queryKeys.projectEmail(projectId), payload);
       setForm(formFromSettings(payload.settings));
@@ -134,6 +142,11 @@ export function ProjectEmailTab({ projectId }: { projectId: string }) {
     );
   }
 
+  const readiness = getEmailReadiness(data);
+  const smtpTestBlocker = getSMTPTestBlocker(data, form);
+  const isSaving = saveMutation.isPending || testMutation.isPending;
+  const isTesting = testMutation.isPending;
+
   return (
     <div className="flex flex-col gap-8">
       <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
@@ -146,32 +159,40 @@ export function ProjectEmailTab({ projectId }: { projectId: string }) {
             Next.js contact endpoint with a generated AI prompt.
           </p>
         </div>
-        <div className="flex shrink-0 gap-2">
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => saveMutation.mutate()}
-            disabled={saveMutation.isPending}
-          >
-            {saveMutation.isPending ? (
-              <Spinner data-icon="inline-start" />
-            ) : (
-              <Save data-icon="inline-start" />
-            )}
-            Save Settings
-          </Button>
-          <Button
-            size="sm"
-            onClick={() => testMutation.mutate()}
-            disabled={testMutation.isPending || data.status.required.secrets_missing}
-          >
-            {testMutation.isPending ? (
-              <Spinner data-icon="inline-start" />
-            ) : (
-              <Send data-icon="inline-start" />
-            )}
-            Test SMTP
-          </Button>
+        <div className="flex shrink-0 flex-col items-start gap-2 sm:items-end">
+          <div className="flex gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => saveMutation.mutate()}
+              disabled={isSaving}
+            >
+              {saveMutation.isPending ? (
+                <Spinner data-icon="inline-start" />
+              ) : (
+                <Save data-icon="inline-start" />
+              )}
+              Save Settings
+            </Button>
+            <Button
+              size="sm"
+              onClick={() => testMutation.mutate()}
+              disabled={isTesting || Boolean(smtpTestBlocker)}
+              title={smtpTestBlocker ?? undefined}
+            >
+              {isTesting ? (
+                <Spinner data-icon="inline-start" />
+              ) : (
+                <Send data-icon="inline-start" />
+              )}
+              Save & Test SMTP
+            </Button>
+          </div>
+          {smtpTestBlocker ? (
+            <p className="max-w-sm text-xs text-muted-foreground">
+              {smtpTestBlocker}
+            </p>
+          ) : null}
         </div>
       </div>
 
@@ -191,8 +212,8 @@ export function ProjectEmailTab({ projectId }: { projectId: string }) {
                 Secrets are encrypted and are not returned after saving.
               </CardDescription>
             </div>
-            <Badge variant={data.status.configured ? "secondary" : "outline"}>
-              {data.status.configured ? "Configured" : "Needs values"}
+            <Badge variant={readiness.installReady ? "secondary" : "outline"}>
+              {readiness.installReady ? "Configured" : "Needs values"}
             </Badge>
           </div>
         </CardHeader>
@@ -251,9 +272,16 @@ export function ProjectEmailTab({ projectId }: { projectId: string }) {
                     id="smtp-user"
                     type="email"
                     value={form.smtp_user}
-                    onChange={(event) =>
-                      patchForm({ smtp_user: event.target.value })
-                    }
+                    onChange={(event) => {
+                      const value = event.target.value;
+                      setForm((current) => ({
+                        ...current,
+                        smtp_user: value,
+                        email_from: current.email_from.trim()
+                          ? current.email_from
+                          : value,
+                      }));
+                    }}
                     placeholder="noreply@acmegym.cz"
                   />
                 </Field>
@@ -489,38 +517,44 @@ function normalizeForm(form: EmailFormState): ProjectEmailSaveRequest {
 }
 
 function buildStatusCards(data: ProjectEmailPayload) {
-  const settingsReady = !data.status.required.env_missing;
-  const secretsReady = !data.status.required.secrets_missing;
-  const smtpTested = data.settings.status === "smtp_tested";
+  const readiness = getEmailReadiness(data);
   return [
     {
       title: "SMTP",
-      description: smtpTested
+      description: readiness.smtpTested
         ? "Test email sent successfully."
-        : settingsReady && secretsReady
-          ? "Configured, ready to test."
+        : readiness.smtpReadyToTest
+          ? "Ready to test."
           : "Needs sender credentials.",
       icon: Mail,
-      state: smtpTested ? "complete" : settingsReady ? "pending" : "missing",
-      badge: smtpTested ? "Tested" : settingsReady ? "Ready" : "Missing",
+      state: readiness.smtpTested
+        ? "complete"
+        : readiness.smtpReadyToTest
+          ? "pending"
+          : "missing",
+      badge: readiness.smtpTested
+        ? "Tested"
+        : readiness.smtpReadyToTest
+          ? "Ready"
+          : "Missing",
     },
     {
       title: "reCAPTCHA",
-      description: secretsReady
+      description: readiness.recaptchaReady
         ? "v3 keys are provisioned."
         : "Add site and secret keys.",
       icon: ShieldCheck,
-      state: secretsReady ? "complete" : "missing",
-      badge: secretsReady ? "Ready" : "Missing",
+      state: readiness.recaptchaReady ? "complete" : "missing",
+      badge: readiness.recaptchaReady ? "Ready" : "Missing",
     },
     {
       title: "Install Prompt",
-      description: data.status.configured
+      description: readiness.installReady
         ? "Prompt is ready for the app repo."
         : "Prompt will include missing-key guidance.",
       icon: TerminalSquare,
-      state: data.status.configured ? "complete" : "pending",
-      badge: data.status.configured ? "Ready" : "Draft",
+      state: readiness.installReady ? "complete" : "pending",
+      badge: readiness.installReady ? "Ready" : "Draft",
     },
   ] as const;
 }
