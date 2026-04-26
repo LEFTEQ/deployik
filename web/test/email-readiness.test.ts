@@ -35,6 +35,23 @@ describe("email readiness", () => {
     expect(getSMTPTestBlocker(payload, form)).toBeNull();
   });
 
+  test("allows SMTP testing before owner recipients are configured", () => {
+    const payload = makePayload({
+      env_missing: false,
+      missing_env: [],
+    });
+    payload.settings.contact_email_to = "";
+    const form = makeForm({
+      contact_email_to: "",
+    });
+
+    expect(getSMTPTestBlocker(payload, form)).toBeNull();
+    expect(getEmailReadiness(payload)).toMatchObject({
+      smtpReadyToTest: true,
+      installReady: false,
+    });
+  });
+
   test("blocks SMTP testing when neither stored nor current SMTP password exists", () => {
     const payload = makePayload({
       secrets_missing: true,

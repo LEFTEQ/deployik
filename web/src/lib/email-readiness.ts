@@ -10,6 +10,7 @@ export const RECAPTCHA_SECRET_KEY = "RECAPTCHA_SECRET_KEY";
 export function getEmailReadiness(data: ProjectEmailPayload) {
   const smtpSettingsReady = hasSMTPSettings(data.settings);
   const smtpPasswordReady = !hasMissingSecret(data, SMTP_PASSWORD_KEY);
+  const ownerRecipientsReady = hasText(data.settings.contact_email_to);
   const recaptchaReady =
     hasText(data.settings.recaptcha_site_key) &&
     !hasMissingSecret(data, RECAPTCHA_SECRET_KEY);
@@ -17,10 +18,15 @@ export function getEmailReadiness(data: ProjectEmailPayload) {
   return {
     smtpSettingsReady,
     smtpPasswordReady,
+    ownerRecipientsReady,
     smtpReadyToTest: smtpSettingsReady && smtpPasswordReady,
     smtpTested: data.settings.status === "smtp_tested",
     recaptchaReady,
-    installReady: smtpSettingsReady && smtpPasswordReady && recaptchaReady,
+    installReady:
+      smtpSettingsReady &&
+      smtpPasswordReady &&
+      ownerRecipientsReady &&
+      recaptchaReady,
   };
 }
 
@@ -43,9 +49,6 @@ export function getSMTPTestBlocker(
   if (!hasText(form.email_from)) {
     return "Add the From Address before testing.";
   }
-  if (!hasText(form.contact_email_to)) {
-    return "Add owner recipients so Deployik knows where to send the test email.";
-  }
   return null;
 }
 
@@ -54,8 +57,7 @@ function hasSMTPSettings(settings: ProjectEmailSettings) {
     hasText(settings.smtp_host) &&
     settings.smtp_port > 0 &&
     hasText(settings.smtp_user) &&
-    hasText(settings.email_from) &&
-    hasText(settings.contact_email_to)
+    hasText(settings.email_from)
   );
 }
 

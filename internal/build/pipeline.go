@@ -40,12 +40,18 @@ type Pipeline struct {
 	Wg *sync.WaitGroup
 	// MaxBuildDuration is the per-deploy wall-clock cap. Zero means defaultMaxBuildDuration.
 	MaxBuildDuration time.Duration
+	// EnqueueOnly leaves dispatch-created deployments queued without starting
+	// the async deploy worker. This is used by control-plane tests.
+	EnqueueOnly bool
 }
 
 // Dispatch starts a deployment asynchronously. Returns immediately; the deploy
 // runs on a pipeline-owned goroutine that participates in the WaitGroup and
 // respects the pipeline context.
 func (p *Pipeline) Dispatch(project *db.Project, deployment *db.Deployment, githubToken string, onLog LogCallback) {
+	if p.EnqueueOnly {
+		return
+	}
 	if p.Wg != nil {
 		p.Wg.Add(1)
 	}

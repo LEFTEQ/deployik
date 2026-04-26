@@ -211,6 +211,42 @@ func TestServiceTestSMTPUsesStoredSecretsAndRecordsSuccess(t *testing.T) {
 	}
 }
 
+func TestServiceTestSMTPFallsBackToFromAddressWhenOwnerRecipientsEmpty(t *testing.T) {
+	database, encryptor, project := newServiceTestDB(t)
+	sender := &fakeSender{}
+	service := NewService(database, encryptor, sender)
+
+	if _, err := service.SaveProjectSettings(context.Background(), project, SaveRequest{
+		SMTPHost:                "mail.webglobe.cz",
+		SMTPPort:                587,
+		SMTPSecurity:            string(db.EmailSMTPSecurityStartTLS),
+		SMTPUser:                "noreply@acmegym.cz",
+		SMTPPassword:            "smtp-password",
+		EmailFrom:               "noreply@acmegym.cz",
+		EmailFromName:           "acmegym",
+		ContactEmailTo:          "",
+		RecaptchaSiteKey:        "",
+		RecaptchaScoreThreshold: 0.5,
+	}); err != nil {
+		t.Fatalf("SaveProjectSettings: %v", err)
+	}
+
+	payload, err := service.TestProjectSMTP(context.Background(), project)
+	if err != nil {
+		t.Fatalf("TestProjectSMTP: %v", err)
+	}
+
+	if sender.calls != 1 {
+		t.Fatalf("sender calls = %d, want 1", sender.calls)
+	}
+	if len(sender.message.To) != 1 || sender.message.To[0] != "noreply@acmegym.cz" {
+		t.Fatalf("message.To = %#v, want from-address fallback", sender.message.To)
+	}
+	if payload.Settings.Status != string(db.EmailStatusSMTPTested) {
+		t.Fatalf("status = %q, want smtp_tested", payload.Settings.Status)
+	}
+}
+
 func TestServiceTestSMTPRecordsFailure(t *testing.T) {
 	database, encryptor, project := newServiceTestDB(t)
 	sender := &fakeSender{err: errors.New("auth failed")}

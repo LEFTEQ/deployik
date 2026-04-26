@@ -36,6 +36,9 @@ jobs:
       - name: Frontend typecheck
         run: cd web && bunx tsc --noEmit
 
+      - name: Frontend tests
+        run: cd web && bun test
+
       - name: Frontend build
         run: cd web && bun run build
 

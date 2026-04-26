@@ -180,7 +180,13 @@ func (s *Service) TestProjectSMTP(ctx context.Context, project *db.Project) (Pro
 	}
 	recipients := splitRecipients(record.ContactEmailTo)
 	if len(recipients) == 0 {
-		return ProjectPayload{}, fmt.Errorf("at least one owner recipient is required")
+		recipients = splitRecipients(record.EmailFrom)
+	}
+	if len(recipients) == 0 {
+		recipients = splitRecipients(record.SMTPUser)
+	}
+	if len(recipients) == 0 {
+		return ProjectPayload{}, fmt.Errorf("from address or owner recipient is required")
 	}
 
 	message := Message{

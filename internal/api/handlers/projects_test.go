@@ -90,8 +90,9 @@ func TestProjectCreate_AutoDeploysAndProvisionsWebhook(t *testing.T) {
 
 	// A nil-safe Pipeline (Wg and Ctx are nil — Dispatch guards both).
 	pipeline := &build.Pipeline{
-		DB:        database,
-		Encryptor: enc,
+		DB:          database,
+		Encryptor:   enc,
+		EnqueueOnly: true,
 	}
 
 	h := &ProjectHandler{
@@ -187,8 +188,9 @@ func TestProjectCreate_AutoBuildScopeFailureDoesNotBlockCreation(t *testing.T) {
 	database, enc, user := setupProjectTestDB(t)
 
 	pipeline := &build.Pipeline{
-		DB:        database,
-		Encryptor: enc,
+		DB:          database,
+		Encryptor:   enc,
+		EnqueueOnly: true,
 	}
 
 	h := &ProjectHandler{
@@ -306,4 +308,3 @@ func TestProjectCreate_NilPipelineDoesNotBlockCreation(t *testing.T) {
 		t.Errorf("expected 0 deployments when pipeline=nil, got %d", len(deployments))
 	}
 }
-
