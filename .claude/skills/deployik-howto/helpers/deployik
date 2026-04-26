@@ -1,0 +1,93 @@
+#!/usr/bin/env bash
+# deployik — thin wrapper around the Deployik HTTP API.
+# Reads ~/.config/deployik/config (KEY=value lines) and signs requests with
+# DEPLOYIK_TOKEN as a Bearer token. Never inline tokens on the command line.
+set -euo pipefail
+
+CONFIG_FILE="${DEPLOYIK_CONFIG:-$HOME/.config/deployik/config}"
+
+usage() {
+  cat <<EOF
+Usage: deployik api <METHOD> <path> [json-body]
+
+Examples:
+  deployik api GET  /api/projects
+  deployik api POST /api/projects/abc/env '{"key":"FOO","value":"bar","environment":"preview"}'
+  deployik api DELETE /api/projects/abc/domains/xyz
+
+Reads $CONFIG_FILE for DEPLOYIK_BASE_URL and DEPLOYIK_TOKEN.
+Set DEPLOYIK_CONFIG to override the path.
+EOF
+}
+
+if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
+  usage
+  exit 0
+fi
+
+if [[ ! -f "$CONFIG_FILE" ]]; then
+  cat >&2 <<EOF
+deployik: config file not found at $CONFIG_FILE
+
+Create it with two lines:
+  DEPLOYIK_BASE_URL=https://your-deployik-host
+  DEPLOYIK_TOKEN=dpk_...
+
+Generate a token in the Deployik dashboard sidebar: Access tokens → Create token.
+EOF
+  exit 2
+fi
+
+# shellcheck disable=SC1090
+source "$CONFIG_FILE"
+
+if [[ -z "${DEPLOYIK_BASE_URL:-}" || -z "${DEPLOYIK_TOKEN:-}" ]]; then
+  echo "deployik: DEPLOYIK_BASE_URL or DEPLOYIK_TOKEN missing in $CONFIG_FILE" >&2
+  exit 2
+fi
+
+if [[ "${1:-}" != "api" || $# -lt 3 ]]; then
+  usage
+  exit 2
+fi
+
+shift
+method="$1"
+path="$2"
+body="${3:-}"
+
+# Strip trailing slash from base, leading slash from path, then rejoin.
+base="${DEPLOYIK_BASE_URL%/}"
+path="/${path#/}"
+url="$base$path"
+
+curl_args=(
+  --silent
+  --show-error
+  --write-out "\n__HTTP_STATUS__:%{http_code}\n"
+  --request "$method"
+  --header "Authorization: Bearer $DEPLOYIK_TOKEN"
+  --header "Accept: application/json"
+)
+
+if [[ -n "$body" ]]; then
+  curl_args+=(--header "Content-Type: application/json" --data "$body")
+fi
+
+raw=$(curl "${curl_args[@]}" "$url")
+status=$(printf '%s\n' "$raw" | awk -F: '/^__HTTP_STATUS__:/ {print $2}' | tr -d '[:space:]')
+body_out=$(printf '%s\n' "$raw" | sed '/^__HTTP_STATUS__:/d')
+
+if command -v jq >/dev/null 2>&1 && [[ -n "$body_out" ]]; then
+  if printf '%s' "$body_out" | jq . >/dev/null 2>&1; then
+    body_out=$(printf '%s' "$body_out" | jq .)
+  fi
+fi
+
+echo "HTTP $status" >&2
+[[ -n "$body_out" ]] && printf '%s\n' "$body_out"
+
+case "$status" in
+  2*) exit 0 ;;
+  *)  exit 1 ;;
+esac
