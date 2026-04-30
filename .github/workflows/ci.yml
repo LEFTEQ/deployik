@@ -37,7 +37,7 @@ jobs:
         run: cd web && bunx tsc --noEmit
 
       - name: Frontend tests
-        run: cd web && bun test
+        run: cd web && bun run test
 
       - name: Frontend build
         run: cd web && bun run build
