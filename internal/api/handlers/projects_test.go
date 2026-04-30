@@ -243,6 +243,76 @@ func TestProjectCreate_AutoBuildScopeFailureDoesNotBlockCreation(t *testing.T) {
 	}
 }
 
+func TestProjectCreate_ProductionAutoDeployOptInSkipsProductionWhenAutoBuildSetupFails(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPost {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusForbidden)
+			_ = json.NewEncoder(w).Encode(map[string]string{
+				"message": "Resource not accessible by personal access token",
+			})
+			return
+		}
+		http.NotFound(w, r)
+	}))
+	defer ts.Close()
+
+	restore := github.SetTestAPIBase(ts.URL)
+	defer restore()
+
+	database, enc, user := setupProjectTestDB(t)
+	pipeline := &build.Pipeline{DB: database, Encryptor: enc, EnqueueOnly: true}
+	h := &ProjectHandler{
+		DB:         database,
+		Encryptor:  enc,
+		Audit:      &audit.Recorder{DB: database},
+		Pipeline:   pipeline,
+		WebhookURL: ts.URL + "/webhook",
+	}
+
+	req := makeCreateProjectReq(t, user.ID, map[string]interface{}{
+		"name":                    "prod-setup-fail-app",
+		"github_repo":             "my-repo",
+		"github_owner":            "testuser",
+		"branch":                  "main",
+		"framework":               "vite",
+		"auto_production_enabled": true,
+	})
+	w := httptest.NewRecorder()
+	h.Create(w, req)
+
+	if w.Code != http.StatusCreated {
+		t.Fatalf("expected 201, got %d; body: %s", w.Code, w.Body.String())
+	}
+
+	var project db.Project
+	if err := json.NewDecoder(w.Body).Decode(&project); err != nil {
+		t.Fatalf("decode project response: %v", err)
+	}
+	config, err := database.GetAutoBuildConfig(project.ID)
+	if err != nil {
+		t.Fatalf("get auto build config: %v", err)
+	}
+	if config != nil {
+		t.Fatalf("expected no auto-build config, got %+v", config)
+	}
+
+	deployments, err := database.ListDeployments(project.ID, 10)
+	if err != nil {
+		t.Fatalf("list deployments: %v", err)
+	}
+	counts := map[string]int{}
+	for _, deployment := range deployments {
+		counts[deployment.Environment]++
+	}
+	if counts["preview"] != 1 {
+		t.Fatalf("preview deployments = %d, want 1", counts["preview"])
+	}
+	if counts["production"] != 0 {
+		t.Fatalf("production deployments = %d, want 0", counts["production"])
+	}
+}
+
 // TestProjectCreate_NilPipelineDoesNotBlockCreation verifies that a nil Pipeline
 // (no build server configured) does NOT prevent project creation.
 func TestProjectCreate_NilPipelineDoesNotBlockCreation(t *testing.T) {
@@ -309,5 +379,130 @@ func TestProjectCreate_NilPipelineDoesNotBlockCreation(t *testing.T) {
 	}
 	if len(deployments) != 0 {
 		t.Errorf("expected 0 deployments when pipeline=nil, got %d", len(deployments))
+	}
+}
+
+func TestProjectCreate_ProductionAutoDeployOptInCreatesInitialProductionDeployment(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPost {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusCreated)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{
+				"id":     54321,
+				"active": true,
+			})
+			return
+		}
+		http.NotFound(w, r)
+	}))
+	defer ts.Close()
+
+	restore := github.SetTestAPIBase(ts.URL)
+	defer restore()
+
+	database, enc, user := setupProjectTestDB(t)
+	pipeline := &build.Pipeline{DB: database, Encryptor: enc, EnqueueOnly: true}
+	h := &ProjectHandler{
+		DB:         database,
+		Encryptor:  enc,
+		Audit:      &audit.Recorder{DB: database},
+		Pipeline:   pipeline,
+		WebhookURL: ts.URL + "/webhook",
+	}
+
+	req := makeCreateProjectReq(t, user.ID, map[string]interface{}{
+		"name":                    "prod-auto-app",
+		"github_repo":             "my-repo",
+		"github_owner":            "testuser",
+		"branch":                  "main",
+		"framework":               "nextjs",
+		"auto_production_enabled": true,
+	})
+	w := httptest.NewRecorder()
+	h.Create(w, req)
+
+	if w.Code != http.StatusCreated {
+		t.Fatalf("expected 201, got %d; body: %s", w.Code, w.Body.String())
+	}
+
+	var project db.Project
+	if err := json.NewDecoder(w.Body).Decode(&project); err != nil {
+		t.Fatalf("decode project response: %v", err)
+	}
+	config, err := database.GetAutoBuildConfig(project.ID)
+	if err != nil {
+		t.Fatalf("get auto build config: %v", err)
+	}
+	if config == nil {
+		t.Fatal("expected auto-build config")
+	}
+	if !config.AutoProductionEnabled {
+		t.Fatal("expected auto_production_enabled=true")
+	}
+
+	deployments, err := database.ListDeployments(project.ID, 10)
+	if err != nil {
+		t.Fatalf("list deployments: %v", err)
+	}
+	counts := map[string]int{}
+	for _, deployment := range deployments {
+		counts[deployment.Environment]++
+	}
+	if counts["preview"] != 1 {
+		t.Fatalf("preview deployments = %d, want 1", counts["preview"])
+	}
+	if counts["production"] != 1 {
+		t.Fatalf("production deployments = %d, want 1", counts["production"])
+	}
+}
+
+func TestProjectCreate_CanDisableAutoBuildProvisioning(t *testing.T) {
+	database, enc, user := setupProjectTestDB(t)
+	pipeline := &build.Pipeline{DB: database, Encryptor: enc, EnqueueOnly: true}
+	h := &ProjectHandler{
+		DB:         database,
+		Encryptor:  enc,
+		Audit:      &audit.Recorder{DB: database},
+		Pipeline:   pipeline,
+		WebhookURL: "https://deployik.example.test/api/webhooks/github",
+	}
+
+	disabled := false
+	req := makeCreateProjectReq(t, user.ID, map[string]interface{}{
+		"name":                    "manual-auto-app",
+		"github_repo":             "my-repo",
+		"github_owner":            "testuser",
+		"branch":                  "main",
+		"framework":               "static",
+		"auto_build_enabled":      disabled,
+		"auto_production_enabled": true,
+	})
+	w := httptest.NewRecorder()
+	h.Create(w, req)
+
+	if w.Code != http.StatusCreated {
+		t.Fatalf("expected 201, got %d; body: %s", w.Code, w.Body.String())
+	}
+
+	var project db.Project
+	if err := json.NewDecoder(w.Body).Decode(&project); err != nil {
+		t.Fatalf("decode project response: %v", err)
+	}
+	config, err := database.GetAutoBuildConfig(project.ID)
+	if err != nil {
+		t.Fatalf("get auto build config: %v", err)
+	}
+	if config != nil {
+		t.Fatalf("expected no auto-build config, got %+v", config)
+	}
+	deployments, err := database.ListDeployments(project.ID, 10)
+	if err != nil {
+		t.Fatalf("list deployments: %v", err)
+	}
+	if len(deployments) != 1 {
+		t.Fatalf("expected initial preview deployment, got %d", len(deployments))
+	}
+	if deployments[0].Environment != "preview" {
+		t.Fatalf("initial deployment environment = %q, want preview", deployments[0].Environment)
 	}
 }

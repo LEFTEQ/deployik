@@ -38,22 +38,24 @@ type ProjectHandler struct {
 var slugRegex = regexp.MustCompile(`^[a-z0-9]([a-z0-9-]*[a-z0-9])?$`)
 
 type createProjectRequest struct {
-	OrganizationID    string `json:"organization_id"`
-	Name              string `json:"name"`
-	GithubRepo        string `json:"github_repo"`
-	GithubOwner       string `json:"github_owner"`
-	Branch            string `json:"branch"`
-	Framework         string `json:"framework"`
-	PackageManager    string `json:"package_manager"`
-	RootDirectory     string `json:"root_directory"`
-	OutputDirectory   string `json:"output_directory"`
-	BuildCommand      string `json:"build_command"`
-	InstallCommand    string `json:"install_command"`
-	NodeVersion       string `json:"node_version"`
-	Port              int    `json:"port"`
-	HostNetworkAccess bool   `json:"host_network_access"`
-	DataVolumeEnabled bool   `json:"data_volume_enabled"`
-	DataMountPath     string `json:"data_mount_path"`
+	OrganizationID        string `json:"organization_id"`
+	Name                  string `json:"name"`
+	GithubRepo            string `json:"github_repo"`
+	GithubOwner           string `json:"github_owner"`
+	Branch                string `json:"branch"`
+	Framework             string `json:"framework"`
+	PackageManager        string `json:"package_manager"`
+	RootDirectory         string `json:"root_directory"`
+	OutputDirectory       string `json:"output_directory"`
+	BuildCommand          string `json:"build_command"`
+	InstallCommand        string `json:"install_command"`
+	NodeVersion           string `json:"node_version"`
+	Port                  int    `json:"port"`
+	HostNetworkAccess     bool   `json:"host_network_access"`
+	DataVolumeEnabled     bool   `json:"data_volume_enabled"`
+	DataMountPath         string `json:"data_mount_path"`
+	AutoBuildEnabled      *bool  `json:"auto_build_enabled"`
+	AutoProductionEnabled bool   `json:"auto_production_enabled"`
 }
 
 type updateProjectRequest struct {
@@ -208,13 +210,27 @@ func (h *ProjectHandler) Create(w http.ResponseWriter, r *http.Request) {
 
 	h.syncProjectAnalytics(project, []db.Domain{*previewDomain})
 
+	autoBuildEnabled := true
+	if req.AutoBuildEnabled != nil {
+		autoBuildEnabled = *req.AutoBuildEnabled
+	}
+
 	// Best-effort: provision GitHub webhook + auto-build config.
 	user, err := h.DB.GetUserByID(claims.UserID)
 	if err != nil || user == nil {
 		log.Printf("Warning: could not load user for post-create setup (project %s): %v", project.ID, err)
 	} else {
-		h.setupAutoBuildBestEffort(r.Context(), project, user)
-		h.dispatchInitialDeployBestEffort(r.Context(), project, user)
+		var autoBuildConfig *db.AutoBuildConfig
+		if autoBuildEnabled {
+			autoBuildConfig = h.setupAutoBuildBestEffort(r.Context(), project, user, req.AutoProductionEnabled)
+		}
+		h.dispatchInitialDeployBestEffort(r.Context(), project, user, "preview")
+		if autoBuildConfig != nil &&
+			autoBuildConfig.Enabled &&
+			autoBuildConfig.AutoProductionEnabled &&
+			autoBuildConfig.ProductionBranch == project.Branch {
+			h.dispatchInitialDeployBestEffort(r.Context(), project, user, "production")
+		}
 	}
 
 	writeJSON(w, http.StatusCreated, project)
@@ -435,20 +451,20 @@ func (h *ProjectHandler) syncProjectAnalytics(project *db.Project, domains []db.
 // setupAutoBuildBestEffort provisions a GitHub webhook and inserts an
 // auto_build_configs row for the project. Failures are logged and silently
 // swallowed — the project creation response is unaffected.
-func (h *ProjectHandler) setupAutoBuildBestEffort(ctx context.Context, project *db.Project, user *db.User) {
+func (h *ProjectHandler) setupAutoBuildBestEffort(ctx context.Context, project *db.Project, user *db.User, autoProductionEnabled bool) *db.AutoBuildConfig {
 	if h.WebhookURL == "" {
 		log.Printf("Warning: WebhookURL not configured; skipping auto-build setup for project %s", project.ID)
-		return
+		return nil
 	}
 	token, err := h.Encryptor.Decrypt(user.GithubToken)
 	if err != nil {
 		log.Printf("Warning: failed to decrypt token for auto-build setup (project %s): %v", project.ID, err)
-		return
+		return nil
 	}
-	config, err := provisionWebhook(ctx, h.DB, h.Encryptor, project, token, h.WebhookURL, project.Branch, "*", false)
+	config, err := provisionWebhook(ctx, h.DB, h.Encryptor, project, token, h.WebhookURL, project.Branch, "*", autoProductionEnabled)
 	if err != nil {
 		log.Printf("Warning: auto-build webhook setup failed for project %s: %v", project.ID, err)
-		return
+		return nil
 	}
 	h.Audit.Record(audit.Entry{
 		UserID:       user.ID,
@@ -457,16 +473,18 @@ func (h *ProjectHandler) setupAutoBuildBestEffort(ctx context.Context, project *
 		ResourceID:   config.ID,
 		ProjectID:    project.ID,
 		Metadata: map[string]any{
-			"source": "project_create",
+			"source":                  "project_create",
+			"auto_production_enabled": autoProductionEnabled,
 		},
 	})
+	return config
 }
 
-// dispatchInitialDeployBestEffort creates a queued preview deployment and
+// dispatchInitialDeployBestEffort creates a queued deployment and
 // hands it to the pipeline. Failures are logged and silently swallowed.
-func (h *ProjectHandler) dispatchInitialDeployBestEffort(ctx context.Context, project *db.Project, user *db.User) {
+func (h *ProjectHandler) dispatchInitialDeployBestEffort(ctx context.Context, project *db.Project, user *db.User, environment string) {
 	if h.Pipeline == nil {
-		log.Printf("Warning: Pipeline not configured; skipping initial deploy for project %s", project.ID)
+		log.Printf("Warning: Pipeline not configured; skipping initial %s deploy for project %s", environment, project.ID)
 		return
 	}
 	token, err := h.Encryptor.Decrypt(user.GithubToken)
@@ -476,7 +494,7 @@ func (h *ProjectHandler) dispatchInitialDeployBestEffort(ctx context.Context, pr
 	}
 	deployment := &db.Deployment{
 		ProjectID:           project.ID,
-		Environment:         "preview",
+		Environment:         environment,
 		Branch:              project.Branch,
 		Status:              "queued",
 		TriggerSource:       "api",
@@ -484,7 +502,7 @@ func (h *ProjectHandler) dispatchInitialDeployBestEffort(ctx context.Context, pr
 		TriggeredByUsername: user.Username,
 	}
 	if err := h.DB.CreateDeployment(deployment); err != nil {
-		log.Printf("Warning: failed to create initial deployment for project %s: %v", project.ID, err)
+		log.Printf("Warning: failed to create initial %s deployment for project %s: %v", environment, project.ID, err)
 		return
 	}
 	h.Pipeline.Dispatch(project, deployment, token, func(line, stream string) {
@@ -499,10 +517,10 @@ func (h *ProjectHandler) dispatchInitialDeployBestEffort(ctx context.Context, pr
 		DeploymentID: deployment.ID,
 		Metadata: map[string]any{
 			"source":      "project_create",
-			"environment": "preview",
+			"environment": environment,
 		},
 	})
-	_ = ctx // ctx available for future use; Dispatch spawns its own goroutine
+	_ = ctx
 }
 
 func (h *ProjectHandler) cleanupProjectRuntime(project *db.Project, domains []db.Domain) {
