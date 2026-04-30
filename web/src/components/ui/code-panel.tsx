@@ -20,6 +20,7 @@ interface CodePanelProps {
   emptyLabel?: string;
   className?: string;
   heightClassName?: string;
+  copyButtonTestId?: string;
 }
 
 export function CodePanel({
@@ -30,6 +31,7 @@ export function CodePanel({
   emptyLabel = "Nothing to show yet.",
   className,
   heightClassName = "h-52",
+  copyButtonTestId,
 }: CodePanelProps) {
   const content = value.trim();
 
@@ -48,6 +50,7 @@ export function CodePanel({
             variant="ghost"
             onClick={onCopy}
             className="shrink-0"
+            data-testid={copyButtonTestId}
           >
             <Copy className="mr-1.5 h-3.5 w-3.5" />
             Copy

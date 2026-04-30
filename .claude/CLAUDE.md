@@ -206,6 +206,8 @@ web/src/
     projects/project-analytics-meta.ts  AUDIENCE_STATUS_META: badge styles and descriptions for analytics statuses
     projects/project-integration.tsx  Analytics setup/how-to section embedded into Integrations -> Analytics: Install -> Verify -> Events
     projects/project-email.tsx  Email setup page: Webglobe SMTP/reCAPTCHA form, status cards, SMTP test action, help/how-to, and AI install prompt for app-owned Next.js contact routes
+    projects/project-multi-locale.tsx  Multi Locale integration page: Next.js-only next-intl prompt workflow with searchable locale picker and generic guide fallback for other frameworks
+    projects/project-multi-locale-utils.ts  Shared locale option defaults, locale-code normalization, picker state helpers, and next-intl prompt generation used by Multi Locale tests/UI
     projects/pick-app.tsx Monorepo app picker shown as Step 2 in NewProject when inspection detects workspaces; renders detected framework/output/build per app
     BuildLog.tsx          Log viewer with auto-scroll, stderr highlighting
     ui/                   shadcn/ui components (button, card, dialog, input, select, etc.)

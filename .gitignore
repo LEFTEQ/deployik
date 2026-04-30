@@ -12,6 +12,9 @@ bin/
 web/node_modules/
 web/dist/
 web/tsconfig.tsbuildinfo
+web/playwright/.auth/
+web/playwright-report/
+web/test-results/
 cmd/server/web_dist/*
 !cmd/server/web_dist/.gitkeep
 

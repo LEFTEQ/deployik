@@ -8,6 +8,7 @@ import {
   FolderKanban,
   Globe2,
   KeyRound,
+  Languages,
   LayoutGrid,
   LogOut,
   Mail,
@@ -68,6 +69,7 @@ interface NavSubItem {
   icon: typeof FolderKanban;
   to: string;
   params?: Record<string, string>;
+  testId?: string;
   matchPath: (pathname: string) => boolean;
 }
 
@@ -127,6 +129,7 @@ function getProjectItems(projectId: string): NavItem[] {
           icon: BarChart3,
           to: "/projects/$id/integrations/analytics",
           params: { id: projectId },
+          testId: "sidebar-integrations-analytics",
           matchPath: (p) => p === `${base}/integrations/analytics`,
         },
         {
@@ -134,7 +137,16 @@ function getProjectItems(projectId: string): NavItem[] {
           icon: Mail,
           to: "/projects/$id/integrations/email",
           params: { id: projectId },
+          testId: "sidebar-integrations-email",
           matchPath: (p) => p === `${base}/integrations/email`,
+        },
+        {
+          label: "Multi Locale",
+          icon: Languages,
+          to: "/projects/$id/integrations/multi-locale",
+          params: { id: projectId },
+          testId: "sidebar-integrations-multi-locale",
+          matchPath: (p) => p === `${base}/integrations/multi-locale`,
         },
       ],
     },
@@ -273,7 +285,11 @@ export function AppSidebar({ context, projectId, ...props }: AppSidebarProps) {
                             return (
                               <SidebarMenuSubItem key={sub.label}>
                                 <SidebarMenuSubButton asChild isActive={subActive}>
-                                  <Link to={sub.to} params={sub.params ?? {}}>
+                                  <Link
+                                    to={sub.to}
+                                    params={sub.params ?? {}}
+                                    data-testid={sub.testId}
+                                  >
                                     <sub.icon />
                                     <span>{sub.label}</span>
                                   </Link>

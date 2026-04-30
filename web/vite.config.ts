@@ -11,6 +11,9 @@ const allowedHosts = (process.env.VITE_ALLOWED_HOSTS ?? '')
   .split(',')
   .map((h) => h.trim())
   .filter(Boolean);
+const devPort = Number(process.env.VITE_DEV_PORT ?? '5173');
+const apiProxyTarget = process.env.VITE_API_PROXY_TARGET ?? 'http://localhost:8080';
+const wsProxyTarget = apiProxyTarget.replace(/^http/, 'ws');
 
 export default defineConfig({
   root: import.meta.dirname,
@@ -21,13 +24,13 @@ export default defineConfig({
     },
   },
   server: {
-    port: 5173,
+    port: devPort,
     host: '0.0.0.0',
     ...(allowedHosts.length > 0 && { allowedHosts }),
     proxy: {
-      '/api': 'http://localhost:8080',
+      '/api': apiProxyTarget,
       '/ws': {
-        target: 'ws://localhost:8080',
+        target: wsProxyTarget,
         ws: true,
       },
     },

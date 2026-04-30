@@ -32,6 +32,11 @@ const ProjectEmail = lazy(() =>
     default: m.ProjectEmail,
   })),
 );
+const ProjectMultiLocale = lazy(() =>
+  import("@/pages/ProjectMultiLocale").then((m) => ({
+    default: m.ProjectMultiLocale,
+  })),
+);
 const ProjectSettings = lazy(() =>
   import("@/pages/ProjectSettings").then((m) => ({
     default: m.ProjectSettings,
@@ -211,6 +216,12 @@ const projectEmailRoute = createRoute({
   component: ProjectEmail,
 });
 
+const projectMultiLocaleRoute = createRoute({
+  getParentRoute: () => projectLayoutRoute,
+  path: "/integrations/multi-locale",
+  component: ProjectMultiLocale,
+});
+
 const projectSettingsRoute = createRoute({
   getParentRoute: () => projectLayoutRoute,
   path: "/settings",
@@ -247,6 +258,7 @@ const routeTree = rootRoute.addChildren([
       deploymentDetailRoute,
       projectAnalyticsRoute,
       projectEmailRoute,
+      projectMultiLocaleRoute,
       projectSettingsRoute,
       projectSettingsDomainsRoute,
       projectSettingsEnvRoute,
