@@ -445,7 +445,7 @@ func (h *ProjectHandler) setupAutoBuildBestEffort(ctx context.Context, project *
 		log.Printf("Warning: failed to decrypt token for auto-build setup (project %s): %v", project.ID, err)
 		return
 	}
-	config, err := provisionWebhook(ctx, h.DB, h.Encryptor, project, token, h.WebhookURL, project.Branch, "*")
+	config, err := provisionWebhook(ctx, h.DB, h.Encryptor, project, token, h.WebhookURL, project.Branch, "*", false)
 	if err != nil {
 		log.Printf("Warning: auto-build webhook setup failed for project %s: %v", project.ID, err)
 		return

@@ -28,18 +28,20 @@ type AutoBuildHandler struct {
 }
 
 type autoBuildRequest struct {
-	Enabled          bool   `json:"enabled"`
-	ProductionBranch string `json:"production_branch"`
-	PreviewBranches  string `json:"preview_branches"`
+	Enabled               bool   `json:"enabled"`
+	ProductionBranch      string `json:"production_branch"`
+	PreviewBranches       string `json:"preview_branches"`
+	AutoProductionEnabled *bool  `json:"auto_production_enabled"`
 }
 
 type autoBuildResponse struct {
-	Enabled          bool   `json:"enabled"`
-	ProductionBranch string `json:"production_branch"`
-	PreviewBranches  string `json:"preview_branches"`
-	WebhookActive    bool   `json:"webhook_active"`
-	CreatedAt        string `json:"created_at"`
-	UpdatedAt        string `json:"updated_at"`
+	Enabled               bool   `json:"enabled"`
+	ProductionBranch      string `json:"production_branch"`
+	PreviewBranches       string `json:"preview_branches"`
+	AutoProductionEnabled bool   `json:"auto_production_enabled"`
+	WebhookActive         bool   `json:"webhook_active"`
+	CreatedAt             string `json:"created_at"`
+	UpdatedAt             string `json:"updated_at"`
 }
 
 // Get returns the auto-build configuration for a project.
@@ -57,20 +59,22 @@ func (h *AutoBuildHandler) Get(w http.ResponseWriter, r *http.Request) {
 
 	if config == nil {
 		writeJSON(w, http.StatusOK, autoBuildResponse{
-			Enabled:          false,
-			ProductionBranch: "main",
-			PreviewBranches:  "*",
+			Enabled:               false,
+			ProductionBranch:      "main",
+			PreviewBranches:       "*",
+			AutoProductionEnabled: false,
 		})
 		return
 	}
 
 	writeJSON(w, http.StatusOK, autoBuildResponse{
-		Enabled:          config.Enabled,
-		ProductionBranch: config.ProductionBranch,
-		PreviewBranches:  config.PreviewBranches,
-		WebhookActive:    config.Enabled && config.WebhookID != nil,
-		CreatedAt:        config.CreatedAt.Format("2006-01-02T15:04:05Z"),
-		UpdatedAt:        config.UpdatedAt.Format("2006-01-02T15:04:05Z"),
+		Enabled:               config.Enabled,
+		ProductionBranch:      config.ProductionBranch,
+		PreviewBranches:       config.PreviewBranches,
+		AutoProductionEnabled: config.AutoProductionEnabled,
+		WebhookActive:         config.Enabled && config.WebhookID != nil,
+		CreatedAt:             config.CreatedAt.Format("2006-01-02T15:04:05Z"),
+		UpdatedAt:             config.UpdatedAt.Format("2006-01-02T15:04:05Z"),
 	})
 }
 
@@ -85,6 +89,7 @@ func provisionWebhook(
 	encryptor *crypto.Encryptor,
 	project *db.Project,
 	githubToken, webhookURL, productionBranch, previewBranches string,
+	autoProductionEnabled bool,
 ) (*db.AutoBuildConfig, error) {
 	secretBytes := make([]byte, 32)
 	if _, err := rand.Read(secretBytes); err != nil {
@@ -104,12 +109,13 @@ func provisionWebhook(
 	}
 
 	config := &db.AutoBuildConfig{
-		ProjectID:        project.ID,
-		Enabled:          true,
-		ProductionBranch: productionBranch,
-		PreviewBranches:  previewBranches,
-		WebhookID:        &id,
-		WebhookSecret:    encryptedSecret,
+		ProjectID:             project.ID,
+		Enabled:               true,
+		ProductionBranch:      productionBranch,
+		PreviewBranches:       previewBranches,
+		AutoProductionEnabled: autoProductionEnabled,
+		WebhookID:             &id,
+		WebhookSecret:         encryptedSecret,
 	}
 	if err := database.UpsertAutoBuildConfig(config); err != nil {
 		return nil, fmt.Errorf("upsert auto-build config: %w", err)
@@ -156,15 +162,19 @@ func (h *AutoBuildHandler) Put(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	autoProductionEnabled := false
+	if existing != nil {
+		autoProductionEnabled = existing.AutoProductionEnabled
+	}
+	if req.AutoProductionEnabled != nil {
+		autoProductionEnabled = *req.AutoProductionEnabled
+	}
+
 	var config *db.AutoBuildConfig
 
 	if existing == nil || existing.WebhookID == nil {
 		// Create path: use the shared helper.
-		autoProductionEnabled := false
-		if existing != nil {
-			autoProductionEnabled = existing.AutoProductionEnabled
-		}
-		config, err = provisionWebhook(r.Context(), h.DB, h.Encryptor, project, token, h.WebhookURL, req.ProductionBranch, req.PreviewBranches)
+		config, err = provisionWebhook(r.Context(), h.DB, h.Encryptor, project, token, h.WebhookURL, req.ProductionBranch, req.PreviewBranches, autoProductionEnabled)
 		if err != nil {
 			errMsg := err.Error()
 			log.Printf("Auto-build: webhook creation failed for %s/%s: %s", project.GithubOwner, project.GithubRepo, errMsg)
@@ -210,7 +220,7 @@ func (h *AutoBuildHandler) Put(w http.ResponseWriter, r *http.Request) {
 			Enabled:               req.Enabled,
 			ProductionBranch:      req.ProductionBranch,
 			PreviewBranches:       req.PreviewBranches,
-			AutoProductionEnabled: existing.AutoProductionEnabled,
+			AutoProductionEnabled: autoProductionEnabled,
 			WebhookID:             existing.WebhookID,
 			WebhookSecret:         existing.WebhookSecret,
 		}
@@ -228,19 +238,21 @@ func (h *AutoBuildHandler) Put(w http.ResponseWriter, r *http.Request) {
 		ResourceID:   config.ID,
 		ProjectID:    project.ID,
 		Metadata: map[string]any{
-			"enabled":           req.Enabled,
-			"production_branch": req.ProductionBranch,
-			"preview_branches":  req.PreviewBranches,
+			"enabled":                 req.Enabled,
+			"production_branch":       req.ProductionBranch,
+			"preview_branches":        req.PreviewBranches,
+			"auto_production_enabled": autoProductionEnabled,
 		},
 	})
 
 	writeJSON(w, http.StatusOK, autoBuildResponse{
-		Enabled:          config.Enabled,
-		ProductionBranch: config.ProductionBranch,
-		PreviewBranches:  config.PreviewBranches,
-		WebhookActive:    config.Enabled && config.WebhookID != nil,
-		CreatedAt:        config.CreatedAt.Format("2006-01-02T15:04:05Z"),
-		UpdatedAt:        config.UpdatedAt.Format("2006-01-02T15:04:05Z"),
+		Enabled:               config.Enabled,
+		ProductionBranch:      config.ProductionBranch,
+		PreviewBranches:       config.PreviewBranches,
+		AutoProductionEnabled: config.AutoProductionEnabled,
+		WebhookActive:         config.Enabled && config.WebhookID != nil,
+		CreatedAt:             config.CreatedAt.Format("2006-01-02T15:04:05Z"),
+		UpdatedAt:             config.UpdatedAt.Format("2006-01-02T15:04:05Z"),
 	})
 }
 

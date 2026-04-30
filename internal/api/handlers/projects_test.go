@@ -145,6 +145,9 @@ func TestProjectCreate_AutoDeploysAndProvisionsWebhook(t *testing.T) {
 	if !config.Enabled {
 		t.Error("expected auto-build config to be enabled")
 	}
+	if config.AutoProductionEnabled {
+		t.Error("expected auto_production_enabled=false by default")
+	}
 
 	// Assert a queued preview deployment was created.
 	deployments, err := database.ListDeployments(project.ID, 10)
