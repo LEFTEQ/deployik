@@ -1,15 +1,24 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate, useParams } from "@tanstack/react-router";
-import { GitBranch, HardDrive, Network, RefreshCw, Trash2, Webhook } from "lucide-react";
+import {
+  GitBranch,
+  HardDrive,
+  Network,
+  RefreshCw,
+  Trash2,
+  Webhook,
+} from "lucide-react";
 import { toast } from "sonner";
 
 import { api } from "@/lib/api";
 import { queryKeys } from "@/lib/queryKeys";
-import type { VolumeInfo } from "@/types/api";
-import {
-  BuildSettingsFields,
-} from "@/components/projects/build-settings";
+import type {
+  AutoBuildConfig,
+  UpdateAutoBuildConfigPayload,
+  VolumeInfo,
+} from "@/types/api";
+import { BuildSettingsFields } from "@/components/projects/build-settings";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -179,19 +188,42 @@ function AutoBuildSection({
   const [previewBranches, setPreviewBranches] = useState(
     config?.preview_branches || "*",
   );
+  const [autoProductionEnabled, setAutoProductionEnabled] = useState(
+    config?.auto_production_enabled ?? false,
+  );
+
+  useEffect(() => {
+    if (!config) return;
+    setProductionBranch(config.production_branch || defaultBranch || "main");
+    setPreviewBranches(config.preview_branches || "*");
+    setAutoProductionEnabled(
+      config.enabled && (config.auto_production_enabled ?? false),
+    );
+  }, [config, defaultBranch]);
 
   const updateMutation = useMutation({
-    mutationFn: (data: {
-      enabled: boolean;
-      production_branch: string;
-      preview_branches: string;
-    }) => api.updateAutoBuildConfig(projectId, data),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: queryKeys.autoBuild(projectId) });
+    mutationFn: (data: UpdateAutoBuildConfigPayload) =>
+      api.updateAutoBuildConfig(projectId, data),
+    onSuccess: (updatedConfig: AutoBuildConfig) => {
+      queryClient.setQueryData(queryKeys.autoBuild(projectId), updatedConfig);
+      setProductionBranch(
+        updatedConfig.production_branch || defaultBranch || "main",
+      );
+      setPreviewBranches(updatedConfig.preview_branches || "*");
+      setAutoProductionEnabled(
+        updatedConfig.enabled && updatedConfig.auto_production_enabled,
+      );
       setNeedsReauth(false);
+      setNoAdminAccess(null);
       toast.success("Auto-build updated");
     },
     onError: (err) => {
+      void queryClient.invalidateQueries({
+        queryKey: queryKeys.autoBuild(projectId),
+      });
+      setAutoProductionEnabled(
+        config ? config.enabled && config.auto_production_enabled : false,
+      );
       const msg = err.message || String(err);
       if (msg.includes("insufficient_scope")) {
         setNeedsReauth(true);
@@ -204,10 +236,22 @@ function AutoBuildSection({
   });
 
   const handleToggle = (checked: boolean) => {
+    const nextAutoProductionEnabled = checked ? autoProductionEnabled : false;
     updateMutation.mutate({
       enabled: checked,
       production_branch: productionBranch,
       preview_branches: previewBranches,
+      auto_production_enabled: nextAutoProductionEnabled,
+    });
+  };
+
+  const handleProductionToggle = (checked: boolean) => {
+    if (!enabled) return;
+    updateMutation.mutate({
+      enabled: true,
+      production_branch: productionBranch,
+      preview_branches: previewBranches,
+      auto_production_enabled: checked,
     });
   };
 
@@ -216,6 +260,7 @@ function AutoBuildSection({
       enabled: true,
       production_branch: productionBranch,
       preview_branches: previewBranches,
+      auto_production_enabled: autoProductionEnabled,
     });
   };
 
@@ -225,7 +270,9 @@ function AutoBuildSection({
         <div>
           <div className="flex items-center gap-2">
             <Webhook className="h-4 w-4 text-muted-foreground" />
-            <h2 className="text-base font-semibold">Auto-Build on Push</h2>
+            <h2 id="auto-build-heading" className="text-base font-semibold">
+              Auto-Build on Push
+            </h2>
             {enabled && (
               <Badge
                 variant="outline"
@@ -236,14 +283,38 @@ function AutoBuildSection({
             )}
           </div>
           <p className="mt-1 text-sm text-muted-foreground">
-            Automatically deploy when you push to GitHub. Configure which
-            branches trigger preview and production deployments.
+            Automatically deploy previews when you push to GitHub. Production
+            auto-deploy is opt-in and follows pushes to the production branch.
           </p>
         </div>
         <Switch
+          id="auto-build-on-push"
+          aria-labelledby="auto-build-heading"
           checked={enabled}
           onCheckedChange={handleToggle}
           disabled={updateMutation.isPending}
+        />
+      </div>
+
+      <div className="flex items-center justify-between gap-4 rounded-lg border p-4">
+        <div className="space-y-1">
+          <Label htmlFor="production-auto-deploy">
+            Production auto-deploy
+          </Label>
+          <p className="text-xs text-muted-foreground">
+            Preview auto-deploy uses the preview branch rules. Enable this only
+            when pushes to{" "}
+            <span className="font-mono">
+              {productionBranch || defaultBranch || "main"}
+            </span>{" "}
+            should release production.
+          </p>
+        </div>
+        <Switch
+          id="production-auto-deploy"
+          checked={enabled && autoProductionEnabled}
+          onCheckedChange={handleProductionToggle}
+          disabled={!enabled || updateMutation.isPending}
         />
       </div>
 
@@ -305,7 +376,7 @@ function AutoBuildSection({
                 placeholder="main"
               />
               <p className="text-xs text-muted-foreground">
-                Pushes to this branch trigger a production deployment.
+                Used by manual releases and production auto-deploy when enabled.
               </p>
             </div>
             <div className="space-y-2">
@@ -319,7 +390,8 @@ function AutoBuildSection({
                 placeholder="* (all other branches)"
               />
               <p className="text-xs text-muted-foreground">
-                Use * for all branches, or comma-separated names.
+                Use * for all branches, or comma-separated names, to create
+                preview deployments on push.
               </p>
             </div>
           </div>
@@ -328,7 +400,7 @@ function AutoBuildSection({
             onClick={handleSave}
             disabled={updateMutation.isPending}
           >
-            {updateMutation.isPending ? "Saving..." : "Save Branch Config"}
+            {updateMutation.isPending ? "Saving..." : "Save Auto-Build Settings"}
           </Button>
         </div>
       )}

@@ -29,9 +29,18 @@ import type {
   APIToken,
   CreateAPITokenRequest,
   CreateAPITokenResponse,
+  CreateProjectPayload,
+  UpdateAutoBuildConfigPayload,
 } from "@/types/api";
 
 const API_URL = import.meta.env.VITE_API_URL || "/api";
+
+type AutoBuildConfigResponse = Omit<
+  AutoBuildConfig,
+  "auto_production_enabled"
+> & {
+  auto_production_enabled?: boolean;
+};
 
 class ApiClient {
   private refreshPromise: Promise<void> | null = null;
@@ -139,6 +148,15 @@ class ApiClient {
     await this.request<void>(`/me/tokens/${id}`, { method: "DELETE" });
   }
 
+  private normalizeAutoBuildConfig(
+    config: AutoBuildConfigResponse,
+  ): AutoBuildConfig {
+    return {
+      ...config,
+      auto_production_enabled: config.auto_production_enabled ?? false,
+    };
+  }
+
   async getHealth(): Promise<HealthResponse> {
     return this.request("/health", { method: "GET" }, false);
   }
@@ -193,13 +211,7 @@ class ApiClient {
     return this.request(`/projects/${id}`);
   }
 
-  async createProject(
-    data: Partial<Project> & {
-      name: string;
-      github_repo: string;
-      github_owner: string;
-    },
-  ): Promise<Project> {
+  async createProject(data: CreateProjectPayload): Promise<Project> {
     return this.request("/projects", {
       method: "POST",
       body: JSON.stringify(data),
@@ -456,23 +468,21 @@ class ApiClient {
 
   // Auto-build configuration
   async getAutoBuildConfig(projectId: string): Promise<AutoBuildConfig> {
-    return this.request<AutoBuildConfig>(
+    const config = await this.request<AutoBuildConfigResponse>(
       `/projects/${projectId}/auto-build`,
     );
+    return this.normalizeAutoBuildConfig(config);
   }
 
   async updateAutoBuildConfig(
     projectId: string,
-    data: {
-      enabled: boolean;
-      production_branch: string;
-      preview_branches: string;
-    },
+    data: UpdateAutoBuildConfigPayload,
   ): Promise<AutoBuildConfig> {
-    return this.request<AutoBuildConfig>(
+    const config = await this.request<AutoBuildConfigResponse>(
       `/projects/${projectId}/auto-build`,
       { method: "PUT", body: JSON.stringify(data) },
     );
+    return this.normalizeAutoBuildConfig(config);
   }
 
   async deleteAutoBuildConfig(projectId: string): Promise<void> {

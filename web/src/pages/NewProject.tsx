@@ -1,7 +1,14 @@
 import { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
-import { Search, Lock, Globe, GitBranch, ArrowLeft } from "lucide-react";
+import {
+  Search,
+  Lock,
+  Globe,
+  GitBranch,
+  ArrowLeft,
+  Webhook,
+} from "lucide-react";
 import { Link } from "@tanstack/react-router";
 import { toast } from "sonner";
 import { api } from "@/lib/api";
@@ -10,6 +17,7 @@ import { useOrganizations } from "@/hooks/use-organizations";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
 import {
   Select,
   SelectContent,
@@ -61,6 +69,8 @@ export function NewProject() {
   const [buildSettings, setBuildSettings] = useState(() =>
     getFrameworkDefaults("nextjs", "auto"),
   );
+  const [autoBuildEnabled, setAutoBuildEnabled] = useState(true);
+  const [autoProductionEnabled, setAutoProductionEnabled] = useState(false);
 
   const { data: repos, isLoading: reposLoading } = useQuery({
     queryKey: queryKeys.githubRepos(),
@@ -124,6 +134,8 @@ export function NewProject() {
         build_command: buildSettings.buildCommand,
         node_version: buildSettings.nodeVersion,
         port: buildSettings.port,
+        auto_build_enabled: autoBuildEnabled,
+        auto_production_enabled: autoBuildEnabled && autoProductionEnabled,
       }),
     onSuccess: (project) => {
       queryClient.invalidateQueries({ queryKey: ["projects"] });
@@ -141,6 +153,13 @@ export function NewProject() {
       r.full_name.toLowerCase().includes(search.toLowerCase()) ||
       r.name.toLowerCase().includes(search.toLowerCase()),
   );
+
+  const handleAutoBuildEnabledChange = (checked: boolean) => {
+    setAutoBuildEnabled(checked);
+    if (!checked) {
+      setAutoProductionEnabled(false);
+    }
+  };
 
   // State A: No repo selected — show RepoPicker
   if (!selectedRepo) {
@@ -191,6 +210,8 @@ export function NewProject() {
                     setName(repo.name.toLowerCase().replace(/[^a-z0-9-]/g, "-"));
                     setBranch(repo.default_branch);
                     setBuildSettings(getFrameworkDefaults("nextjs", "auto"));
+                    setAutoBuildEnabled(true);
+                    setAutoProductionEnabled(false);
                   }}
                 >
                   {repo.private ? (
@@ -366,6 +387,49 @@ export function NewProject() {
                 )}
               </SelectContent>
             </Select>
+          </div>
+
+          <div className="space-y-3 rounded-lg border p-4">
+            <div className="flex items-center justify-between gap-4">
+              <div className="flex items-start gap-3">
+                <Webhook className="mt-0.5 h-4 w-4 text-muted-foreground" />
+                <div className="space-y-1">
+                  <Label htmlFor="auto-build-enabled">
+                    Auto-build previews on push
+                  </Label>
+                  <p className="text-xs text-muted-foreground">
+                    Set up GitHub push deploys for preview branches after import.
+                  </p>
+                </div>
+              </div>
+              <Switch
+                id="auto-build-enabled"
+                checked={autoBuildEnabled}
+                onCheckedChange={handleAutoBuildEnabledChange}
+              />
+            </div>
+
+            <div className="flex items-center justify-between gap-4 border-t border-white/5 pt-3">
+              <div className="space-y-1">
+                <Label htmlFor="auto-production-enabled">
+                  Also auto-deploy production
+                </Label>
+                <p className="text-xs text-muted-foreground">
+                  When enabled, pushes to{" "}
+                  <span className="font-mono">
+                    {branch || selectedRepo.default_branch}
+                  </span>{" "}
+                  create both preview and production deployments from the same
+                  commit.
+                </p>
+              </div>
+              <Switch
+                id="auto-production-enabled"
+                checked={autoBuildEnabled && autoProductionEnabled}
+                onCheckedChange={setAutoProductionEnabled}
+                disabled={!autoBuildEnabled}
+              />
+            </div>
           </div>
         </div>
 

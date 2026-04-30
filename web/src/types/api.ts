@@ -81,6 +81,27 @@ export interface Project {
   updated_at: string;
 }
 
+export interface CreateProjectPayload {
+  organization_id?: string;
+  name: string;
+  github_repo: string;
+  github_owner: string;
+  branch: string;
+  framework: string;
+  package_manager: string;
+  root_directory: string;
+  output_directory: string;
+  build_command: string;
+  install_command: string;
+  node_version: string;
+  port: number;
+  host_network_access?: boolean;
+  data_volume_enabled?: boolean;
+  data_mount_path?: string;
+  auto_build_enabled?: boolean;
+  auto_production_enabled?: boolean;
+}
+
 export type DeploymentStatus =
   | "queued"
   | "building"
@@ -343,9 +364,17 @@ export interface AutoBuildConfig {
   enabled: boolean;
   production_branch: string;
   preview_branches: string;
+  auto_production_enabled: boolean;
   webhook_active: boolean;
   created_at: string;
   updated_at: string;
+}
+
+export interface UpdateAutoBuildConfigPayload {
+  enabled: boolean;
+  production_branch: string;
+  preview_branches: string;
+  auto_production_enabled: boolean;
 }
 
 export interface ProtectionStatus {
