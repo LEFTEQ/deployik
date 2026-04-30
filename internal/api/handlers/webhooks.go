@@ -77,11 +77,6 @@ func (h *WebhookHandler) HandleGithub(w http.ResponseWriter, r *http.Request) {
 
 	branch := strings.TrimPrefix(payload.Ref, "refs/heads/")
 
-	commitMessage := ""
-	if payload.HeadCommit != nil {
-		commitMessage = payload.HeadCommit.Message
-	}
-
 	signatureHeader := r.Header.Get("X-Hub-Signature-256")
 
 	configs, err := h.DB.ListActiveAutoBuildConfigsByRepo(owner, repo)
@@ -92,64 +87,27 @@ func (h *WebhookHandler) HandleGithub(w http.ResponseWriter, r *http.Request) {
 	}
 
 	for _, config := range configs {
-		environment := autoBuildEnvironment(config, branch)
-		exists, err := h.DB.WebhookEventExists(deliveryID, config.ProjectID, environment)
-		if err != nil {
-			log.Printf("Webhook: failed to check idempotency for %s/%s/%s: %v", deliveryID, config.ProjectID, environment, err)
-		}
-		if exists {
-			continue
-		}
+		targets := webhookTargetEnvironments(branch, config)
 
 		secret, err := h.Encryptor.Decrypt(config.WebhookSecret)
 		if err != nil {
 			log.Printf("Webhook: failed to decrypt secret for project %s: %v", config.ProjectID, err)
-			errMsg := "failed to decrypt webhook secret"
-			h.DB.CreateWebhookEvent(&db.WebhookEvent{
-				ProjectID:        config.ProjectID,
-				GithubDeliveryID: deliveryID,
-				EventType:        "push",
-				Environment:      environment,
-				Branch:           branch,
-				CommitSHA:        payload.After,
-				CommitMessage:    commitMessage,
-				Pusher:           payload.Pusher.Name,
-				Status:           "failed",
-				ErrorMessage:     &errMsg,
-			})
 			continue
 		}
 
 		if !validateGithubSignature(secret, body, signatureHeader) {
 			log.Printf("Webhook: invalid signature for project %s", config.ProjectID)
-			errMsg := "invalid HMAC signature"
-			h.DB.CreateWebhookEvent(&db.WebhookEvent{
-				ProjectID:        config.ProjectID,
-				GithubDeliveryID: deliveryID,
-				EventType:        "push",
-				Environment:      environment,
-				Branch:           branch,
-				CommitSHA:        payload.After,
-				CommitMessage:    commitMessage,
-				Pusher:           payload.Pusher.Name,
-				Status:           "failed",
-				ErrorMessage:     &errMsg,
-			})
 			continue
 		}
 
-		if environment == "ignored" {
-			h.DB.CreateWebhookEvent(&db.WebhookEvent{
-				ProjectID:        config.ProjectID,
-				GithubDeliveryID: deliveryID,
-				EventType:        "push",
-				Environment:      environment,
-				Branch:           branch,
-				CommitSHA:        payload.After,
-				CommitMessage:    commitMessage,
-				Pusher:           payload.Pusher.Name,
-				Status:           "ignored",
-			})
+		if len(targets) == 0 {
+			claimed, err := claimWebhookEvent(h.DB, webhookEventPayload(config, deliveryID, "ignored", branch, payload, "ignored", "", nil))
+			if err != nil {
+				log.Printf("Webhook: failed to claim ignored event for project %s: %v", config.ProjectID, err)
+			}
+			if !claimed {
+				continue
+			}
 			continue
 		}
 
@@ -170,51 +128,99 @@ func (h *WebhookHandler) HandleGithub(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 
-		deployment := &db.Deployment{
-			ProjectID:           project.ID,
-			Environment:         environment,
-			Branch:              branch,
-			CommitSHA:           payload.After,
-			CommitMessage:       commitMessage,
-			Status:              "queued",
-			TriggerSource:       "webhook",
-			TriggeredByUsername: payload.Pusher.Name,
-			TriggeredBy:         project.UserID,
-		}
-		if err := h.DB.CreateDeployment(deployment); err != nil {
-			log.Printf("Webhook: failed to create deployment for project %s: %v", config.ProjectID, err)
-			continue
-		}
+		for _, environment := range targets {
+			claimed, err := claimWebhookEvent(h.DB, webhookEventPayload(config, deliveryID, environment, branch, payload, "received", "", nil))
+			if err != nil {
+				log.Printf("Webhook: failed to claim %s webhook event for project %s: %v", environment, config.ProjectID, err)
+				continue
+			}
+			if !claimed {
+				continue
+			}
 
-		h.DB.CreateWebhookEvent(&db.WebhookEvent{
-			ProjectID:        config.ProjectID,
-			GithubDeliveryID: deliveryID,
-			EventType:        "push",
-			Environment:      environment,
-			Branch:           branch,
-			CommitSHA:        payload.After,
-			CommitMessage:    commitMessage,
-			Pusher:           payload.Pusher.Name,
-			DeploymentID:     deployment.ID,
-			Status:           "processed",
-		})
+			deployment := &db.Deployment{
+				ProjectID:           project.ID,
+				Environment:         environment,
+				Branch:              branch,
+				CommitSHA:           payload.After,
+				CommitMessage:       commitMessageFromPayload(payload),
+				Status:              "queued",
+				TriggerSource:       "webhook",
+				TriggeredByUsername: payload.Pusher.Name,
+				TriggeredBy:         project.UserID,
+			}
+			if err := h.DB.CreateDeployment(deployment); err != nil {
+				log.Printf("Webhook: failed to create %s deployment for project %s: %v", environment, config.ProjectID, err)
+				errMsg := "failed to create deployment: " + err.Error()
+				if updateErr := h.DB.UpdateWebhookEventStatus(deliveryID, config.ProjectID, environment, "failed", "", &errMsg); updateErr != nil {
+					log.Printf("Webhook: failed to mark %s webhook event failed for project %s: %v", environment, config.ProjectID, updateErr)
+				}
+				continue
+			}
 
-		h.Pipeline.Dispatch(project, deployment, githubToken, func(line string, stream string) {
-			log.Printf("[webhook-deploy:%s] %s", deployment.ID[:8], line)
-		})
+			if err := h.DB.UpdateWebhookEventStatus(deliveryID, config.ProjectID, environment, "processed", deployment.ID, nil); err != nil {
+				log.Printf("Webhook: failed to mark %s webhook event processed for project %s: %v", environment, config.ProjectID, err)
+			}
+
+			h.Pipeline.Dispatch(project, deployment, githubToken, func(line string, stream string) {
+				log.Printf("[webhook-deploy:%s] %s", deployment.ID[:8], line)
+			})
+		}
 	}
 
 	w.WriteHeader(http.StatusOK)
 }
 
-func autoBuildEnvironment(config db.AutoBuildConfig, branch string) string {
-	if branch == config.ProductionBranch && config.AutoProductionEnabled {
-		return "production"
-	}
+func webhookTargetEnvironments(branch string, config db.AutoBuildConfig) []string {
+	environments := make([]string, 0, 2)
 	if matchesPreviewBranches(branch, config.PreviewBranches) {
-		return "preview"
+		environments = append(environments, "preview")
 	}
-	return "ignored"
+	if config.AutoProductionEnabled && branch == config.ProductionBranch {
+		environments = append(environments, "production")
+	}
+	return environments
+}
+
+func webhookEventPayload(config db.AutoBuildConfig, deliveryID, environment, branch string, payload githubPushPayload, status string, deploymentID string, errorMsg *string) *db.WebhookEvent {
+	return &db.WebhookEvent{
+		ProjectID:        config.ProjectID,
+		GithubDeliveryID: deliveryID,
+		EventType:        "push",
+		Environment:      environment,
+		Branch:           branch,
+		CommitSHA:        payload.After,
+		CommitMessage:    commitMessageFromPayload(payload),
+		Pusher:           payload.Pusher.Name,
+		DeploymentID:     deploymentID,
+		Status:           status,
+		ErrorMessage:     errorMsg,
+	}
+}
+
+func commitMessageFromPayload(payload githubPushPayload) string {
+	if payload.HeadCommit == nil {
+		return ""
+	}
+	return payload.HeadCommit.Message
+}
+
+func claimWebhookEvent(database *db.DB, event *db.WebhookEvent) (bool, error) {
+	if err := database.CreateWebhookEvent(event); err != nil {
+		if isWebhookEventAlreadyClaimed(err) {
+			return false, nil
+		}
+		return false, err
+	}
+	return true, nil
+}
+
+func isWebhookEventAlreadyClaimed(err error) bool {
+	if err == nil {
+		return false
+	}
+	return strings.Contains(err.Error(), "UNIQUE constraint failed") &&
+		strings.Contains(err.Error(), "webhook_events")
 }
 
 func validateGithubSignature(secret string, body []byte, signatureHeader string) bool {

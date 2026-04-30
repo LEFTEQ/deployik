@@ -174,18 +174,18 @@ func TestAutoBuildPutPreservesAutoProductionOptInWhenReprovisioningWebhook(t *te
 	}
 }
 
-func TestAutoBuildEnvironmentRequiresProductionOptIn(t *testing.T) {
+func TestWebhookTargetEnvironmentsRequiresProductionOptIn(t *testing.T) {
 	config := db.AutoBuildConfig{
 		ProductionBranch:      "main",
 		PreviewBranches:       "*",
 		AutoProductionEnabled: false,
 	}
-	if got := autoBuildEnvironment(config, "main"); got != "preview" {
-		t.Fatalf("autoBuildEnvironment without production opt-in = %q, want preview", got)
+	if got := webhookTargetEnvironments("main", config); len(got) != 1 || got[0] != "preview" {
+		t.Fatalf("webhookTargetEnvironments without production opt-in = %#v, want [preview]", got)
 	}
 
 	config.AutoProductionEnabled = true
-	if got := autoBuildEnvironment(config, "main"); got != "production" {
-		t.Fatalf("autoBuildEnvironment with production opt-in = %q, want production", got)
+	if got := webhookTargetEnvironments("main", config); len(got) != 2 || got[0] != "preview" || got[1] != "production" {
+		t.Fatalf("webhookTargetEnvironments with production opt-in = %#v, want [preview production]", got)
 	}
 }
