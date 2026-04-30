@@ -57,15 +57,6 @@ func (h *WebhookHandler) HandleGithub(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	exists, err := h.DB.WebhookEventExists(deliveryID)
-	if err != nil {
-		log.Printf("Webhook: failed to check idempotency for %s: %v", deliveryID, err)
-	}
-	if exists {
-		w.WriteHeader(http.StatusOK)
-		return
-	}
-
 	var payload githubPushPayload
 	if err := json.Unmarshal(body, &payload); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid payload"})
@@ -101,6 +92,15 @@ func (h *WebhookHandler) HandleGithub(w http.ResponseWriter, r *http.Request) {
 	}
 
 	for _, config := range configs {
+		environment := autoBuildEnvironment(config, branch)
+		exists, err := h.DB.WebhookEventExists(deliveryID, config.ProjectID, environment)
+		if err != nil {
+			log.Printf("Webhook: failed to check idempotency for %s/%s/%s: %v", deliveryID, config.ProjectID, environment, err)
+		}
+		if exists {
+			continue
+		}
+
 		secret, err := h.Encryptor.Decrypt(config.WebhookSecret)
 		if err != nil {
 			log.Printf("Webhook: failed to decrypt secret for project %s: %v", config.ProjectID, err)
@@ -109,6 +109,7 @@ func (h *WebhookHandler) HandleGithub(w http.ResponseWriter, r *http.Request) {
 				ProjectID:        config.ProjectID,
 				GithubDeliveryID: deliveryID,
 				EventType:        "push",
+				Environment:      environment,
 				Branch:           branch,
 				CommitSHA:        payload.After,
 				CommitMessage:    commitMessage,
@@ -126,6 +127,7 @@ func (h *WebhookHandler) HandleGithub(w http.ResponseWriter, r *http.Request) {
 				ProjectID:        config.ProjectID,
 				GithubDeliveryID: deliveryID,
 				EventType:        "push",
+				Environment:      environment,
 				Branch:           branch,
 				CommitSHA:        payload.After,
 				CommitMessage:    commitMessage,
@@ -136,17 +138,12 @@ func (h *WebhookHandler) HandleGithub(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 
-		// Determine environment
-		environment := ""
-		if branch == config.ProductionBranch {
-			environment = "production"
-		} else if matchesPreviewBranches(branch, config.PreviewBranches) {
-			environment = "preview"
-		} else {
+		if environment == "ignored" {
 			h.DB.CreateWebhookEvent(&db.WebhookEvent{
 				ProjectID:        config.ProjectID,
 				GithubDeliveryID: deliveryID,
 				EventType:        "push",
+				Environment:      environment,
 				Branch:           branch,
 				CommitSHA:        payload.After,
 				CommitMessage:    commitMessage,
@@ -193,6 +190,7 @@ func (h *WebhookHandler) HandleGithub(w http.ResponseWriter, r *http.Request) {
 			ProjectID:        config.ProjectID,
 			GithubDeliveryID: deliveryID,
 			EventType:        "push",
+			Environment:      environment,
 			Branch:           branch,
 			CommitSHA:        payload.After,
 			CommitMessage:    commitMessage,
@@ -207,6 +205,16 @@ func (h *WebhookHandler) HandleGithub(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.WriteHeader(http.StatusOK)
+}
+
+func autoBuildEnvironment(config db.AutoBuildConfig, branch string) string {
+	if branch == config.ProductionBranch && config.AutoProductionEnabled {
+		return "production"
+	}
+	if matchesPreviewBranches(branch, config.PreviewBranches) {
+		return "preview"
+	}
+	return "ignored"
 }
 
 func validateGithubSignature(secret string, body []byte, signatureHeader string) bool {

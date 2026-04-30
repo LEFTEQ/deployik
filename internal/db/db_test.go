@@ -1454,3 +1454,147 @@ func TestAPITokenCRUD(t *testing.T) {
 		t.Fatalf("get returned expired token")
 	}
 }
+
+func TestMigration018AddsProductionOptInAndWebhookEventOutcomes(t *testing.T) {
+	database, err := OpenMemory()
+	if err != nil {
+		t.Fatalf("OpenMemory: %v", err)
+	}
+	t.Cleanup(func() { database.Close() })
+
+	if _, err := database.Exec(`
+		CREATE TABLE IF NOT EXISTS _migrations (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			name TEXT UNIQUE NOT NULL,
+			applied_at DATETIME NOT NULL DEFAULT (datetime('now'))
+		)
+	`); err != nil {
+		t.Fatalf("create migrations table: %v", err)
+	}
+
+	entries, err := migrationsFS.ReadDir("migrations")
+	if err != nil {
+		t.Fatalf("ReadDir migrations: %v", err)
+	}
+	sort.Slice(entries, func(i, j int) bool { return entries[i].Name() < entries[j].Name() })
+	for _, entry := range entries {
+		if entry.IsDir() || entry.Name() >= "018_auto_production_auto_deploy.sql" {
+			continue
+		}
+		content, err := migrationsFS.ReadFile("migrations/" + entry.Name())
+		if err != nil {
+			t.Fatalf("ReadFile(%s): %v", entry.Name(), err)
+		}
+		if _, err := database.Exec(string(content)); err != nil {
+			t.Fatalf("exec migration %s: %v", entry.Name(), err)
+		}
+		if _, err := database.Exec("INSERT INTO _migrations (name) VALUES (?)", entry.Name()); err != nil {
+			t.Fatalf("record migration %s: %v", entry.Name(), err)
+		}
+	}
+
+	user := &User{ID: NewID(), GithubID: 42, Username: "migration-user", Role: "admin"}
+	if err := database.UpsertUser(user); err != nil {
+		t.Fatalf("UpsertUser: %v", err)
+	}
+	project := &Project{
+		Name:           "migration-app",
+		GithubRepo:     "repo",
+		GithubOwner:    "owner",
+		Branch:         "main",
+		UserID:         user.ID,
+		Framework:      "nextjs",
+		BuildCommand:   "bun run build",
+		InstallCommand: "bun install",
+		NodeVersion:    "22",
+		Status:         "active",
+	}
+	if err := database.CreateProject(project); err != nil {
+		t.Fatalf("CreateProject: %v", err)
+	}
+	deployment := &Deployment{
+		ProjectID:     project.ID,
+		Environment:   "preview",
+		Branch:        "main",
+		Status:        "queued",
+		TriggerSource: "webhook",
+		TriggeredBy:   user.ID,
+	}
+	if err := database.CreateDeployment(deployment); err != nil {
+		t.Fatalf("CreateDeployment: %v", err)
+	}
+	if _, err := database.Exec(
+		`INSERT INTO auto_build_configs (id, project_id, enabled, production_branch, preview_branches, webhook_id, webhook_secret)
+		 VALUES (?, ?, 1, 'main', '*', 123, 'encrypted-secret')`,
+		NewID(), project.ID,
+	); err != nil {
+		t.Fatalf("insert legacy auto_build_config: %v", err)
+	}
+	if _, err := database.Exec(
+		`INSERT INTO webhook_events (project_id, github_delivery_id, event_type, branch, commit_sha, commit_message, pusher, deployment_id, status)
+		 VALUES (?, 'delivery-1', 'push', 'main', 'sha1', 'message', 'pusher', ?, 'processed')`,
+		project.ID, deployment.ID,
+	); err != nil {
+		t.Fatalf("insert legacy webhook_event: %v", err)
+	}
+
+	if err := database.Migrate(); err != nil {
+		t.Fatalf("Migrate with legacy webhook events: %v", err)
+	}
+
+	config, err := database.GetAutoBuildConfig(project.ID)
+	if err != nil {
+		t.Fatalf("GetAutoBuildConfig: %v", err)
+	}
+	if config == nil {
+		t.Fatal("expected auto build config")
+	}
+	if config.AutoProductionEnabled {
+		t.Fatal("auto_production_enabled = true, want false for migrated configs")
+	}
+
+	var environment string
+	if err := database.QueryRow(
+		`SELECT environment FROM webhook_events WHERE github_delivery_id = 'delivery-1' AND project_id = ?`,
+		project.ID,
+	).Scan(&environment); err != nil {
+		t.Fatalf("select migrated webhook event: %v", err)
+	}
+	if environment != "preview" {
+		t.Fatalf("environment = %q, want preview", environment)
+	}
+
+	if err := database.CreateWebhookEvent(&WebhookEvent{
+		ProjectID:        project.ID,
+		GithubDeliveryID: "delivery-2",
+		EventType:        "push",
+		Environment:      "preview",
+		Branch:           "main",
+		CommitSHA:        "sha2",
+		Status:           "processed",
+	}); err != nil {
+		t.Fatalf("CreateWebhookEvent preview: %v", err)
+	}
+	if err := database.CreateWebhookEvent(&WebhookEvent{
+		ProjectID:        project.ID,
+		GithubDeliveryID: "delivery-2",
+		EventType:        "push",
+		Environment:      "production",
+		Branch:           "main",
+		CommitSHA:        "sha2",
+		Status:           "processed",
+	}); err != nil {
+		t.Fatalf("CreateWebhookEvent production: %v", err)
+	}
+	if err := database.CreateWebhookEvent(&WebhookEvent{
+		ProjectID:        project.ID,
+		GithubDeliveryID: "delivery-2",
+		EventType:        "push",
+		Environment:      "preview",
+		Branch:           "main",
+		CommitSHA:        "sha2",
+		Status:           "processed",
+	}); err == nil {
+		t.Fatal("expected duplicate delivery/project/environment insert to fail")
+	}
+}

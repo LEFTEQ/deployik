@@ -263,15 +263,16 @@ type ProjectVariable struct {
 type EnvVariable = ProjectVariable
 
 type AutoBuildConfig struct {
-	ID               string    `json:"id"`
-	ProjectID        string    `json:"project_id"`
-	Enabled          bool      `json:"enabled"`
-	ProductionBranch string    `json:"production_branch"`
-	PreviewBranches  string    `json:"preview_branches"`
-	WebhookID        *int64    `json:"webhook_id,omitempty"`
-	WebhookSecret    string    `json:"-"`
-	CreatedAt        time.Time `json:"created_at"`
-	UpdatedAt        time.Time `json:"updated_at"`
+	ID                    string    `json:"id"`
+	ProjectID             string    `json:"project_id"`
+	Enabled               bool      `json:"enabled"`
+	ProductionBranch      string    `json:"production_branch"`
+	PreviewBranches       string    `json:"preview_branches"`
+	AutoProductionEnabled bool      `json:"auto_production_enabled"`
+	WebhookID             *int64    `json:"webhook_id,omitempty"`
+	WebhookSecret         string    `json:"-"`
+	CreatedAt             time.Time `json:"created_at"`
+	UpdatedAt             time.Time `json:"updated_at"`
 }
 
 type WebhookEvent struct {
@@ -279,6 +280,7 @@ type WebhookEvent struct {
 	ProjectID        string    `json:"project_id"`
 	GithubDeliveryID string    `json:"github_delivery_id"`
 	EventType        string    `json:"event_type"`
+	Environment      string    `json:"environment"`
 	Branch           string    `json:"branch"`
 	CommitSHA        string    `json:"commit_sha"`
 	CommitMessage    string    `json:"commit_message"`

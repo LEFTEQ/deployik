@@ -160,6 +160,10 @@ func (h *AutoBuildHandler) Put(w http.ResponseWriter, r *http.Request) {
 
 	if existing == nil || existing.WebhookID == nil {
 		// Create path: use the shared helper.
+		autoProductionEnabled := false
+		if existing != nil {
+			autoProductionEnabled = existing.AutoProductionEnabled
+		}
 		config, err = provisionWebhook(r.Context(), h.DB, h.Encryptor, project, token, h.WebhookURL, req.ProductionBranch, req.PreviewBranches)
 		if err != nil {
 			errMsg := err.Error()
@@ -185,6 +189,7 @@ func (h *AutoBuildHandler) Put(w http.ResponseWriter, r *http.Request) {
 		config.Enabled = req.Enabled
 		config.ProductionBranch = req.ProductionBranch
 		config.PreviewBranches = req.PreviewBranches
+		config.AutoProductionEnabled = autoProductionEnabled
 		if err := h.DB.UpsertAutoBuildConfig(config); err != nil {
 			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to save auto-build config"})
 			return
@@ -200,13 +205,14 @@ func (h *AutoBuildHandler) Put(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		config = &db.AutoBuildConfig{
-			ID:               existing.ID,
-			ProjectID:        project.ID,
-			Enabled:          req.Enabled,
-			ProductionBranch: req.ProductionBranch,
-			PreviewBranches:  req.PreviewBranches,
-			WebhookID:        existing.WebhookID,
-			WebhookSecret:    existing.WebhookSecret,
+			ID:                    existing.ID,
+			ProjectID:             project.ID,
+			Enabled:               req.Enabled,
+			ProductionBranch:      req.ProductionBranch,
+			PreviewBranches:       req.PreviewBranches,
+			AutoProductionEnabled: existing.AutoProductionEnabled,
+			WebhookID:             existing.WebhookID,
+			WebhookSecret:         existing.WebhookSecret,
 		}
 		if err := h.DB.UpsertAutoBuildConfig(config); err != nil {
 			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to save auto-build config"})
