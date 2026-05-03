@@ -24,7 +24,6 @@ import {
   formatRelativeDate,
   getEnvironmentDomains,
   getLatestEnvironmentDeployment,
-  getPrimaryEnvironmentUrl,
   isDomainReady,
 } from "@/lib/deployment-helpers";
 import { formatFrameworkLabel } from "@/components/projects/build-settings";
@@ -292,20 +291,18 @@ export function ProjectOverview() {
           </div>
         </div>
 
-        <div className="grid gap-4 md:grid-cols-2">
-          <EnvironmentCard
+        <div className="divide-y divide-border rounded-lg border">
+          <EnvironmentRow
             environment="preview"
             deployment={latestPreview}
             projectId={id}
-            primaryUrl={getPrimaryEnvironmentUrl(allDomains, "preview")}
             envDomainCount={getEnvironmentDomains(allDomains, "preview").length}
             onNavigate={navigate}
           />
-          <EnvironmentCard
+          <EnvironmentRow
             environment="production"
             deployment={latestProduction}
             projectId={id}
-            primaryUrl={getPrimaryEnvironmentUrl(allDomains, "production")}
             envDomainCount={getEnvironmentDomains(allDomains, "production").length}
             onNavigate={navigate}
           />
@@ -429,25 +426,23 @@ export function ProjectOverview() {
   );
 }
 
-/* ── Environment Card ── */
+/* ── Environment Row ── */
 
 // Captures already in flight client-side; keyed by deployment id so a remount
 // doesn't fan out duplicate POSTs while a capture goroutine is still running
 // server-side. Cleared once the screenshot path appears or the capture errors.
 const inFlightCaptures = new Set<string>();
 
-function EnvironmentCard({
+function EnvironmentRow({
   environment,
   deployment,
   projectId,
-  primaryUrl,
   envDomainCount,
   onNavigate,
 }: {
   environment: "preview" | "production";
   deployment: Deployment | undefined;
   projectId: string;
-  primaryUrl: string | null;
   envDomainCount: number;
   onNavigate: ReturnType<typeof useNavigate>;
 }) {
@@ -553,113 +548,84 @@ function EnvironmentCard({
   };
 
   return (
-    <div
+    <button
+      type="button"
+      disabled={!deployment || isOptimistic}
+      onClick={handleClick}
       className={cn(
-        "flex flex-col overflow-hidden rounded-lg border bg-card",
+        "flex w-full items-center gap-4 px-4 py-3 text-left transition-colors first:rounded-t-lg last:rounded-b-lg",
+        deployment && !isOptimistic && "hover:bg-accent cursor-pointer",
+        (!deployment || isOptimistic) && "cursor-default",
         isProduction && "border-l-2 border-l-amber-500/50",
       )}
     >
-      {/* Hero thumbnail */}
-      <button
-        type="button"
-        disabled={!deployment || isOptimistic}
-        onClick={handleClick}
-        className={cn(
-          "block w-full text-left",
-          deployment && !isOptimistic
-            ? "cursor-pointer hover:opacity-90"
-            : "cursor-default",
-        )}
-        aria-label={
-          deployment
-            ? `${envMeta.label} preview \u2014 open deployment details`
-            : `${envMeta.label} environment`
-        }
+      <DeploymentThumbnail
+        deploymentId={deployment?.id ?? null}
+        hasScreenshot={hasScreenshot}
+        isCapturing={isCapturing}
+        alt={`${envMeta.label} homepage preview`}
+        size="sm"
+        className="shrink-0"
+      />
+
+      <Badge
+        variant="outline"
+        className={cn("shrink-0 text-xs", envMeta.badgeClass)}
       >
-        <DeploymentThumbnail
-          deploymentId={deployment?.id ?? null}
-          hasScreenshot={hasScreenshot}
-          isCapturing={isCapturing}
-          alt={`${envMeta.label} homepage preview`}
-          size="lg"
-          className="rounded-none border-0 border-b"
-        />
-      </button>
+        {envMeta.label}
+      </Badge>
 
-      {/* Meta block */}
-      <div className="flex flex-col gap-2 p-4">
-        <div className="flex items-center justify-between gap-2">
-          <Badge
-            variant="outline"
-            className={cn("shrink-0 text-xs", envMeta.badgeClass)}
-          >
-            {envMeta.label}
-          </Badge>
-          {primaryUrl ? (
-            <a
-              href={primaryUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              onClick={(e) => e.stopPropagation()}
-              className="inline-flex min-w-0 items-center gap-1 truncate text-xs text-muted-foreground hover:text-foreground"
-            >
-              <span className="truncate">{primaryUrl.replace(/^https?:\/\//, "")}</span>
-              <ExternalLink className="h-3 w-3 shrink-0" />
-            </a>
-          ) : (
-            <span className="text-xs text-muted-foreground">No domain yet</span>
-          )}
-        </div>
-
-        {deployment ? (
-          <>
-            <div className="flex items-center gap-2 text-sm">
-              <span
-                className={cn(
-                  "h-2 w-2 rounded-full",
-                  isActive && "animate-pulse",
-                  statusMeta?.dotClass ?? "bg-slate-500",
-                )}
-              />
-              <span className="font-medium">
-                {statusMeta?.label ?? deployment.status}
-              </span>
-              <span className="ml-auto text-xs text-muted-foreground">
-                {formatRelativeDate(deployment.created_at)}
-              </span>
-            </div>
-
-            <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
-              <span className="flex items-center gap-1">
-                <GitCommit className="h-3.5 w-3.5" />
-                <span className="font-mono">
-                  {deployment.commit_sha
-                    ? deployment.commit_sha.slice(0, 7)
-                    : "pending"}
-                </span>
-              </span>
-              <span className="flex items-center gap-1">
-                <GitBranch className="h-3.5 w-3.5" />
-                {deployment.branch}
-              </span>
-              {deployment.build_duration > 0 && (
-                <span className="flex items-center gap-1">
-                  <Clock className="h-3.5 w-3.5" />
-                  {deployment.build_duration}s
-                </span>
+      {deployment ? (
+        <>
+          <span className="flex shrink-0 items-center gap-1.5">
+            <span
+              className={cn(
+                "h-2 w-2 rounded-full",
+                isActive && "animate-pulse",
+                statusMeta?.dotClass ?? "bg-slate-500",
               )}
-            </div>
+            />
+            <span className="text-sm font-medium">
+              {statusMeta?.label ?? deployment.status}
+            </span>
+          </span>
 
-            {(deployment.commit_message || deployment.error_message) && (
-              <p className="line-clamp-1 text-xs text-muted-foreground">
-                {deployment.commit_message || deployment.error_message}
-              </p>
-            )}
-          </>
-        ) : (
-          <p className="text-sm text-muted-foreground">No deployment yet</p>
-        )}
-      </div>
-    </div>
+          <span className="flex shrink-0 items-center gap-1.5 text-muted-foreground">
+            <GitCommit className="h-3.5 w-3.5" />
+            <span className="font-mono text-xs">
+              {deployment.commit_sha
+                ? deployment.commit_sha.slice(0, 7)
+                : "pending"}
+            </span>
+          </span>
+
+          <span className="min-w-0 flex-1 truncate text-sm text-muted-foreground">
+            {deployment.commit_message ||
+              deployment.error_message ||
+              "Waiting for commit metadata"}
+          </span>
+
+          <span className="hidden shrink-0 items-center gap-1 text-xs text-muted-foreground sm:flex">
+            <GitBranch className="h-3.5 w-3.5" />
+            {deployment.branch}
+          </span>
+
+          {deployment.build_duration > 0 && (
+            <span className="hidden shrink-0 items-center gap-1 text-xs text-muted-foreground md:flex">
+              <Clock className="h-3.5 w-3.5" />
+              {deployment.build_duration}s
+            </span>
+          )}
+
+          <span className="shrink-0 text-xs text-muted-foreground">
+            {formatRelativeDate(deployment.created_at)}
+          </span>
+        </>
+      ) : (
+        <span className="flex-1 text-sm text-muted-foreground">
+          No deployment yet
+        </span>
+      )}
+    </button>
   );
 }
