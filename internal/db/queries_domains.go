@@ -129,6 +129,30 @@ func (db *DB) SetDomainPrimary(projectID, environment, domainID string) error {
 	return nil
 }
 
+// GetPrimaryDomain returns the canonical SSL-active domain for the given
+// project/environment. Prefers the row flagged is_primary=1, falling back to
+// the oldest SSL-active domain so reconciles and screenshots have something to
+// point at while a newly-added primary still has SSL pending. Returns
+// (nil, nil) when no domain in the env has SSL provisioned yet.
+func (db *DB) GetPrimaryDomain(projectID, environment string) (*Domain, error) {
+	d := &Domain{}
+	err := db.QueryRow(
+		`SELECT id, project_id, domain, environment, is_auto, is_primary, dns_verified, ssl_status, ssl_expires_at, created_at
+		 FROM domains
+		 WHERE project_id = ? AND environment = ? AND ssl_status = 'active'
+		 ORDER BY is_primary DESC, created_at ASC
+		 LIMIT 1`, projectID, environment,
+	).Scan(&d.ID, &d.ProjectID, &d.DomainName, &d.Environment,
+		&d.IsAuto, &d.IsPrimary, &d.DNSVerified, &d.SSLStatus, &d.SSLExpiresAt, &d.CreatedAt)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("get primary domain: %w", err)
+	}
+	return d, nil
+}
+
 func (db *DB) DeleteDomain(id string) error {
 	_, err := db.Exec(`DELETE FROM domains WHERE id = ? AND is_auto = 0`, id)
 	if err != nil {

@@ -1,4 +1,4 @@
-import { useOptimistic, useState, useTransition } from "react";
+import { useEffect, useOptimistic, useRef, useState, useTransition } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate, useParams } from "@tanstack/react-router";
 import {
@@ -22,10 +22,13 @@ import {
   ENVIRONMENT_META,
   buildReleaseTagName,
   formatRelativeDate,
+  getEnvironmentDomains,
   getLatestEnvironmentDeployment,
+  getPrimaryEnvironmentUrl,
   isDomainReady,
 } from "@/lib/deployment-helpers";
 import { formatFrameworkLabel } from "@/components/projects/build-settings";
+import { DeploymentThumbnail } from "@/components/projects/deployment-thumbnail";
 import { ReleasePanelContent } from "@/components/projects/release-panel";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -289,17 +292,21 @@ export function ProjectOverview() {
           </div>
         </div>
 
-        <div className="divide-y divide-border rounded-lg border">
-          <EnvironmentRow
+        <div className="grid gap-4 md:grid-cols-2">
+          <EnvironmentCard
             environment="preview"
             deployment={latestPreview}
             projectId={id}
+            primaryUrl={getPrimaryEnvironmentUrl(allDomains, "preview")}
+            envDomainCount={getEnvironmentDomains(allDomains, "preview").length}
             onNavigate={navigate}
           />
-          <EnvironmentRow
+          <EnvironmentCard
             environment="production"
             deployment={latestProduction}
             projectId={id}
+            primaryUrl={getPrimaryEnvironmentUrl(allDomains, "production")}
+            envDomainCount={getEnvironmentDomains(allDomains, "production").length}
             onNavigate={navigate}
           />
         </div>
@@ -422,19 +429,29 @@ export function ProjectOverview() {
   );
 }
 
-/* ── Environment Row ── */
+/* ── Environment Card ── */
 
-function EnvironmentRow({
+// Captures already in flight client-side; keyed by deployment id so a remount
+// doesn't fan out duplicate POSTs while a capture goroutine is still running
+// server-side. Cleared once the screenshot path appears or the capture errors.
+const inFlightCaptures = new Set<string>();
+
+function EnvironmentCard({
   environment,
   deployment,
   projectId,
+  primaryUrl,
+  envDomainCount,
   onNavigate,
 }: {
   environment: "preview" | "production";
   deployment: Deployment | undefined;
   projectId: string;
+  primaryUrl: string | null;
+  envDomainCount: number;
   onNavigate: ReturnType<typeof useNavigate>;
 }) {
+  const queryClient = useQueryClient();
   const envMeta = ENVIRONMENT_META[environment];
   const statusMeta = deployment
     ? DEPLOYMENT_STATUS_META[deployment.status]
@@ -444,9 +461,91 @@ function EnvironmentRow({
     : false;
 
   const isProduction = environment === "production";
+  const isOptimistic = deployment?.id.startsWith("optimistic-") ?? false;
+  const hasScreenshot = Boolean(deployment?.screenshot_path);
+  const isLive = deployment?.status === "live";
+  const eligibleForCapture =
+    !!deployment && !isOptimistic && isLive && !hasScreenshot && envDomainCount > 0;
+
+  const [isCapturing, setIsCapturing] = useState(false);
+  const pollTimerRef = useRef<number | null>(null);
+
+  // Lazy-backfill: when this env's live deployment lacks a screenshot, fire one
+  // capture request and poll the deployments query until the path appears or
+  // we time out. Idempotent server-side (the handler returns 200 ready when a
+  // file already exists), so a duplicate fire is cheap rather than dangerous.
+  useEffect(() => {
+    if (!eligibleForCapture || !deployment) return;
+    const captureKey = deployment.id;
+    if (inFlightCaptures.has(captureKey)) return;
+    inFlightCaptures.add(captureKey);
+
+    let cancelled = false;
+    setIsCapturing(true);
+
+    const stopPolling = () => {
+      if (pollTimerRef.current !== null) {
+        window.clearInterval(pollTimerRef.current);
+        pollTimerRef.current = null;
+      }
+    };
+
+    const finish = () => {
+      if (cancelled) return;
+      stopPolling();
+      setIsCapturing(false);
+      inFlightCaptures.delete(captureKey);
+    };
+
+    api
+      .captureProjectScreenshot(projectId, environment)
+      .then((res) => {
+        if (cancelled) return;
+        if (res.status === "ready") {
+          // Server says the file already exists; force a fresh fetch so the
+          // deployment row picks up the screenshot_path.
+          queryClient.invalidateQueries({
+            queryKey: queryKeys.deployments(projectId),
+          });
+          finish();
+          return;
+        }
+        // Capturing async — poll the deployments list until screenshot_path lands.
+        const startedAt = Date.now();
+        pollTimerRef.current = window.setInterval(() => {
+          if (Date.now() - startedAt > 90_000) {
+            // Capture should have either succeeded or errored server-side by now;
+            // give up polling and let the user reload manually.
+            finish();
+            return;
+          }
+          queryClient.invalidateQueries({
+            queryKey: queryKeys.deployments(projectId),
+          });
+        }, 5000);
+      })
+      .catch(() => finish());
+
+    return () => {
+      cancelled = true;
+      stopPolling();
+      // Don't release the in-flight slot here — the server-side goroutine may
+      // still be running. We'll release on next mount once the screenshot path
+      // appears (eligibleForCapture flips false) or on the timeout above.
+    };
+  }, [eligibleForCapture, deployment, projectId, environment, queryClient]);
+
+  // Once the screenshot lands, the deployment id no longer qualifies for
+  // capture. Drop it from the in-flight set so a future stale homepage can
+  // re-trigger after a manual refresh + redeploy + invalidation cycle.
+  useEffect(() => {
+    if (deployment && hasScreenshot) {
+      inFlightCaptures.delete(deployment.id);
+    }
+  }, [deployment, hasScreenshot]);
 
   const handleClick = () => {
-    if (!deployment) return;
+    if (!deployment || isOptimistic) return;
     onNavigate({
       to: "/projects/$id/deployments/$did",
       params: { id: projectId, did: deployment.id },
@@ -454,82 +553,113 @@ function EnvironmentRow({
   };
 
   return (
-    <button
-      type="button"
-      disabled={!deployment}
-      onClick={handleClick}
+    <div
       className={cn(
-        "flex w-full items-center gap-4 px-4 py-3 text-left transition-colors first:rounded-t-lg last:rounded-b-lg",
-        deployment && "hover:bg-accent cursor-pointer",
-        !deployment && "cursor-default",
+        "flex flex-col overflow-hidden rounded-lg border bg-card",
         isProduction && "border-l-2 border-l-amber-500/50",
       )}
     >
-      {/* Environment label */}
-      <Badge
-        variant="outline"
-        className={cn("shrink-0 text-xs", envMeta.badgeClass)}
+      {/* Hero thumbnail */}
+      <button
+        type="button"
+        disabled={!deployment || isOptimistic}
+        onClick={handleClick}
+        className={cn(
+          "block w-full text-left",
+          deployment && !isOptimistic
+            ? "cursor-pointer hover:opacity-90"
+            : "cursor-default",
+        )}
+        aria-label={
+          deployment
+            ? `${envMeta.label} preview \u2014 open deployment details`
+            : `${envMeta.label} environment`
+        }
       >
-        {envMeta.label}
-      </Badge>
+        <DeploymentThumbnail
+          deploymentId={deployment?.id ?? null}
+          hasScreenshot={hasScreenshot}
+          isCapturing={isCapturing}
+          alt={`${envMeta.label} homepage preview`}
+          size="lg"
+          className="rounded-none border-0 border-b"
+        />
+      </button>
 
-      {deployment ? (
-        <>
-          {/* Status */}
-          <span className="flex shrink-0 items-center gap-1.5">
-            <span
-              className={cn(
-                "h-2 w-2 rounded-full",
-                isActive && "animate-pulse",
-                statusMeta?.dotClass ?? "bg-slate-500",
-              )}
-            />
-            <span className="text-sm font-medium">
-              {statusMeta?.label ?? deployment.status}
-            </span>
-          </span>
-
-          {/* Commit */}
-          <span className="flex shrink-0 items-center gap-1.5 text-muted-foreground">
-            <GitCommit className="h-3.5 w-3.5" />
-            <span className="font-mono text-xs">
-              {deployment.commit_sha
-                ? deployment.commit_sha.slice(0, 7)
-                : "pending"}
-            </span>
-          </span>
-
-          {/* Commit message */}
-          <span className="min-w-0 flex-1 truncate text-sm text-muted-foreground">
-            {deployment.commit_message ||
-              deployment.error_message ||
-              "Waiting for commit metadata"}
-          </span>
-
-          {/* Branch */}
-          <span className="hidden shrink-0 items-center gap-1 text-xs text-muted-foreground sm:flex">
-            <GitBranch className="h-3.5 w-3.5" />
-            {deployment.branch}
-          </span>
-
-          {/* Duration */}
-          {deployment.build_duration > 0 && (
-            <span className="hidden shrink-0 items-center gap-1 text-xs text-muted-foreground md:flex">
-              <Clock className="h-3.5 w-3.5" />
-              {deployment.build_duration}s
-            </span>
+      {/* Meta block */}
+      <div className="flex flex-col gap-2 p-4">
+        <div className="flex items-center justify-between gap-2">
+          <Badge
+            variant="outline"
+            className={cn("shrink-0 text-xs", envMeta.badgeClass)}
+          >
+            {envMeta.label}
+          </Badge>
+          {primaryUrl ? (
+            <a
+              href={primaryUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              onClick={(e) => e.stopPropagation()}
+              className="inline-flex min-w-0 items-center gap-1 truncate text-xs text-muted-foreground hover:text-foreground"
+            >
+              <span className="truncate">{primaryUrl.replace(/^https?:\/\//, "")}</span>
+              <ExternalLink className="h-3 w-3 shrink-0" />
+            </a>
+          ) : (
+            <span className="text-xs text-muted-foreground">No domain yet</span>
           )}
+        </div>
 
-          {/* Time */}
-          <span className="shrink-0 text-xs text-muted-foreground">
-            {formatRelativeDate(deployment.created_at)}
-          </span>
-        </>
-      ) : (
-        <span className="flex-1 text-sm text-muted-foreground">
-          No deployment yet
-        </span>
-      )}
-    </button>
+        {deployment ? (
+          <>
+            <div className="flex items-center gap-2 text-sm">
+              <span
+                className={cn(
+                  "h-2 w-2 rounded-full",
+                  isActive && "animate-pulse",
+                  statusMeta?.dotClass ?? "bg-slate-500",
+                )}
+              />
+              <span className="font-medium">
+                {statusMeta?.label ?? deployment.status}
+              </span>
+              <span className="ml-auto text-xs text-muted-foreground">
+                {formatRelativeDate(deployment.created_at)}
+              </span>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
+              <span className="flex items-center gap-1">
+                <GitCommit className="h-3.5 w-3.5" />
+                <span className="font-mono">
+                  {deployment.commit_sha
+                    ? deployment.commit_sha.slice(0, 7)
+                    : "pending"}
+                </span>
+              </span>
+              <span className="flex items-center gap-1">
+                <GitBranch className="h-3.5 w-3.5" />
+                {deployment.branch}
+              </span>
+              {deployment.build_duration > 0 && (
+                <span className="flex items-center gap-1">
+                  <Clock className="h-3.5 w-3.5" />
+                  {deployment.build_duration}s
+                </span>
+              )}
+            </div>
+
+            {(deployment.commit_message || deployment.error_message) && (
+              <p className="line-clamp-1 text-xs text-muted-foreground">
+                {deployment.commit_message || deployment.error_message}
+              </p>
+            )}
+          </>
+        ) : (
+          <p className="text-sm text-muted-foreground">No deployment yet</p>
+        )}
+      </div>
+    </div>
   );
 }

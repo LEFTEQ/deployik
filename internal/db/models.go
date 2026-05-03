@@ -106,6 +106,19 @@ type Project struct {
 	LatestProductionDeployAt *time.Time `json:"latest_production_deploy_at,omitempty"`
 }
 
+// IsEnvironmentProtected reports whether the given environment ("preview" or
+// "production") has a stored password. The stored value is encrypted, so only
+// presence is meaningful here — callers needing the plaintext must decrypt.
+func (p *Project) IsEnvironmentProtected(environment string) bool {
+	switch environment {
+	case "preview":
+		return p.PreviewPassword != ""
+	case "production":
+		return p.ProductionPassword != ""
+	}
+	return false
+}
+
 type AnalyticsTrackingMode string
 
 const (
@@ -293,12 +306,14 @@ type WebhookEvent struct {
 
 type ProjectWithLatestDeployment struct {
 	Project
-	LatestDeploymentID        *string    `json:"latest_deployment_id,omitempty"`
-	LatestDeploymentStatus    *string    `json:"latest_deployment_status,omitempty"`
-	LatestDeploymentBranch    *string    `json:"latest_deployment_branch,omitempty"`
-	LatestDeploymentCommitSHA *string    `json:"latest_deployment_commit_sha,omitempty"`
-	LatestDeploymentCommitMsg *string    `json:"latest_deployment_commit_message,omitempty"`
-	LatestDeploymentCreatedAt *time.Time `json:"latest_deployment_created_at,omitempty"`
+	LatestDeploymentID             *string    `json:"latest_deployment_id,omitempty"`
+	LatestDeploymentStatus         *string    `json:"latest_deployment_status,omitempty"`
+	LatestDeploymentBranch         *string    `json:"latest_deployment_branch,omitempty"`
+	LatestDeploymentCommitSHA      *string    `json:"latest_deployment_commit_sha,omitempty"`
+	LatestDeploymentCommitMsg      *string    `json:"latest_deployment_commit_message,omitempty"`
+	LatestDeploymentCreatedAt      *time.Time `json:"latest_deployment_created_at,omitempty"`
+	LatestDeploymentEnvironment    *string    `json:"latest_deployment_environment,omitempty"`
+	LatestDeploymentScreenshotPath *string    `json:"latest_deployment_screenshot_path,omitempty"`
 }
 
 type DeploymentWithUser struct {

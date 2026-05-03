@@ -75,6 +75,8 @@ export interface Project {
   latest_deployment_commit_sha: string | null;
   latest_deployment_commit_message: string | null;
   latest_deployment_created_at: string | null;
+  latest_deployment_environment: string | null;
+  latest_deployment_screenshot_path: string | null;
   latest_preview_deploy_at: string | null;
   latest_production_deploy_at: string | null;
   created_at: string;

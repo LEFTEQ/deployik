@@ -7,6 +7,7 @@ import { queryKeys } from "@/lib/queryKeys";
 import { useOrganizations } from "@/hooks/use-organizations";
 import { Button } from "@/components/ui/button";
 import { LoadingState } from "@/components/ui/spinner";
+import { DeploymentThumbnail } from "@/components/projects/deployment-thumbnail";
 import { cn } from "@/lib/utils";
 import type { Project } from "@/types/api";
 
@@ -17,22 +18,37 @@ function ProjectRow({ project }: { project: Project }) {
       params={{ id: project.id }}
       className="flex items-center gap-4 border-b border-white/5 px-5 py-4 transition-colors last:border-b-0 hover:bg-muted/50"
     >
+      <DeploymentThumbnail
+        deploymentId={project.latest_deployment_id}
+        hasScreenshot={Boolean(project.latest_deployment_screenshot_path)}
+        alt={`${project.name} preview`}
+        size="sm"
+        className="shrink-0"
+      />
       <span
         className={cn(
           "h-2.5 w-2.5 shrink-0 rounded-full",
           project.status === "active" ? "bg-emerald-400" : "bg-slate-500",
         )}
       />
-      <span className="text-sm font-semibold text-foreground">
-        {project.name}
-      </span>
-      <span className="hidden text-sm text-muted-foreground sm:inline">
-        <span className="font-mono">
-          {project.github_owner}/{project.github_repo}
+      <div className="min-w-0 flex-1">
+        <span className="block truncate text-sm font-semibold text-foreground">
+          {project.name}
         </span>
-        <span className="mx-1.5">·</span>
-        <span className="font-mono">{project.branch}</span>
-      </span>
+        <span className="hidden truncate text-xs text-muted-foreground sm:block">
+          <span className="font-mono">
+            {project.github_owner}/{project.github_repo}
+          </span>
+          <span className="mx-1.5">·</span>
+          <span className="font-mono">{project.branch}</span>
+          {project.latest_deployment_environment && (
+            <>
+              <span className="mx-1.5">·</span>
+              <span>{project.latest_deployment_environment}</span>
+            </>
+          )}
+        </span>
+      </div>
       <span className="ml-auto shrink-0 text-xs text-muted-foreground">
         {formatDistanceToNow(new Date(project.updated_at), {
           addSuffix: true,

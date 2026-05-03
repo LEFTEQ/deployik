@@ -1,6 +1,7 @@
 package api
 
 import (
+	"sync"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -192,8 +193,22 @@ func NewRouter(cfg *RouterConfig) *chi.Mux {
 			r.With(mutationLimiter.Middleware("autobuild_delete")).Delete("/projects/{id}/auto-build", autobuildHandler.Delete)
 
 			// Screenshots
-			screenshotHandler := &handlers.ScreenshotHandler{DB: cfg.DB}
+			var screenshotProxyNetwork string
+			var screenshotWg = pipelineWaitGroup(cfg.Pipeline)
+			if cfg.Pipeline != nil {
+				screenshotProxyNetwork = cfg.Pipeline.ProxyNetwork
+			}
+			screenshotHandler := &handlers.ScreenshotHandler{
+				DB:            cfg.DB,
+				Docker:        dockerClient,
+				ScreenshotDir: cfg.ScreenshotDir,
+				ProxyNetwork:  screenshotProxyNetwork,
+				JWTSecret:     cfg.JWTSecret,
+				Audit:         auditRecorder,
+				Wg:            screenshotWg,
+			}
 			r.Get("/deployments/{did}/screenshot", screenshotHandler.Get)
+			r.With(mutationLimiter.Middleware("screenshot_capture")).Post("/projects/{id}/screenshots/capture", screenshotHandler.Capture)
 
 			// Volumes
 			volumeHandler := &handlers.VolumeHandler{DB: cfg.DB, Docker: dockerClient, Audit: auditRecorder}
@@ -242,4 +257,14 @@ func NewRouter(cfg *RouterConfig) *chi.Mux {
 	r.NotFound(SPAHandler())
 
 	return r
+}
+
+// pipelineWaitGroup returns the pipeline's WaitGroup so handler-spawned
+// background goroutines (e.g. on-demand screenshot capture) participate in
+// graceful shutdown alongside in-flight deployments. Nil-safe.
+func pipelineWaitGroup(p *build.Pipeline) *sync.WaitGroup {
+	if p == nil {
+		return nil
+	}
+	return p.Wg
 }

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/docker/docker/api/types/container"
@@ -14,9 +15,36 @@ import (
 
 const screenshotTimeout = 30 * time.Second
 
+// screenshotSemaphore caps how many headless Chrome containers can run at
+// once. Each capture spawns a Chrome container that briefly competes for CPU
+// and memory; on a single VPS, two in flight is plenty and avoids fan-out
+// pressure when many users open dashboards concurrently.
+var screenshotSemaphore = NewSemaphore(2)
+
+// AppendBypassToken returns rawURL with `?<param>=<token>` (or `&<param>=...`
+// when a query string is already present) appended. When token is empty the
+// URL is returned unchanged. Centralized here so both the post-deploy capture
+// path and the on-demand capture handler compose URLs identically.
+func AppendBypassToken(rawURL, param, token string) string {
+	if token == "" {
+		return rawURL
+	}
+	sep := "?"
+	if strings.Contains(rawURL, "?") {
+		sep = "&"
+	}
+	return rawURL + sep + param + "=" + token
+}
+
 // CaptureScreenshot runs a headless Chrome container to take a screenshot of the given URL.
-// Returns the path to the saved PNG file.
+// Returns the path to the saved PNG file. Honours a package-level concurrency
+// cap (NewSemaphore(2)); concurrent callers queue on the caller's context.
 func CaptureScreenshot(ctx context.Context, docker *DockerClient, url, deploymentID, screenshotDir, proxyNetwork string) (string, error) {
+	if err := screenshotSemaphore.AcquireCtx(ctx); err != nil {
+		return "", fmt.Errorf("queue screenshot: %w", err)
+	}
+	defer screenshotSemaphore.Release()
+
 	os.MkdirAll(screenshotDir, 0755)
 
 	ctx, cancel := context.WithTimeout(ctx, screenshotTimeout)

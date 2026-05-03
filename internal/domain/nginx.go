@@ -87,6 +87,7 @@ server {
         proxy_pass http://deployik:8080/api/site-auth/check;
         proxy_set_header X-Deployik-Project $deployik_project_id;
         proxy_set_header X-Deployik-Environment $deployik_environment;
+        proxy_set_header X-Original-URI $request_uri;
         proxy_set_header Cookie $http_cookie;
         proxy_pass_request_body off;
         proxy_set_header Content-Length "";

@@ -253,7 +253,8 @@ func (db *DB) ListProjectsWithLatestDeployment(userID, orgID string) ([]ProjectW
 		        WHERE project_id = p.id AND environment = 'preview' AND status = 'live'),
 		       (SELECT MAX(created_at) FROM deployments
 		        WHERE project_id = p.id AND environment = 'production' AND status = 'live'),
-		       ld.id, ld.status, ld.branch, ld.commit_sha, ld.commit_message, ld.created_at
+		       ld.id, ld.status, ld.branch, ld.commit_sha, ld.commit_message, ld.created_at,
+		       ld.environment, ld.screenshot_path
 		FROM projects p
 		LEFT JOIN organizations o ON o.id = p.organization_id
 		LEFT JOIN (
@@ -293,6 +294,7 @@ func (db *DB) ListProjectsWithLatestDeployment(userID, orgID string) ([]ProjectW
 		var pw ProjectWithLatestDeployment
 		p := &pw.Project
 		var ldID, ldStatus, ldBranch, ldCommitSHA, ldCommitMsg sql.NullString
+		var ldEnvironment, ldScreenshotPath sql.NullString
 		var ldCreatedAt NullableTime
 		var previewDeploy, productionDeploy sql.NullString
 		if err := rows.Scan(
@@ -305,6 +307,7 @@ func (db *DB) ListProjectsWithLatestDeployment(userID, orgID string) ([]ProjectW
 			&p.Port,
 			&previewDeploy, &productionDeploy,
 			&ldID, &ldStatus, &ldBranch, &ldCommitSHA, &ldCommitMsg, &ldCreatedAt,
+			&ldEnvironment, &ldScreenshotPath,
 		); err != nil {
 			return nil, fmt.Errorf("scan project with latest deployment: %w", err)
 		}
@@ -331,6 +334,12 @@ func (db *DB) ListProjectsWithLatestDeployment(userID, orgID string) ([]ProjectW
 		}
 		if ldCreatedAt.Valid {
 			pw.LatestDeploymentCreatedAt = &ldCreatedAt.Time
+		}
+		if ldEnvironment.Valid {
+			pw.LatestDeploymentEnvironment = &ldEnvironment.String
+		}
+		if ldScreenshotPath.Valid && ldScreenshotPath.String != "" {
+			pw.LatestDeploymentScreenshotPath = &ldScreenshotPath.String
 		}
 		projects = append(projects, pw)
 	}

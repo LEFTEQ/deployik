@@ -146,6 +146,7 @@ func main() {
 		ProxyType:        cfg.ProxyType,
 		Hub:              wsHub,
 		ScreenshotDir:    cfg.ScreenshotDir,
+		JWTSecret:        cfg.JWTSecret,
 		Ctx:              pipelineCtx,
 		Wg:               &pipelineWg,
 		MaxBuildDuration: 15 * time.Minute,

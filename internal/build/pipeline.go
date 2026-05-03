@@ -9,6 +9,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/LEFTEQ/lovinka-deployik/internal/auth"
 	"github.com/LEFTEQ/lovinka-deployik/internal/crypto"
 	"github.com/LEFTEQ/lovinka-deployik/internal/db"
 	"github.com/LEFTEQ/lovinka-deployik/internal/domain"
@@ -31,6 +32,10 @@ type Pipeline struct {
 	ProxyType     string // "docker" | "host-port"
 	Hub           *ws.Hub
 	ScreenshotDir string // Directory to store deployment screenshots
+	// JWTSecret signs short-lived site-auth bypass tokens so the post-deploy
+	// screenshot capture can render password-protected homepages without going
+	// through the human-facing login form. Empty string disables bypass minting.
+	JWTSecret string
 
 	// Ctx is the pipeline-level parent context. When cancelled, in-flight deploys
 	// abort cleanly. Handler goroutines derive per-deploy contexts from this.
@@ -392,21 +397,19 @@ func (p *Pipeline) Deploy(ctx context.Context, project *db.Project, deployment *
 			case <-time.After(5 * time.Second):
 			}
 
-			domains, err := p.DB.ListDomains(project.ID)
+			domain, err := p.DB.GetPrimaryDomain(project.ID, deployment.Environment)
 			if err != nil {
-				log.Printf("Screenshot: failed to list domains for %s: %v", deployment.ID, err)
+				log.Printf("Screenshot: failed to look up primary domain for %s: %v", deployment.ID, err)
 				return
 			}
-			var screenshotURL string
-			for _, d := range domains {
-				if d.Environment == deployment.Environment && d.SSLStatus == "active" {
-					screenshotURL = "https://" + d.DomainName
-					break
-				}
-			}
-			if screenshotURL == "" {
+			if domain == nil {
 				log.Printf("Screenshot: no active domain for deployment %s", deployment.ID)
 				return
+			}
+			screenshotURL := "https://" + domain.DomainName
+			if project.IsEnvironmentProtected(deployment.Environment) && p.JWTSecret != "" {
+				token := auth.MintSiteAuthBypassToken(p.JWTSecret, project.ID, deployment.Environment)
+				screenshotURL = AppendBypassToken(screenshotURL, auth.SiteAuthBypassParam, token)
 			}
 			path, err := CaptureScreenshot(screenshotCtx, p.Docker, screenshotURL, deployment.ID, p.ScreenshotDir, p.ProxyNetwork)
 			if err != nil {

@@ -496,6 +496,16 @@ class ApiClient {
     return `${API_URL}/deployments/${deploymentId}/screenshot`;
   }
 
+  async captureProjectScreenshot(
+    projectId: string,
+    environment: "preview" | "production",
+  ): Promise<{ status: "ready" | "capturing"; deployment_id: string; screenshot_path?: string }> {
+    return this.request(
+      `/projects/${projectId}/screenshots/capture?environment=${environment}`,
+      { method: "POST" },
+    );
+  }
+
   // Password protection
   async getProtectionStatus(projectId: string): Promise<ProtectionStatus> {
     return this.request(`/projects/${projectId}/protection`);

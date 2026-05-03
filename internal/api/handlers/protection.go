@@ -16,6 +16,7 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	"github.com/LEFTEQ/lovinka-deployik/internal/audit"
+	"github.com/LEFTEQ/lovinka-deployik/internal/auth"
 	"github.com/LEFTEQ/lovinka-deployik/internal/crypto"
 	"github.com/LEFTEQ/lovinka-deployik/internal/db"
 	"github.com/LEFTEQ/lovinka-deployik/internal/domain"
@@ -266,7 +267,9 @@ func (h *ProtectionHandler) Verify(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
 
-// Check handles GET /api/site-auth/check (called internally by nginx auth_request)
+// Check handles GET /api/site-auth/check (called internally by nginx auth_request).
+// Accepts either a valid site-auth cookie OR a one-shot bypass token carried in
+// the original request URI (forwarded as X-Original-URI by the nginx template).
 func (h *ProtectionHandler) Check(w http.ResponseWriter, r *http.Request) {
 	expectedProject := r.Header.Get("X-Deployik-Project")
 	expectedEnv := r.Header.Get("X-Deployik-Environment")
@@ -274,6 +277,15 @@ func (h *ProtectionHandler) Check(w http.ResponseWriter, r *http.Request) {
 	if expectedProject == "" || expectedEnv == "" {
 		w.WriteHeader(http.StatusUnauthorized)
 		return
+	}
+
+	if originalURI := r.Header.Get("X-Original-URI"); originalURI != "" {
+		if token := auth.ExtractBypassToken(originalURI); token != "" {
+			if auth.VerifySiteAuthBypass(h.JWTSecret, token, expectedProject, expectedEnv) {
+				w.WriteHeader(http.StatusOK)
+				return
+			}
+		}
 	}
 
 	cookie, err := r.Cookie(siteAuthCookieName)
