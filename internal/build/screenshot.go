@@ -37,9 +37,18 @@ func AppendBypassToken(rawURL, param, token string) string {
 }
 
 // CaptureScreenshot runs a headless Chrome container to take a screenshot of the given URL.
-// Returns the path to the saved PNG file. Honours a package-level concurrency
-// cap (NewSemaphore(2)); concurrent callers queue on the caller's context.
-func CaptureScreenshot(ctx context.Context, docker *DockerClient, url, deploymentID, screenshotDir, proxyNetwork string) (string, error) {
+// Returns the path to the saved PNG file (in deployik-container terms — same
+// path used for file IO inside this process). Honours a package-level
+// concurrency cap (NewSemaphore(2)); concurrent callers queue on the caller's
+// context.
+//
+// `screenshotDir` is the path inside the deployik container where the PNG
+// will be readable after the chrome container exits. `screenshotHostDir` is
+// the corresponding path on the Docker host — used as the bind-mount Source
+// so the daemon can find it. Pass the same value for both in dev mode (no
+// container) or any setup where deployik is NOT itself running in a
+// container.
+func CaptureScreenshot(ctx context.Context, docker *DockerClient, url, deploymentID, screenshotDir, screenshotHostDir, proxyNetwork string) (string, error) {
 	if err := screenshotSemaphore.AcquireCtx(ctx); err != nil {
 		return "", fmt.Errorf("queue screenshot: %w", err)
 	}
@@ -52,6 +61,11 @@ func CaptureScreenshot(ctx context.Context, docker *DockerClient, url, deploymen
 
 	containerName := fmt.Sprintf("deployik-screenshot-%s", deploymentID[:8])
 	outputFile := deploymentID + ".png"
+
+	bindSource := screenshotHostDir
+	if bindSource == "" {
+		bindSource = screenshotDir
+	}
 
 	resp, err := docker.cli.ContainerCreate(ctx,
 		&container.Config{
@@ -67,7 +81,7 @@ func CaptureScreenshot(ctx context.Context, docker *DockerClient, url, deploymen
 		},
 		&container.HostConfig{
 			Mounts: []mount.Mount{
-				{Type: mount.TypeBind, Source: screenshotDir, Target: "/screenshot"},
+				{Type: mount.TypeBind, Source: bindSource, Target: "/screenshot"},
 			},
 			AutoRemove: true,
 		},

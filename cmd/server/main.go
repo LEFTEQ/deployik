@@ -134,22 +134,32 @@ func main() {
 	defer cancelPipeline()
 	var pipelineWg sync.WaitGroup
 
+	// Resolve the host-filesystem path that backs cfg.ScreenshotDir so nested
+	// chrome containers receive a bind source the daemon can find. When deployik
+	// runs outside a container, this returns the same path. Logged so an
+	// operator can confirm at boot.
+	screenshotHostDir := dockerClient.ResolveHostPath(context.Background(), cfg.ScreenshotDir)
+	if screenshotHostDir != cfg.ScreenshotDir {
+		log.Printf("Screenshot bind source resolved: %s -> %s", cfg.ScreenshotDir, screenshotHostDir)
+	}
+
 	maxBuilds := 1
 	pipeline := &build.Pipeline{
-		DB:               database,
-		Docker:           dockerClient,
-		Encryptor:        encryptor,
-		Semaphore:        build.NewSemaphore(maxBuilds),
-		DomainManager:    domainManager,
-		BuildDir:         cfg.BuildDir,
-		ProxyNetwork:     "proxy",
-		ProxyType:        cfg.ProxyType,
-		Hub:              wsHub,
-		ScreenshotDir:    cfg.ScreenshotDir,
-		JWTSecret:        cfg.JWTSecret,
-		Ctx:              pipelineCtx,
-		Wg:               &pipelineWg,
-		MaxBuildDuration: 15 * time.Minute,
+		DB:                database,
+		Docker:            dockerClient,
+		Encryptor:         encryptor,
+		Semaphore:         build.NewSemaphore(maxBuilds),
+		DomainManager:     domainManager,
+		BuildDir:          cfg.BuildDir,
+		ProxyNetwork:      "proxy",
+		ProxyType:         cfg.ProxyType,
+		Hub:               wsHub,
+		ScreenshotDir:     cfg.ScreenshotDir,
+		ScreenshotHostDir: screenshotHostDir,
+		JWTSecret:         cfg.JWTSecret,
+		Ctx:               pipelineCtx,
+		Wg:                &pipelineWg,
+		MaxBuildDuration:  15 * time.Minute,
 	}
 
 	// Write the auth page HTML for password-protected sites

@@ -20,12 +20,13 @@ import (
 // captures so existing projects (and stale homepages) can populate without
 // requiring a redeploy.
 type ScreenshotHandler struct {
-	DB            *db.DB
-	Docker        *build.DockerClient
-	ScreenshotDir string
-	ProxyNetwork  string
-	JWTSecret     string
-	Audit         *audit.Recorder
+	DB                *db.DB
+	Docker            *build.DockerClient
+	ScreenshotDir     string
+	ScreenshotHostDir string
+	ProxyNetwork      string
+	JWTSecret         string
+	Audit             *audit.Recorder
 	// Wg, when non-nil, keeps server shutdown waiting on in-flight capture
 	// goroutines. Wired to the pipeline's WaitGroup in main.go so a single
 	// drain covers both build- and capture-spawned work.
@@ -159,7 +160,7 @@ func (h *ScreenshotHandler) runCapture(project *db.Project, deploymentID, enviro
 		url = build.AppendBypassToken(url, auth.SiteAuthBypassParam, token)
 	}
 
-	path, err := build.CaptureScreenshot(ctx, h.Docker, url, deploymentID, h.ScreenshotDir, h.ProxyNetwork)
+	path, err := build.CaptureScreenshot(ctx, h.Docker, url, deploymentID, h.ScreenshotDir, h.ScreenshotHostDir, h.ProxyNetwork)
 	if err != nil {
 		log.Printf("Screenshot: on-demand capture failed for %s: %v", deploymentID, err)
 		return

@@ -35,6 +35,47 @@ func NewDockerClient() (*DockerClient, error) {
 	return &DockerClient{cli: cli}, nil
 }
 
+// ResolveHostPath translates a path inside our own container into the host
+// path that backs it, by inspecting our container's mount config. Returns
+// the input path unchanged when running outside a container or when no
+// mount covers the requested path.
+//
+// This is needed because the Docker daemon resolves bind-mount Source paths
+// against the host filesystem, not the caller's. Without this, a deployik
+// container that asks Docker to start a sibling container with bind source
+// "/data/screenshots" (a path inside deployik backed by a named volume)
+// fails with "bind source path does not exist": the host has no such path.
+func (d *DockerClient) ResolveHostPath(ctx context.Context, containerPath string) string {
+	hostname, err := os.Hostname()
+	if err != nil || hostname == "" {
+		return containerPath
+	}
+	self, err := d.cli.ContainerInspect(ctx, hostname)
+	if err != nil {
+		return containerPath
+	}
+	// Pick the longest-matching mount destination so /data/screenshots wins
+	// over /data when both could apply, and require a path-component boundary
+	// so /datasets doesn't match a /data mount.
+	var bestSource, bestDest string
+	for _, m := range self.Mounts {
+		if !strings.HasPrefix(containerPath, m.Destination) {
+			continue
+		}
+		if len(containerPath) > len(m.Destination) && containerPath[len(m.Destination)] != '/' {
+			continue
+		}
+		if len(m.Destination) > len(bestDest) {
+			bestDest = m.Destination
+			bestSource = m.Source
+		}
+	}
+	if bestDest == "" {
+		return containerPath
+	}
+	return bestSource + strings.TrimPrefix(containerPath, bestDest)
+}
+
 // BuildxBuilderName is the named buildx builder Deployik uses for all builds.
 // A persistent docker-container driver builder gives us:
 //   - cross-build persistence of `RUN --mount=type=cache` (package-manager caches,

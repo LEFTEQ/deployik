@@ -31,7 +31,12 @@ type Pipeline struct {
 	ProxyNetwork  string // Docker network name (e.g., "proxy")
 	ProxyType     string // "docker" | "host-port"
 	Hub           *ws.Hub
-	ScreenshotDir string // Directory to store deployment screenshots
+	ScreenshotDir string // Directory to store deployment screenshots (in-container path)
+	// ScreenshotHostDir is the host-filesystem path that backs ScreenshotDir
+	// when deployik runs inside a container. The Docker daemon resolves
+	// nested-container bind sources on the host, not inside the caller, so we
+	// pass this as the bind Source. Empty falls back to ScreenshotDir (dev).
+	ScreenshotHostDir string
 	// JWTSecret signs short-lived site-auth bypass tokens so the post-deploy
 	// screenshot capture can render password-protected homepages without going
 	// through the human-facing login form. Empty string disables bypass minting.
@@ -411,7 +416,7 @@ func (p *Pipeline) Deploy(ctx context.Context, project *db.Project, deployment *
 				token := auth.MintSiteAuthBypassToken(p.JWTSecret, project.ID, deployment.Environment)
 				screenshotURL = AppendBypassToken(screenshotURL, auth.SiteAuthBypassParam, token)
 			}
-			path, err := CaptureScreenshot(screenshotCtx, p.Docker, screenshotURL, deployment.ID, p.ScreenshotDir, p.ProxyNetwork)
+			path, err := CaptureScreenshot(screenshotCtx, p.Docker, screenshotURL, deployment.ID, p.ScreenshotDir, p.ScreenshotHostDir, p.ProxyNetwork)
 			if err != nil {
 				log.Printf("Screenshot capture failed for %s: %v", deployment.ID, err)
 				return

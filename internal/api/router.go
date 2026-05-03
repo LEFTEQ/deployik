@@ -193,19 +193,21 @@ func NewRouter(cfg *RouterConfig) *chi.Mux {
 			r.With(mutationLimiter.Middleware("autobuild_delete")).Delete("/projects/{id}/auto-build", autobuildHandler.Delete)
 
 			// Screenshots
-			var screenshotProxyNetwork string
+			var screenshotProxyNetwork, screenshotHostDir string
 			var screenshotWg = pipelineWaitGroup(cfg.Pipeline)
 			if cfg.Pipeline != nil {
 				screenshotProxyNetwork = cfg.Pipeline.ProxyNetwork
+				screenshotHostDir = cfg.Pipeline.ScreenshotHostDir
 			}
 			screenshotHandler := &handlers.ScreenshotHandler{
-				DB:            cfg.DB,
-				Docker:        dockerClient,
-				ScreenshotDir: cfg.ScreenshotDir,
-				ProxyNetwork:  screenshotProxyNetwork,
-				JWTSecret:     cfg.JWTSecret,
-				Audit:         auditRecorder,
-				Wg:            screenshotWg,
+				DB:                cfg.DB,
+				Docker:            dockerClient,
+				ScreenshotDir:     cfg.ScreenshotDir,
+				ScreenshotHostDir: screenshotHostDir,
+				ProxyNetwork:      screenshotProxyNetwork,
+				JWTSecret:         cfg.JWTSecret,
+				Audit:             auditRecorder,
+				Wg:                screenshotWg,
 			}
 			r.Get("/deployments/{did}/screenshot", screenshotHandler.Get)
 			r.With(mutationLimiter.Middleware("screenshot_capture")).Post("/projects/{id}/screenshots/capture", screenshotHandler.Capture)
