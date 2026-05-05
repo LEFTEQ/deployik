@@ -4,16 +4,12 @@ import { Link, useNavigate, useParams } from "@tanstack/react-router";
 import {
   ArrowRight,
   Building2,
-  ChevronDown,
   CircleDot,
   Clock,
   ExternalLink,
   GitBranch,
   GitCommit,
   Globe2,
-  GlobeLock,
-  Loader2,
-  Rocket,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -29,40 +25,17 @@ import {
   isDomainReady,
 } from "@/lib/deployment-helpers";
 import { formatFrameworkLabel } from "@/components/projects/build-settings";
+import { DeployMenu } from "@/components/projects/deploy-menu";
 import { DeploymentThumbnail } from "@/components/projects/deployment-thumbnail";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
 import { LoadingState } from "@/components/ui/spinner";
-import { useFastDeploy } from "@/hooks/useFastDeploy";
 import { cn } from "@/lib/utils";
 import type { Deployment } from "@/types/api";
 
 export function ProjectOverview() {
   const { id } = useParams({ strict: false }) as { id: string };
   const navigate = useNavigate();
-  const [productionConfirmOpen, setProductionConfirmOpen] = useState(false);
-  const {
-    triggerPreview,
-    triggerProductionConfirmed,
-    isPending: isDeployPending,
-  } = useFastDeploy(id);
 
   const { data: project, isLoading } = useQuery({
     queryKey: queryKeys.project(id),
@@ -108,8 +81,6 @@ export function ProjectOverview() {
   }
 
   const allDomains = domains ?? [];
-  const hasProductionDomain =
-    getEnvironmentDomains(allDomains, "production").length > 0;
   const readyDomains = allDomains.filter(isDomainReady);
   const maxDomainsShown = 3;
   const visibleDomains = readyDomains.slice(0, maxDomainsShown);
@@ -209,39 +180,7 @@ export function ProjectOverview() {
           <h2 className="text-sm font-semibold text-foreground">
             Environments
           </h2>
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button size="sm" disabled={isDeployPending}>
-                {isDeployPending ? (
-                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                ) : (
-                  <Rocket className="h-3.5 w-3.5" />
-                )}
-                Deploy
-                <ChevronDown className="ml-0.5 h-3.5 w-3.5 opacity-70" />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="w-56">
-              <DropdownMenuItem onSelect={() => triggerPreview()}>
-                <Rocket className="h-3.5 w-3.5 text-sky-300" />
-                <span>Deploy preview</span>
-              </DropdownMenuItem>
-              {hasProductionDomain ? (
-                <>
-                  <DropdownMenuSeparator />
-                  <DropdownMenuItem
-                    onSelect={(event) => {
-                      event.preventDefault();
-                      setProductionConfirmOpen(true);
-                    }}
-                  >
-                    <GlobeLock className="h-3.5 w-3.5 text-emerald-300" />
-                    <span>Deploy production</span>
-                  </DropdownMenuItem>
-                </>
-              ) : null}
-            </DropdownMenuContent>
-          </DropdownMenu>
+          <DeployMenu projectId={id} productionBranch={project.branch} />
         </div>
 
         <div className="divide-y divide-border rounded-lg border">
@@ -327,40 +266,6 @@ export function ProjectOverview() {
         )}
       </div>
 
-      <AlertDialog
-        open={productionConfirmOpen}
-        onOpenChange={setProductionConfirmOpen}
-      >
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Deploy to production?</AlertDialogTitle>
-            <AlertDialogDescription>
-              This will deploy the latest commit on{" "}
-              <span className="font-mono font-medium text-foreground">
-                {project.branch}
-              </span>{" "}
-              to your production domain. Live traffic will be cut over once the
-              build finishes.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel disabled={isDeployPending}>
-              Cancel
-            </AlertDialogCancel>
-            <AlertDialogAction
-              disabled={isDeployPending}
-              onClick={(event) => {
-                event.preventDefault();
-                triggerProductionConfirmed();
-                setProductionConfirmOpen(false);
-              }}
-            >
-              <GlobeLock className="h-3.5 w-3.5" />
-              Deploy production
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
     </div>
   );
 }
