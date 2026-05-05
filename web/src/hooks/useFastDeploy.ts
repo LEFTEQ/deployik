@@ -75,9 +75,19 @@ export function useFastDeploy(projectId: string) {
     mutation.mutate("production");
   }, [clearConfirmTimer, mutation, productionState]);
 
+  // Skips the 3-second confirm window for callers that gate the action behind
+  // their own confirmation UI (e.g. a dropdown + AlertDialog flow).
+  const triggerProductionConfirmed = useCallback(() => {
+    if (mutation.isPending) return;
+    clearConfirmTimer();
+    setProductionState("idle");
+    mutation.mutate("production");
+  }, [clearConfirmTimer, mutation]);
+
   return {
     triggerPreview,
     triggerProduction,
+    triggerProductionConfirmed,
     productionState,
     isPending: mutation.isPending,
   };
