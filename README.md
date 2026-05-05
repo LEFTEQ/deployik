@@ -1,6 +1,6 @@
 # Deployik
 
-Self-hosted deployment platform for the [Lovinka](https://example.com) VPS. A lightweight Vercel alternative that deploys Next.js and static web apps from GitHub repositories with automatic domains, SSL certificates, environment variables, and blue-green zero-downtime deployments.
+Self-hosted deployment platform for the [Lovinka](https://example.com) VPS. A lightweight Vercel alternative that deploys Next.js and static web apps from GitHub repositories with automatic domains, SSL certificates, environment variables, auto-build previews, opt-in production auto-deploy, and blue-green zero-downtime deployments.
 
 ## Features
 
@@ -9,6 +9,7 @@ Self-hosted deployment platform for the [Lovinka](https://example.com) VPS. A li
 - **Blue-Green Deploys** -- Zero-downtime container swaps with automatic health checks
 - **Automatic Domains** -- Preview URLs generated per project (`{name}.preview.example.com`)
 - **Custom Domains** -- Add your own domain with DNS verification and auto-provisioned SSL (Let's Encrypt)
+- **Auto-Build on Push** -- GitHub webhooks deploy previews automatically; production can opt in to track pushes to the production branch without creating release tags
 - **Environment Variables and Secrets** -- Separate stores with shared/preview/production scoping, encrypted at rest (AES-256-GCM)
 - **Build Settings** -- Configurable framework preset, root directory (monorepo support), output directory, install/build commands, Node.js version
 - **Real-time Build Logs** -- WebSocket streaming during builds, persisted for later review
@@ -16,6 +17,7 @@ Self-hosted deployment platform for the [Lovinka](https://example.com) VPS. A li
 - **Dockerfile Override** -- Bring your own Dockerfile; Deployik only generates one when none exists
 - **Host Network Access** -- Per-project toggle lets deployed containers reach host services (Redis, MySQL, etc.) via `host.docker.internal`
 - **Persistent Volumes** -- Named Docker volumes per project-environment that survive redeployments, with UI to manage, recreate, and delete
+- **Integrations Guidance** -- Analytics, Webglobe SMTP/reCAPTCHA email, and Multi Locale setup pages provide install prompts and concrete implementation steps
 - **Configurable Proxy** -- Works with Docker nginx-proxy (default) or host-based proxies (Apache, nginx) via `PROXY_TYPE=host-port`
 - **Apache Support** -- Generates Apache VirtualHost configs alongside nginx, with wildcard SSL cert support
 - **Single Binary** -- Go backend embeds the React SPA via `go:embed`, ships as one container
@@ -28,7 +30,7 @@ Self-hosted deployment platform for the [Lovinka](https://example.com) VPS. A li
 | Backend | Go 1.25, chi router, Docker SDK |
 | Database | SQLite (WAL mode, modernc.org/sqlite -- pure Go, no CGO) |
 | Frontend | React 19, Vite 7, TanStack Router + Query, Zustand, shadcn/ui, Tailwind CSS 4 |
-| Auth | GitHub OAuth, JWT (access + refresh tokens) |
+| Auth | GitHub OAuth, JWT cookies (access + refresh), Personal Access Tokens (`dpk_...`) |
 | Encryption | AES-256-GCM (env vars and secrets encrypted at rest) |
 | SSL | Let's Encrypt via Certbot (Docker-based) or existing wildcard certs |
 | Proxy | Nginx reverse proxy (Docker or host) or Apache (host) |
@@ -269,6 +271,12 @@ go test ./...
 # Frontend typecheck
 cd web && bunx tsc --noEmit
 
+# Frontend unit tests
+cd web && bun run test
+
+# Frontend E2E tests
+cd web && bun run test:e2e
+
 # Create a verified SQLite snapshot locally
 go run ./cmd/backup create --database data/deployik.db --output /tmp/deployik-backup.sqlite3
 ```
@@ -341,7 +349,7 @@ When using the default `PROXY_TYPE=docker`, Deployik runs inside Docker alongsid
 
 Deployik is deployed via GitHub Actions on every push to `main`:
 
-1. **Test** -- Go tests, frontend typecheck, frontend build
+1. **Test** -- Go tests, frontend typecheck, frontend unit tests, frontend build
 2. **Build and Push** -- Multi-stage Docker build, push to GHCR (`ghcr.io/lefteq/lovinka-deployik`)
 3. **Deploy to VPS** -- SSH into VPS, pull new image, restart container, health check
 
@@ -380,6 +388,20 @@ Deployik is deployed via GitHub Actions on every push to `main`:
 13. **Swap** -- Old container stopped, new container renamed to canonical name (blue-green)
 14. **Finalize** -- Previous live deployment marked as "replaced", new deployment marked as "live"
 
+## Auto-Build on Push
+
+Projects can provision a GitHub webhook from the new-project wizard or Project Settings.
+
+- Preview auto-build is the default for imported projects and follows the preview branch rules (`*` by default).
+- Production auto-deploy is explicit opt-in. When enabled, a push to the configured production branch creates a production deployment from the same commit.
+- A single GitHub delivery can create both preview and production deployments; idempotency is tracked per delivery, project, and environment.
+- Webhook-triggered production deployments do **not** create git tags. Tags remain tied to manual release actions.
+- Before deploying code with a new SQLite migration, create a live backup on the VPS:
+
+```bash
+ssh deploy@203.0.113.10 "/opt/scripts/deployik-backup.sh backup"
+```
+
 Build logs are streamed in real-time via WebSocket and persisted to SQLite for later viewing.
 
 ## Known Limitations
@@ -417,8 +439,8 @@ internal/
   db/
     sqlite.go            SQLite connection with WAL pragmas
     migrations.go        Embedded SQL migration runner
-    migrations/          SQL migration files (001-012)
-    models.go            Go structs (User, Project, Deployment, Domain, ProjectVariable)
+    migrations/          SQL migration files (001-018)
+    models.go            Go structs (User, Project, Deployment, Domain, ProjectVariable, AutoBuildConfig, APIToken)
     queries_*.go         Query functions per entity
   domain/
     ssl.go               Domain manager (certbot, proxy config, DNS verification, ReloadProxy)

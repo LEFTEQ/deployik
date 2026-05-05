@@ -20,9 +20,12 @@ Self-hosted Vercel alternative for the Lovinka VPS. Deploys Next.js and static w
 | Seed dev data | `make dev-seed` (runs `scripts/seed-dev.sh`) |
 | Go tests | `go test ./...` |
 | Frontend typecheck | `cd web && bunx tsc --noEmit` |
+| Frontend unit tests | `cd web && bun run test` |
+| Frontend E2E tests | `cd web && bun run test:e2e` |
 | Build production | `make build` |
 | Docker build | `make docker-build` |
 | Manual deploy | `./scripts/deploy.sh [tag]` |
+| Production DB backup | `ssh deploy@203.0.113.10 "/opt/scripts/deployik-backup.sh backup"` |
 
 ## Project Structure
 
@@ -128,6 +131,7 @@ internal/
       015_env_variable_updated_at.sql  Adds env_variables.updated_at for changed-since-deploy signals
       016_project_email_settings.sql  Adds project_email_settings for Webglobe SMTP/reCAPTCHA onboarding metadata; encrypted credentials remain in env_variables as secrets
       017_api_tokens.sql        Adds api_tokens for Personal Access Tokens (Bearer auth alongside JWT)
+      018_auto_production_auto_deploy.sql  Adds production auto-deploy opt-in and environment-aware webhook event idempotency
     models.go             User, Organization, OrganizationMembership, RefreshSession, AuditLog, Project (with password fields, host_network_access, data_volume_enabled, data_mount_path), Deployment (with trigger/screenshot fields), BuildLog, Domain, ProjectVariable, VariableKind, AutoBuildConfig, WebhookEvent, ProjectWithLatestDeployment, DeploymentWithUser, DeploymentListResponse, DeploymentFilter
     queries_users.go      GetUserByGithubID, GetUserByID, UpsertUser
     queries_organizations.go  Personal workspace bootstrap, memberships, org listing
@@ -141,7 +145,7 @@ internal/
     queries_project_analytics.go  Get/Upsert/Delete project_analytics rows
     queries_project_email.go  Get/Upsert/Delete project_email_settings rows
     queries_autobuild.go  GetAutoBuildConfig, UpsertAutoBuildConfig, DeleteAutoBuildConfig, ListActiveAutoBuildConfigsByRepo
-    queries_webhook_events.go  CreateWebhookEvent, WebhookEventExists (idempotency)
+    queries_webhook_events.go  CreateWebhookEvent, WebhookEventExists, UpdateWebhookEventStatus (idempotency scoped by delivery+project+environment)
 
   domain/
     ssl.go                Manager: ProvisionDomain (DNS verify -> cert (certbot or configured wildcard) -> proxy config -> reload); ProvisionLogger for structured step events; ReloadProxy() dispatches to ReloadNginx() in docker mode or runs PROXY_RELOAD_CMD via `sh -c` in host-port mode
@@ -176,12 +180,12 @@ web/src/
     Login.tsx             GitHub OAuth redirect
     AuthCallback.tsx      Exchanges code/state for cookie session, stores only user state
     Projects.tsx          Dashboard: project list with latest deployment info
-    NewProject.tsx        Three-step state machine: (A) pick repo -> (B) pick app from monorepo (skipped for single-app repos) -> (C) configure build settings
+    NewProject.tsx        Three-step state machine: (A) pick repo -> (B) pick app from monorepo (skipped for single-app repos) -> (C) configure build + auto-deploy settings
     ProjectOverview.tsx   Dual environment rows (preview + production), domain strips, recent deployments, release panel
     ProjectDeployments.tsx  Deployment history with filters (branch, environment, status, date range), pagination
     ProjectAnalytics.tsx  Integrations/Analytics route: dashboard plus embedded setup/how-to section
     ProjectEmail.tsx      Integrations/Email route: Webglobe SMTP/reCAPTCHA setup
-    ProjectSettings.tsx   Build settings page (framework, package manager, commands, directories)
+    ProjectSettings.tsx   Build settings page (framework, package manager, commands, directories) plus auto-build + production auto-deploy controls
     ProjectSettingsDomains.tsx  Domain management: inline add form, environment grouping, primary badge, verify + move/set-primary/delete actions, DNS setup guide, verification with real-time log streaming
     ProjectSettingsEnv.tsx  Environment variables + secrets with Vercel-style individual add/edit/delete, .env import
     ProjectSettingsProtection.tsx  Per-environment password protection toggle with password reveal
@@ -242,7 +246,7 @@ web/src/
 
 ## Database Schema
 
-SQLite with 17 migrations. Tables:
+SQLite with 18 migrations. Tables:
 
 | Table | Key Fields | Notes |
 |---|---|---|
@@ -259,8 +263,8 @@ SQLite with 17 migrations. Tables:
 | `refresh_tokens` | id (ULID), user_id (FK), token_hash, expires_at, last_used_at, revoked_at | Opaque refresh tokens are hashed at rest and rotated on use |
 | `audit_logs` | id (auto), user_id (nullable FK), action, resource_type, resource_id, project_id, deployment_id, metadata | Records login/refresh/logout and sensitive mutating actions |
 | `api_tokens` | id (ULID), user_id (FK), name, token_hash, last_used_at, expires_at, revoked_at | SHA-256 hashed at rest; raw token shown once at creation; routed by `dpk_` prefix in middleware |
-| `auto_build_configs` | id (ULID), project_id (unique FK), enabled, production_branch, preview_branches, webhook_id, webhook_secret (encrypted) | One config per project; webhook_id links to GitHub webhook |
-| `webhook_events` | id (auto), project_id (FK), github_delivery_id (unique), event_type, branch, commit_sha, commit_message, pusher, deployment_id (nullable FK), status (received/processed/ignored/failed), error_message | Idempotency via unique github_delivery_id |
+| `auto_build_configs` | id (ULID), project_id (unique FK), enabled, production_branch, preview_branches, auto_production_enabled, webhook_id, webhook_secret (encrypted) | One config per project; production auto-deploy is explicit opt-in |
+| `webhook_events` | id (auto), project_id (FK), github_delivery_id, event_type, environment (preview/production/ignored), branch, commit_sha, commit_message, pusher, deployment_id (nullable FK), status (received/processed/ignored/failed), error_message | Idempotency via unique `(github_delivery_id, project_id, environment)` so one push can fan out to preview + production |
 
 ## API Endpoints
 
@@ -287,7 +291,7 @@ SQLite with 17 migrations. Tables:
 
 **Projects:**
 - `GET    /api/projects?organization_id=` -- List projects with latest deployment join, optionally filtered to one workspace
-- `POST   /api/projects` -- Create project (auto-creates preview domain; defaults to personal workspace if no `organization_id`)
+- `POST   /api/projects` -- Create project (auto-creates preview domain; defaults to personal workspace if no `organization_id`; `auto_build_enabled` defaults true, `auto_production_enabled` defaults false)
 - `GET    /api/projects/{id}` -- Get project
 - `PATCH  /api/projects/{id}` -- Update project
 - `DELETE /api/projects/{id}` -- Soft-delete project (stops containers, removes nginx configs, cleans domains)
@@ -306,7 +310,7 @@ SQLite with 17 migrations. Tables:
 
 **Auto-Build:**
 - `GET    /api/projects/{id}/auto-build` -- Get auto-build configuration
-- `PUT    /api/projects/{id}/auto-build` -- Create/update auto-build config `{enabled, production_branch, preview_branches}` (creates GitHub webhook)
+- `PUT    /api/projects/{id}/auto-build` -- Create/update auto-build config `{enabled, production_branch, preview_branches, auto_production_enabled}` (creates GitHub webhook)
 - `DELETE /api/projects/{id}/auto-build` -- Delete auto-build config and remove GitHub webhook
 
 **Password Protection:**
@@ -352,7 +356,7 @@ SQLite with 17 migrations. Tables:
 ### Go Backend
 
 - **Router:** chi v5 with middleware chain: Logger -> Recoverer -> RequestID -> RealIP -> CORS
-- **Auth middleware:** Extracts JWT from `Authorization: Bearer` header or the `deployik_access_token` cookie
+- **Auth middleware:** Extracts JWT from `Authorization: Bearer` header or the `deployik_access_token` cookie; `dpk_` Bearer values authenticate through `api_tokens` and are never accepted from cookies
 - **Authorization:** All project-scoped endpoints call `loadAuthorizedProject()` or `loadAuthorizedDeployment()` from `handlers/access.go`, which delegates to `authz.LoadProject()` / `authz.LoadDeployment()`. Regular users can access projects if they created them or belong to the owning organization; admins still retain bypass access.
 - **Session model:** The SPA never stores tokens. `AuthCallback.tsx` exchanges `code` + `state`, the server sets `HttpOnly` cookies, `api.ts` uses `credentials: 'include'`, and route guards rehydrate auth via `/api/auth/me`.
 - **Refresh rotation:** Refresh tokens are opaque random strings, stored only as SHA-256 hashes in `refresh_tokens`, revoked on logout, and rotated every time `/api/auth/refresh` succeeds.
@@ -370,7 +374,7 @@ SQLite with 17 migrations. Tables:
 - **Workspace model:** Users always get a personal organization via `EnsurePersonalOrganization()`. Shared organizations are represented by `organizations + organization_memberships`, and the frontend persists the currently selected workspace in `store/organization.ts`.
 - **Build metadata:** `cmd/server/main.go` declares `gitSHA`, `buildTime`, `ghRunID`, `ghRepo` package vars set at link time via `go build -ldflags="-X main.<name>=<value>"`. CI (`.github/workflows/ci.yml`) passes these as Docker `build-args` to `docker/build-push-action@v6`, which the `Dockerfile` `go-builder` stage forwards to the `RUN go build` line. The result is wrapped in `internal/version.Info` and surfaced via the `/api/health` JSON response.
 - **Monorepo inspection:** `internal/monorepo` is a dependency-free detection package that scans a GitHub repo via a small `RepoInspector` interface (mockable in tests). It detects `pnpm-workspace.yaml`, `turbo.json`, `nx.json`, and root `package.json` `workspaces` (npm/yarn/bun share the same field), expands workspace globs against the GitHub Trees API, and derives per-app framework/output/build defaults. The `internal/api/handlers/InspectHandler` adapts `*github.Client` (via `gh.ErrNotFound` → `monorepo.ErrFileNotFound` translation) to expose this at `GET /api/github/repos/{owner}/{repo}/inspect?branch=...` for the new-project flow.
-- **Auto-deploy on creation:** `ProjectHandler.Create` fires two best-effort side-effects after persisting the project + auto-domain: `setupAutoBuildBestEffort` (calls the shared `provisionWebhook` helper extracted from `autobuild.go` to create a GitHub webhook + insert `auto_build_configs` with defaults `production_branch=project.Branch, preview_branches="*", enabled=true`) and `dispatchInitialDeployBestEffort` (inserts a `deployments` row with `environment="preview"`, `trigger_source="api"` and calls `Pipeline.Dispatch`). Failures (insufficient OAuth scope, no admin access, decrypt error, nil pipeline) log and return — the project is never rolled back. Both side-effects are recorded as audit events with `metadata={"source":"project_create"}`.
+- **Auto-deploy on creation:** `ProjectHandler.Create` fires best-effort side-effects after persisting the project + auto-domain. `auto_build_enabled` defaults true and calls `setupAutoBuildBestEffort` to create the GitHub webhook + insert `auto_build_configs` with defaults `production_branch=project.Branch`, `preview_branches="*"`, and requested `auto_production_enabled`. Initial preview deploy is always attempted. Initial production deploy is only queued when the auto-build config was durably saved with `Enabled && AutoProductionEnabled && ProductionBranch == project.Branch`. Failures (insufficient OAuth scope, no admin access, decrypt error, nil pipeline) log and return — the project is never rolled back. Side-effects are recorded as audit events with `metadata={"source":"project_create"}`.
 
 ### Auto-Build System
 
@@ -379,9 +383,10 @@ GitHub webhooks trigger automatic deployments:
 1. **Setup:** User enables auto-build via `PUT /api/projects/{id}/auto-build`. Deployik creates a GitHub webhook using the user's OAuth token (requires `admin:repo_hook` scope). The webhook secret is encrypted and stored in `auto_build_configs`.
 2. **Webhook flow:** GitHub sends push events to `POST /api/webhooks/github`. The handler:
    - Validates HMAC-SHA256 signature against the stored (decrypted) webhook secret
-   - Checks idempotency via `github_delivery_id` in `webhook_events`
-   - Matches branch against `production_branch` (exact) or `preview_branches` (comma-separated list or `*` for all)
-   - Creates a deployment with `trigger_source: "webhook"` and `triggered_by_username` from the pusher
+   - Claims idempotency per `(github_delivery_id, project_id, environment)` in `webhook_events`
+   - Matches preview via `preview_branches` (comma-separated list or `*` for all)
+   - Matches production only when `auto_production_enabled=true` and branch equals `production_branch`
+   - Creates one deployment per target environment with `trigger_source: "webhook"` and `triggered_by_username` from the pusher
    - Records the event in `webhook_events` (status: processed/ignored/failed)
 3. **Lifecycle:** Disabling auto-build toggles the webhook on GitHub. Deleting auto-build removes the GitHub webhook and the config row.
 
@@ -577,6 +582,7 @@ Production runs via `docker/docker-compose.yml` with:
 - **Sidebar layout over top-nav tabs:** The monolithic `ProjectDetail.tsx` (2000+ lines with tabs) was decomposed into 7+ separate page files with nested TanStack Router routes, navigated via a sidebar with collapsible Settings section. This improves code organization, enables deep-linking, and gives more room for future navigation items.
 - **Password protection via nginx auth_request:** Instead of proxying all traffic through Deployik, password-protected sites use nginx's `auth_request` directive pointing to Deployik's `/api/site-auth/check`. This keeps the fast path (authenticated requests) entirely in nginx while only the initial auth check hits Deployik.
 - **Webhook HMAC validation per project:** Each project's auto-build config stores its own encrypted webhook secret, so a single webhook endpoint can serve multiple projects by iterating configs and validating signatures independently.
+- **Production auto-deploy is opt-in fan-out, not release tagging:** `auto_production_enabled` lets simple one-branch sites have preview and production track the same pushed commit. The webhook handler may create both deployments for one GitHub delivery, but it does not create a git tag; tags remain a manual release affordance.
 - **Proxy abstraction (ReloadProxy + ContainerUpstream):** Replacing direct `ReloadNginx()` calls with a `ReloadProxy()` dispatcher let one install serve docker-nginx-proxy, host nginx, or host Apache without branching hotpaths through the codebase. `ContainerUpstream` on `NginxConfig`/`ApacheConfig` decouples the upstream string from the container name so `PROXY_TYPE=host-port` can insert `127.0.0.1:<port>` without touching callers.
 - **`sh -c` for PROXY_RELOAD_CMD:** The host-port reload command is passed to `sh -c` rather than parsed with `strings.Fields`. This is operator-controlled config (not user input), so giving the operator the full shell vocabulary (sudo, pipes, `nsenter -t 1 -m -- apachectl graceful`, configtest chains) is strictly better than a fragile whitespace-split parser.
 - **Volumes via `/system/df`:** `VolumeInspect` and `VolumeList` leave `UsageData` nil, so the only way to show real on-disk sizes is `DiskUsage`. The volumes handler calls it once per request and keys the result by volume name for both preview and production.

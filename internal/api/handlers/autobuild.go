@@ -44,10 +44,22 @@ type autoBuildResponse struct {
 	UpdatedAt             string `json:"updated_at"`
 }
 
+func defaultAutoBuildBranch(project *db.Project) string {
+	if project == nil {
+		return "main"
+	}
+	branch := strings.TrimSpace(project.Branch)
+	if branch == "" {
+		return "main"
+	}
+	return branch
+}
+
 // Get returns the auto-build configuration for a project.
 func (h *AutoBuildHandler) Get(w http.ResponseWriter, r *http.Request) {
 	projectID := chi.URLParam(r, "id")
-	if _, _, ok := loadAuthorizedProject(w, r, h.DB, projectID); !ok {
+	project, _, ok := loadAuthorizedProject(w, r, h.DB, projectID)
+	if !ok {
 		return
 	}
 
@@ -60,8 +72,8 @@ func (h *AutoBuildHandler) Get(w http.ResponseWriter, r *http.Request) {
 	if config == nil {
 		writeJSON(w, http.StatusOK, autoBuildResponse{
 			Enabled:               false,
-			ProductionBranch:      "main",
-			PreviewBranches:       "*",
+			ProductionBranch:      defaultAutoBuildBranch(project),
+			PreviewBranches:       defaultAutoBuildBranch(project),
 			AutoProductionEnabled: false,
 		})
 		return
@@ -138,10 +150,10 @@ func (h *AutoBuildHandler) Put(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if req.ProductionBranch == "" {
-		req.ProductionBranch = "main"
+		req.ProductionBranch = defaultAutoBuildBranch(project)
 	}
 	if req.PreviewBranches == "" {
-		req.PreviewBranches = "*"
+		req.PreviewBranches = defaultAutoBuildBranch(project)
 	}
 
 	// Get project owner's GitHub token

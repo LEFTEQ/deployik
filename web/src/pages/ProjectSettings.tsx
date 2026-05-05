@@ -12,6 +12,7 @@ import {
 import { toast } from "sonner";
 
 import { api } from "@/lib/api";
+import { resolveAutoDeploySourceBranch } from "@/lib/autodeploy";
 import { queryKeys } from "@/lib/queryKeys";
 import type {
   AutoBuildConfig,
@@ -191,6 +192,10 @@ function AutoBuildSection({
   const [autoProductionEnabled, setAutoProductionEnabled] = useState(
     config?.auto_production_enabled ?? false,
   );
+  const sourceBranch = resolveAutoDeploySourceBranch(
+    productionBranch,
+    defaultBranch,
+  );
 
   useEffect(() => {
     if (!config) return;
@@ -283,8 +288,9 @@ function AutoBuildSection({
             )}
           </div>
           <p className="mt-1 text-sm text-muted-foreground">
-            Automatically deploy previews when you push to GitHub. Production
-            auto-deploy is opt-in and follows pushes to the production branch.
+            Automatically deploy previews from GitHub pushes to matching source
+            branches. Production can opt in to release from the selected/default
+            branch.
           </p>
         </div>
         <Switch
@@ -303,10 +309,7 @@ function AutoBuildSection({
           </Label>
           <p className="text-xs text-muted-foreground">
             Preview auto-deploy uses the preview branch rules. Enable this only
-            when pushes to{" "}
-            <span className="font-mono">
-              {productionBranch || defaultBranch || "main"}
-            </span>{" "}
+            when pushes to <span className="font-mono">{sourceBranch}</span>{" "}
             should release production.
           </p>
         </div>
@@ -368,7 +371,7 @@ function AutoBuildSection({
             <div className="space-y-2">
               <Label className="flex items-center gap-1.5">
                 <GitBranch className="h-3.5 w-3.5" />
-                Production Branch
+                Production Source Branch
               </Label>
               <Input
                 value={productionBranch}
@@ -376,7 +379,8 @@ function AutoBuildSection({
                 placeholder="main"
               />
               <p className="text-xs text-muted-foreground">
-                Used by manual releases and production auto-deploy when enabled.
+                Used by production auto-deploy when enabled. Usually the
+                selected/default branch.
               </p>
             </div>
             <div className="space-y-2">
@@ -390,8 +394,8 @@ function AutoBuildSection({
                 placeholder="* (all other branches)"
               />
               <p className="text-xs text-muted-foreground">
-                Use * for all branches, or comma-separated names, to create
-                preview deployments on push.
+                Use * for all source branches, or comma-separated branch names,
+                to create preview deployments on push.
               </p>
             </div>
           </div>

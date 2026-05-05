@@ -43,6 +43,9 @@ Thumbs.db
 # Superpowers brainstorm artifacts
 .superpowers/
 
+# Claude Code runtime artifacts
+.claude/scheduled_tasks.lock
+
 # Build temp
 /tmp/deployik-builds/
 server

@@ -12,6 +12,10 @@ import {
 import { Link } from "@tanstack/react-router";
 import { toast } from "sonner";
 import { api } from "@/lib/api";
+import {
+  resolveAutoDeploySourceBranch,
+  shouldEnableProductionAutoDeploy,
+} from "@/lib/autodeploy";
 import { queryKeys, staleTimes } from "@/lib/queryKeys";
 import { useOrganizations } from "@/hooks/use-organizations";
 import { Button } from "@/components/ui/button";
@@ -125,7 +129,10 @@ export function NewProject() {
         name,
         github_repo: selectedRepo!.name,
         github_owner: selectedRepo!.owner.login,
-        branch: branch || selectedRepo!.default_branch,
+        branch: resolveAutoDeploySourceBranch(
+          branch,
+          selectedRepo!.default_branch,
+        ),
         framework: buildSettings.framework,
         package_manager: buildSettings.packageManager,
         root_directory: buildSettings.rootDirectory,
@@ -135,7 +142,10 @@ export function NewProject() {
         node_version: buildSettings.nodeVersion,
         port: buildSettings.port,
         auto_build_enabled: autoBuildEnabled,
-        auto_production_enabled: autoBuildEnabled && autoProductionEnabled,
+        auto_production_enabled: shouldEnableProductionAutoDeploy(
+          autoBuildEnabled,
+          autoProductionEnabled,
+        ),
       }),
     onSuccess: (project) => {
       queryClient.invalidateQueries({ queryKey: ["projects"] });
@@ -395,10 +405,11 @@ export function NewProject() {
                 <Webhook className="mt-0.5 h-4 w-4 text-muted-foreground" />
                 <div className="space-y-1">
                   <Label htmlFor="auto-build-enabled">
-                    Auto-build previews on push
+                    Auto-deploy previews from source branch
                   </Label>
                   <p className="text-xs text-muted-foreground">
-                    Set up GitHub push deploys for preview branches after import.
+                    Set up GitHub push deploys for the selected/default branch
+                    after import.
                   </p>
                 </div>
               </div>
@@ -417,7 +428,10 @@ export function NewProject() {
                 <p className="text-xs text-muted-foreground">
                   When enabled, pushes to{" "}
                   <span className="font-mono">
-                    {branch || selectedRepo.default_branch}
+                    {resolveAutoDeploySourceBranch(
+                      branch,
+                      selectedRepo.default_branch,
+                    )}
                   </span>{" "}
                   create both preview and production deployments from the same
                   commit.

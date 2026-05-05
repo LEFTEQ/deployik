@@ -91,6 +91,97 @@ func TestAutoBuildGetMissingConfigReturnsAutoProductionDisabled(t *testing.T) {
 	}
 }
 
+func TestAutoBuildGetMissingConfigDefaultsProductionBranchToProjectBranch(t *testing.T) {
+	database, encryptor, user := setupProjectTestDB(t)
+	t.Cleanup(func() { database.Close() })
+
+	project := createAutoBuildTestProject(t, database, user, "autobuild-get-project-branch")
+	project.Branch = "develop"
+	if err := database.UpdateProject(project); err != nil {
+		t.Fatalf("UpdateProject: %v", err)
+	}
+	handler := &AutoBuildHandler{
+		DB:        database,
+		Encryptor: encryptor,
+		Audit:     &audit.Recorder{DB: database},
+	}
+	req := newAutoBuildGetRequest(user.ID, project.ID)
+	rec := httptest.NewRecorder()
+
+	handler.Get(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body: %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+	var body map[string]any
+	if err := json.NewDecoder(rec.Body).Decode(&body); err != nil {
+		t.Fatalf("Decode response: %v", err)
+	}
+	if got := body["production_branch"]; got != "develop" {
+		t.Fatalf("production_branch = %#v, want develop", got)
+	}
+	if got := body["preview_branches"]; got != "develop" {
+		t.Fatalf("preview_branches = %#v, want develop", got)
+	}
+}
+
+func TestAutoBuildPutDefaultsProductionBranchToProjectBranch(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			http.NotFound(w, r)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusCreated)
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"id":     98765,
+			"active": true,
+		})
+	}))
+	defer ts.Close()
+
+	restore := github.SetTestAPIBase(ts.URL)
+	defer restore()
+
+	database, encryptor, user := setupProjectTestDB(t)
+	t.Cleanup(func() { database.Close() })
+
+	project := createAutoBuildTestProject(t, database, user, "autobuild-put-project-branch")
+	project.Branch = "develop"
+	if err := database.UpdateProject(project); err != nil {
+		t.Fatalf("UpdateProject: %v", err)
+	}
+	handler := &AutoBuildHandler{
+		DB:         database,
+		Encryptor:  encryptor,
+		Audit:      &audit.Recorder{DB: database},
+		WebhookURL: ts.URL + "/webhook",
+	}
+	req := newAutoBuildRequest(t, user.ID, project.ID, map[string]any{
+		"enabled": true,
+	})
+	rec := httptest.NewRecorder()
+
+	handler.Put(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body: %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+	config, err := database.GetAutoBuildConfig(project.ID)
+	if err != nil {
+		t.Fatalf("GetAutoBuildConfig: %v", err)
+	}
+	if config == nil {
+		t.Fatal("expected auto-build config")
+	}
+	if config.ProductionBranch != "develop" {
+		t.Fatalf("production_branch = %q, want develop", config.ProductionBranch)
+	}
+	if config.PreviewBranches != "develop" {
+		t.Fatalf("preview_branches = %q, want develop", config.PreviewBranches)
+	}
+}
+
 func TestAutoBuildPutPersistsAutoProductionEnabledTrue(t *testing.T) {
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
