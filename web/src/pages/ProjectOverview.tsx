@@ -1,5 +1,5 @@
-import { useEffect, useOptimistic, useRef, useState, useTransition } from "react";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useEffect, useRef, useState } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate, useParams } from "@tanstack/react-router";
 import {
   ArrowRight,
@@ -10,7 +10,6 @@ import {
   GitBranch,
   GitCommit,
   Globe2,
-  GlobeLock,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -20,7 +19,6 @@ import {
   ACTIVE_DEPLOYMENT_STATUSES,
   DEPLOYMENT_STATUS_META,
   ENVIRONMENT_META,
-  buildReleaseTagName,
   formatRelativeDate,
   getEnvironmentDomains,
   getLatestEnvironmentDeployment,
@@ -28,60 +26,15 @@ import {
 } from "@/lib/deployment-helpers";
 import { formatFrameworkLabel } from "@/components/projects/build-settings";
 import { DeploymentThumbnail } from "@/components/projects/deployment-thumbnail";
-import { ReleasePanelContent } from "@/components/projects/release-panel";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
 import { LoadingState } from "@/components/ui/spinner";
 import { cn } from "@/lib/utils";
-import { useAuthStore } from "@/store/auth";
 import type { Deployment } from "@/types/api";
-
-function buildOptimisticDeployment(args: {
-  projectId: string;
-  environment: "preview" | "production";
-  branch: string;
-  username: string;
-  commitMessage?: string;
-}): Deployment {
-  return {
-    id: `optimistic-${Date.now()}`,
-    project_id: args.projectId,
-    environment: args.environment,
-    commit_sha: "",
-    commit_message: args.commitMessage ?? "",
-    branch: args.branch,
-    status: "queued",
-    container_id: "",
-    container_name: "",
-    image_tag: "",
-    build_duration: 0,
-    triggered_by: "",
-    trigger_source: "manual",
-    triggered_by_username: args.username,
-    screenshot_path: null,
-    error_message: undefined,
-    created_at: new Date().toISOString(),
-    finished_at: null,
-  };
-}
 
 export function ProjectOverview() {
   const { id } = useParams({ strict: false }) as { id: string };
   const navigate = useNavigate();
-  const queryClient = useQueryClient();
-  const currentUser = useAuthStore((state) => state.user);
-  const [releaseDialogOpen, setReleaseDialogOpen] = useState(false);
-  const [createTag, setCreateTag] = useState(true);
-  const [releaseTagName, setReleaseTagName] = useState(buildReleaseTagName());
-  const [, startTransition] = useTransition();
 
   const { data: project, isLoading } = useQuery({
     queryKey: queryKeys.project(id),
@@ -103,33 +56,6 @@ export function ProjectOverview() {
   const { data: domains } = useQuery({
     queryKey: queryKeys.domains(id),
     queryFn: () => api.listDomains(id),
-  });
-
-  // Optimistically render the new deployment at the top of the list so the
-  // "Recent deployments" section reflects the click instantly. Resets when the
-  // server list refreshes after the mutation resolves.
-  const [optimisticDeployments, addOptimistic] = useOptimistic<
-    Deployment[],
-    Deployment
-  >(deployments ?? [], (state, pending) => [pending, ...state]);
-
-  const deployMutation = useMutation({
-    mutationFn: (payload: {
-      environment: "preview" | "production";
-      branch?: string;
-      create_tag?: boolean;
-      tag_name?: string;
-    }) => api.triggerDeployment(id, payload),
-    onSuccess: (deployment, variables) => {
-      queryClient.invalidateQueries({ queryKey: queryKeys.deployments(id) });
-      toast.success(
-        `${deployment.environment === "production" ? "Release" : "Preview deploy"} triggered`,
-      );
-      if (variables.environment === "production") {
-        setReleaseDialogOpen(false);
-      }
-    },
-    onError: (err) => toast.error(err.message),
   });
 
   if (isLoading) {
@@ -159,38 +85,17 @@ export function ProjectOverview() {
   const visibleDomains = readyDomains.slice(0, maxDomainsShown);
   const extraDomainCount = readyDomains.length - visibleDomains.length;
 
+  const allDeployments = deployments ?? [];
   const latestPreview = getLatestEnvironmentDeployment(
-    optimisticDeployments,
+    allDeployments,
     "preview",
   );
   const latestProduction = getLatestEnvironmentDeployment(
-    optimisticDeployments,
+    allDeployments,
     "production",
   );
 
-  const recentDeployments = optimisticDeployments.slice(0, 6);
-
-  const triggerDeploy = (payload: {
-    environment: "preview" | "production";
-    branch?: string;
-    create_tag?: boolean;
-    tag_name?: string;
-  }) => {
-    startTransition(() => {
-      addOptimistic(
-        buildOptimisticDeployment({
-          projectId: id,
-          environment: payload.environment,
-          branch: payload.branch ?? project.branch,
-          username: currentUser?.username ?? "",
-          commitMessage: payload.tag_name
-            ? `Release ${payload.tag_name}`
-            : undefined,
-        }),
-      );
-      deployMutation.mutate(payload);
-    });
-  };
+  const recentDeployments = allDeployments.slice(0, 6);
 
   return (
     <div className="space-y-8">
@@ -270,26 +175,7 @@ export function ProjectOverview() {
 
       {/* Unified Environments */}
       <div className="space-y-3">
-        <div className="flex items-center justify-between">
-          <h2 className="text-sm font-semibold text-foreground">
-            Environments
-          </h2>
-          <div className="flex gap-2">
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => {
-                setReleaseTagName(buildReleaseTagName());
-                setCreateTag(true);
-                setReleaseDialogOpen(true);
-              }}
-              disabled={deployMutation.isPending}
-            >
-              <GlobeLock className="mr-1.5 h-3.5 w-3.5" />
-              Release
-            </Button>
-          </div>
-        </div>
+        <h2 className="text-sm font-semibold text-foreground">Environments</h2>
 
         <div className="divide-y divide-border rounded-lg border">
           <EnvironmentRow
@@ -374,54 +260,6 @@ export function ProjectOverview() {
         )}
       </div>
 
-      {/* Release dialog */}
-      <Dialog open={releaseDialogOpen} onOpenChange={setReleaseDialogOpen}>
-        <DialogContent className="sm:max-w-lg">
-          <DialogHeader>
-            <DialogTitle>Release to Production</DialogTitle>
-            <DialogDescription>
-              Deploy the latest commit from{" "}
-              <span className="font-mono font-medium text-foreground">
-                {project.branch}
-              </span>{" "}
-              to production.
-            </DialogDescription>
-          </DialogHeader>
-          <ReleasePanelContent
-            project={project}
-            domains={domains}
-            createTag={createTag}
-            onCreateTagChange={setCreateTag}
-            releaseTagName={releaseTagName}
-            onReleaseTagChange={setReleaseTagName}
-          />
-          <DialogFooter>
-            <Button
-              variant="outline"
-              onClick={() => setReleaseDialogOpen(false)}
-              disabled={deployMutation.isPending}
-            >
-              Cancel
-            </Button>
-            <Button
-              onClick={() =>
-                triggerDeploy({
-                  environment: "production",
-                  create_tag: createTag,
-                  tag_name: createTag ? releaseTagName.trim() : undefined,
-                })
-              }
-              disabled={
-                (createTag && !releaseTagName.trim()) ||
-                deployMutation.isPending
-              }
-            >
-              <GlobeLock className="mr-1.5 h-3.5 w-3.5" />
-              {deployMutation.isPending ? "Releasing..." : "Release"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
     </div>
   );
 }

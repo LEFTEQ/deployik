@@ -2,10 +2,17 @@ import { GlobeLock, Loader2, Rocket } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { useFastDeploy } from "@/hooks/useFastDeploy";
+import { cn } from "@/lib/utils";
 
 export interface FastDeployActionsProps {
   projectId: string;
 }
+
+const previewButtonClass =
+  "border-sky-400/25 bg-sky-400/[0.06] text-sky-100 hover:border-sky-400/40 hover:bg-sky-400/[0.12] hover:text-sky-50";
+
+const productionButtonClass =
+  "border-emerald-400/25 bg-emerald-400/[0.06] text-emerald-100 hover:border-emerald-400/40 hover:bg-emerald-400/[0.12] hover:text-emerald-50";
 
 export function FastDeployActions({ projectId }: FastDeployActionsProps) {
   const { triggerPreview, triggerProduction, productionState, isPending } =
@@ -21,6 +28,7 @@ export function FastDeployActions({ projectId }: FastDeployActionsProps) {
         onClick={triggerPreview}
         disabled={isPending}
         title="Deploy the latest commit to the preview environment"
+        className={cn(previewButtonClass)}
       >
         {isPending ? (
           <Loader2 className="h-3.5 w-3.5 animate-spin" />
@@ -39,6 +47,7 @@ export function FastDeployActions({ projectId }: FastDeployActionsProps) {
             ? "Click again within 3 seconds to confirm production deploy"
             : "Deploy the latest commit to production"
         }
+        className={cn(!confirming && productionButtonClass)}
       >
         {isPending ? (
           <Loader2 className="h-3.5 w-3.5 animate-spin" />
