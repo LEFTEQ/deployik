@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { ImageIcon, Loader2 } from "lucide-react";
+import { ImageIcon, Loader2, RefreshCw } from "lucide-react";
 
 import { api } from "@/lib/api";
 import { cn } from "@/lib/utils";
@@ -16,6 +16,15 @@ export interface DeploymentThumbnailProps {
    * 1280×800 capture can be downscaled by the browser without distortion.
    */
   size?: "sm" | "lg";
+  /**
+   * When provided, renders a small refresh button on the thumbnail. The
+   * callback is responsible for triggering the capture and any user-visible
+   * feedback (toast, refetch, etc.); this component just provides the
+   * affordance and prevents click-through to a parent navigation handler.
+   */
+  onRefresh?: () => void;
+  /** Disables the refresh button while a refresh is in flight. */
+  refreshing?: boolean;
 }
 
 const SIZE_CLASSES: Record<NonNullable<DeploymentThumbnailProps["size"]>, string> = {
@@ -36,6 +45,8 @@ export function DeploymentThumbnail({
   alt,
   className,
   size = "sm",
+  onRefresh,
+  refreshing,
 }: DeploymentThumbnailProps) {
   const [loaded, setLoaded] = useState(false);
   const [errored, setErrored] = useState(false);
@@ -57,7 +68,7 @@ export function DeploymentThumbnail({
 
   if (src && !errored) {
     return (
-      <div className={frame}>
+      <div className={cn("group", frame)}>
         {!loaded && <ThumbnailSkeleton capturing={false} />}
         <img
           src={src}
@@ -70,14 +81,46 @@ export function DeploymentThumbnail({
             loaded ? "opacity-100" : "opacity-0",
           )}
         />
+        {onRefresh && <RefreshButton onRefresh={onRefresh} refreshing={refreshing} />}
       </div>
     );
   }
 
   return (
-    <div className={frame}>
+    <div className={cn("group", frame)}>
       {isCapturing ? <ThumbnailSkeleton capturing /> : <ThumbnailPlaceholder />}
+      {onRefresh && <RefreshButton onRefresh={onRefresh} refreshing={refreshing} />}
     </div>
+  );
+}
+
+function RefreshButton({
+  onRefresh,
+  refreshing,
+}: {
+  onRefresh: () => void;
+  refreshing?: boolean;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={(e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        if (!refreshing) onRefresh();
+      }}
+      disabled={refreshing}
+      title={refreshing ? "Capturing…" : "Refresh preview"}
+      aria-label="Refresh preview"
+      className={cn(
+        "absolute right-1 top-1 z-10 flex h-6 w-6 items-center justify-center rounded-md border border-white/15 bg-black/60 text-white backdrop-blur-sm transition-opacity hover:bg-black/80",
+        refreshing
+          ? "opacity-100"
+          : "opacity-0 group-hover:opacity-100 focus-visible:opacity-100",
+      )}
+    >
+      <RefreshCw className={cn("h-3 w-3", refreshing && "animate-spin")} />
+    </button>
   );
 }
 

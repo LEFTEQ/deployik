@@ -499,9 +499,13 @@ class ApiClient {
   async captureProjectScreenshot(
     projectId: string,
     environment: "preview" | "production",
-  ): Promise<{ status: "ready" | "capturing"; deployment_id: string; screenshot_path?: string }> {
+    options?: { sync?: boolean; force?: boolean },
+  ): Promise<{ status: "ready" | "capturing" | "failed"; deployment_id: string; screenshot_path?: string; error?: string }> {
+    const params = new URLSearchParams({ environment });
+    if (options?.sync) params.set("sync", "1");
+    if (options?.force) params.set("force", "1");
     return this.request(
-      `/projects/${projectId}/screenshots/capture?environment=${environment}`,
+      `/projects/${projectId}/screenshots/capture?${params.toString()}`,
       { method: "POST" },
     );
   }

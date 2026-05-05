@@ -539,6 +539,8 @@ function EnvironmentRow({
     }
   }, [deployment, hasScreenshot]);
 
+  const [isRefreshing, setIsRefreshing] = useState(false);
+
   const handleClick = () => {
     if (!deployment || isOptimistic) return;
     onNavigate({
@@ -547,15 +549,54 @@ function EnvironmentRow({
     });
   };
 
+  const canRefresh = !!deployment && !isOptimistic && envDomainCount > 0;
+  const handleRefresh = canRefresh
+    ? async () => {
+        setIsRefreshing(true);
+        try {
+          const result = await api.captureProjectScreenshot(projectId, environment, {
+            sync: true,
+            force: true,
+          });
+          if (result.status === "ready") {
+            queryClient.invalidateQueries({
+              queryKey: queryKeys.deployments(projectId),
+            });
+            toast.success("Preview refreshed");
+          } else if (result.status === "failed" && result.error) {
+            toast.error(`Capture failed: ${result.error}`);
+          }
+        } catch (err) {
+          toast.error(
+            `Capture failed: ${err instanceof Error ? err.message : String(err)}`,
+          );
+        } finally {
+          setIsRefreshing(false);
+        }
+      }
+    : undefined;
+
+  const isInteractive = deployment && !isOptimistic;
+
   return (
-    <button
-      type="button"
-      disabled={!deployment || isOptimistic}
-      onClick={handleClick}
+    <div
+      role={isInteractive ? "button" : undefined}
+      tabIndex={isInteractive ? 0 : undefined}
+      onClick={isInteractive ? handleClick : undefined}
+      onKeyDown={
+        isInteractive
+          ? (e) => {
+              if (e.key === "Enter" || e.key === " ") {
+                e.preventDefault();
+                handleClick();
+              }
+            }
+          : undefined
+      }
       className={cn(
         "flex w-full items-center gap-4 px-4 py-3 text-left transition-colors first:rounded-t-lg last:rounded-b-lg",
-        deployment && !isOptimistic && "hover:bg-accent cursor-pointer",
-        (!deployment || isOptimistic) && "cursor-default",
+        isInteractive && "hover:bg-accent cursor-pointer",
+        !isInteractive && "cursor-default",
         isProduction && "border-l-2 border-l-amber-500/50",
       )}
     >
@@ -566,6 +607,8 @@ function EnvironmentRow({
         alt={`${envMeta.label} homepage preview`}
         size="sm"
         className="shrink-0"
+        onRefresh={handleRefresh}
+        refreshing={isRefreshing}
       />
 
       <Badge
@@ -626,6 +669,6 @@ function EnvironmentRow({
           No deployment yet
         </span>
       )}
-    </button>
+    </div>
   );
 }

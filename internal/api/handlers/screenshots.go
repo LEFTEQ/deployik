@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"net/http"
 	"os"
@@ -68,10 +69,12 @@ func (h *ScreenshotHandler) Get(w http.ResponseWriter, r *http.Request) {
 }
 
 // Capture handles POST /api/projects/{id}/screenshots/capture?environment=...
-// Idempotent: returns 200 ready when a screenshot already exists on disk,
-// otherwise queues a capture goroutine and returns 202 capturing. Used to
-// backfill existing projects that predate the thumbnail UI and to refresh
-// stale homepages without requiring a redeploy.
+// Default: returns 200 ready when a screenshot file already exists, otherwise
+// queues a goroutine and returns 202 capturing.
+// `?force=1`: skip the idempotent ready check and always run capture.
+// `?sync=1`: run inline (no goroutine) and return the result body with the
+// concrete error message on failure — used by the manual refresh affordance
+// so the UI can surface a useful diagnostic instead of silently failing.
 func (h *ScreenshotHandler) Capture(w http.ResponseWriter, r *http.Request) {
 	projectID := chi.URLParam(r, "id")
 	project, claims, ok := loadAuthorizedProject(w, r, h.DB, projectID)
@@ -84,6 +87,8 @@ func (h *ScreenshotHandler) Capture(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "environment must be 'preview' or 'production'"})
 		return
 	}
+	force := r.URL.Query().Get("force") == "1"
+	sync := r.URL.Query().Get("sync") == "1"
 
 	deployment, err := h.DB.GetLiveDeployment(projectID, env)
 	if err != nil {
@@ -95,8 +100,9 @@ func (h *ScreenshotHandler) Capture(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Idempotent fast path: return ready when the file already exists.
-	if deployment.ScreenshotPath != "" {
+	// Idempotent fast path: return ready when the file already exists, unless
+	// the caller wants to force a re-capture (manual refresh, debugging).
+	if !force && deployment.ScreenshotPath != "" {
 		if _, err := os.Stat(deployment.ScreenshotPath); err == nil {
 			writeJSON(w, http.StatusOK, map[string]any{
 				"status":          "ready",
@@ -123,11 +129,6 @@ func (h *ScreenshotHandler) Capture(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if h.Wg != nil {
-		h.Wg.Add(1)
-	}
-	go h.runCapture(project, deployment.ID, env, primary.DomainName)
-
 	if h.Audit != nil && claims != nil {
 		h.Audit.Record(audit.Entry{
 			UserID:       claims.UserID,
@@ -136,9 +137,32 @@ func (h *ScreenshotHandler) Capture(w http.ResponseWriter, r *http.Request) {
 			ResourceID:   deployment.ID,
 			ProjectID:    projectID,
 			DeploymentID: deployment.ID,
-			Metadata:     map[string]any{"environment": env, "trigger": "manual"},
+			Metadata:     map[string]any{"environment": env, "trigger": "manual", "force": force, "sync": sync},
 		})
 	}
+
+	if sync {
+		path, err := h.captureNow(r.Context(), project, deployment.ID, env, primary.DomainName)
+		if err != nil {
+			writeJSON(w, http.StatusInternalServerError, map[string]string{
+				"status":        "failed",
+				"error":         err.Error(),
+				"deployment_id": deployment.ID,
+			})
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{
+			"status":          "ready",
+			"deployment_id":   deployment.ID,
+			"screenshot_path": path,
+		})
+		return
+	}
+
+	if h.Wg != nil {
+		h.Wg.Add(1)
+	}
+	go h.runCapture(project, deployment.ID, env, primary.DomainName)
 
 	writeJSON(w, http.StatusAccepted, map[string]any{
 		"status":        "capturing",
@@ -146,12 +170,10 @@ func (h *ScreenshotHandler) Capture(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-func (h *ScreenshotHandler) runCapture(project *db.Project, deploymentID, environment, domainName string) {
-	if h.Wg != nil {
-		defer h.Wg.Done()
-	}
-
-	ctx, cancel := context.WithTimeout(context.Background(), captureBudget)
+// captureNow runs the capture inline and returns the resulting screenshot
+// path. Shared by the goroutine path (runCapture) and the sync path.
+func (h *ScreenshotHandler) captureNow(parent context.Context, project *db.Project, deploymentID, environment, domainName string) (string, error) {
+	ctx, cancel := context.WithTimeout(parent, captureBudget)
 	defer cancel()
 
 	url := "https://" + domainName
@@ -162,10 +184,19 @@ func (h *ScreenshotHandler) runCapture(project *db.Project, deploymentID, enviro
 
 	path, err := build.CaptureScreenshot(ctx, h.Docker, url, deploymentID, h.ScreenshotDir, h.ScreenshotHostDir, h.ProxyNetwork)
 	if err != nil {
-		log.Printf("Screenshot: on-demand capture failed for %s: %v", deploymentID, err)
-		return
+		return "", err
 	}
 	if err := h.DB.UpdateDeploymentScreenshot(deploymentID, path); err != nil {
-		log.Printf("Screenshot: failed to persist on-demand path for %s: %v", deploymentID, err)
+		return "", fmt.Errorf("persist screenshot path: %w", err)
+	}
+	return path, nil
+}
+
+func (h *ScreenshotHandler) runCapture(project *db.Project, deploymentID, environment, domainName string) {
+	if h.Wg != nil {
+		defer h.Wg.Done()
+	}
+	if _, err := h.captureNow(context.Background(), project, deploymentID, environment, domainName); err != nil {
+		log.Printf("Screenshot: on-demand capture failed for %s: %v", deploymentID, err)
 	}
 }
