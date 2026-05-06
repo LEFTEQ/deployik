@@ -110,6 +110,16 @@ func (h *DeploymentHandler) Trigger(w http.ResponseWriter, r *http.Request) {
 		branch = project.Branch
 	}
 
+	var previewInstance *db.PreviewInstance
+	if env == "preview" {
+		instance, _, err := ensurePreviewTarget(h.DB, project, branch)
+		if err != nil {
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to prepare preview target"})
+			return
+		}
+		previewInstance = instance
+	}
+
 	// Get user's GitHub token
 	user, err := h.DB.GetUserByID(claims.UserID)
 	if err != nil || user == nil {
@@ -155,6 +165,7 @@ func (h *DeploymentHandler) Trigger(w http.ResponseWriter, r *http.Request) {
 	deployment := &db.Deployment{
 		ProjectID:           project.ID,
 		Environment:         env,
+		PreviewInstanceID:   "",
 		Branch:              branch,
 		CommitSHA:           releaseCommitSHA,
 		CommitMessage:       releaseCommitMessage,
@@ -162,6 +173,9 @@ func (h *DeploymentHandler) Trigger(w http.ResponseWriter, r *http.Request) {
 		TriggeredBy:         claims.UserID,
 		TriggerSource:       "manual",
 		TriggeredByUsername: user.Username,
+	}
+	if previewInstance != nil {
+		deployment.PreviewInstanceID = previewInstance.ID
 	}
 	if err := h.DB.CreateDeployment(deployment); err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to create deployment"})

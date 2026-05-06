@@ -1,14 +1,19 @@
 import { useQuery } from "@tanstack/react-query";
 import { useParams, Link } from "@tanstack/react-router";
-import { ArrowLeft, Clock, GitBranch, GitCommit } from "lucide-react";
+import { ArrowLeft, Clock, ExternalLink, GitBranch, GitCommit } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { api } from "@/lib/api";
 import { queryKeys, staleTimes } from "@/lib/queryKeys";
+import {
+  ACTIVE_DEPLOYMENT_STATUSES,
+  getPreferredEnvironmentDomain,
+} from "@/lib/deployment-helpers";
 import { useBuildLogs } from "@/hooks/useBuildLogs";
 import { BuildLog } from "@/components/BuildLog";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { LoadingState } from "@/components/ui/spinner";
+import { cn } from "@/lib/utils";
 
 const statusColor: Record<string, string> = {
   queued: "bg-muted-foreground",
@@ -48,10 +53,15 @@ export function DeploymentDetail() {
     enabled: !!deployment,
   });
 
-  const isActive =
-    deployment?.status === "queued" ||
-    deployment?.status === "building" ||
-    deployment?.status === "deploying";
+  const { data: domains, isLoading: isDomainsLoading } = useQuery({
+    queryKey: queryKeys.domains(id),
+    queryFn: () => api.listDomains(id),
+    enabled: !!deployment,
+  });
+
+  const isActive = deployment
+    ? ACTIVE_DEPLOYMENT_STATUSES.has(deployment.status)
+    : false;
 
   const { logs: streamLogs, isConnected } = useBuildLogs(isActive ? did : null);
 
@@ -87,6 +97,28 @@ export function DeploymentDetail() {
     return <p>Deployment not found</p>;
   }
 
+  const preferredDomain = getPreferredEnvironmentDomain(
+    domains,
+    deployment.environment,
+    deployment.preview_instance_id,
+  );
+  const deploymentUrl = preferredDomain
+    ? `https://${preferredDomain.domain}`
+    : null;
+  const canOpenDeployment = deployment.status === "live" && !!deploymentUrl;
+  const domainClassName = cn(
+    "inline-flex h-8 max-w-full items-center gap-1.5 rounded-md border px-2.5 text-sm font-medium transition-colors",
+    canOpenDeployment
+      ? "border-primary/25 bg-primary/10 text-primary hover:bg-primary/15"
+      : "cursor-not-allowed border-white/10 bg-white/[0.03] text-muted-foreground/80",
+    (isActive || isDomainsLoading) &&
+      (preferredDomain || isDomainsLoading) &&
+      "deployment-domain-shimmer",
+  );
+  const domainLabel = preferredDomain?.domain ?? (
+    isDomainsLoading ? "Loading domain" : "No domain"
+  );
+
   return (
     <div>
       <Link
@@ -120,7 +152,7 @@ export function DeploymentDetail() {
               {deployment.status}
             </Badge>
           </div>
-          <div className="mt-2 flex items-center gap-4 text-sm text-muted-foreground">
+          <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-2 text-sm text-muted-foreground">
             {deployment.commit_sha && (
               <span className="flex items-center gap-1">
                 <GitCommit className="h-3.5 w-3.5" />
@@ -139,6 +171,24 @@ export function DeploymentDetail() {
             </span>
             {deployment.build_duration > 0 && (
               <span>{deployment.build_duration}s</span>
+            )}
+            {canOpenDeployment ? (
+              <a
+                href={deploymentUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className={domainClassName}
+              >
+                <span className="truncate">{domainLabel}</span>
+                <ExternalLink className="h-3.5 w-3.5 shrink-0" />
+              </a>
+            ) : (
+              <span className={domainClassName} aria-disabled="true">
+                <span className="truncate">{domainLabel}</span>
+                {preferredDomain && (
+                  <ExternalLink className="h-3.5 w-3.5 shrink-0" />
+                )}
+              </span>
             )}
           </div>
         </div>

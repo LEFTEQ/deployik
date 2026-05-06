@@ -176,6 +176,10 @@ func NewRouter(cfg *RouterConfig) *chi.Mux {
 			r.Get("/projects/{id}/deployments/{did}", deployHandler.Get)
 			r.Get("/deployments/{did}/logs", deployHandler.GetLogs)
 
+			previewInstanceHandler := &handlers.PreviewInstanceHandler{DB: cfg.DB, Docker: dockerClient, Manager: cfg.DomainManager, Audit: auditRecorder}
+			r.Get("/projects/{id}/preview-instances", previewInstanceHandler.List)
+			r.With(mutationLimiter.Middleware("preview_instance_delete")).Delete("/projects/{id}/preview-instances/{piid}", previewInstanceHandler.Delete)
+
 			// Password protection
 			r.Get("/projects/{id}/protection", protectionHandler.Get)
 			r.With(mutationLimiter.Middleware("protection_update")).Put("/projects/{id}/protection", protectionHandler.Update)

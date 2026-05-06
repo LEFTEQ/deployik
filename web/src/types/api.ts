@@ -117,6 +117,7 @@ export interface Deployment {
   id: string;
   project_id: string;
   environment: "preview" | "production";
+  preview_instance_id?: string;
   commit_sha: string;
   commit_message: string;
   branch: string;
@@ -137,6 +138,7 @@ export interface Deployment {
 export interface Domain {
   id: string;
   project_id: string;
+  preview_instance_id?: string;
   domain: string;
   environment: "preview" | "production";
   is_auto: boolean;
@@ -145,6 +147,24 @@ export interface Domain {
   ssl_status: "pending" | "active" | "error";
   ssl_expires_at: string | null;
   created_at: string;
+}
+
+export interface PreviewInstance {
+  id: string;
+  project_id: string;
+  branch: string;
+  branch_slug: string;
+  is_default: boolean;
+  status: "active" | "deleted";
+  domain: string;
+  latest_deployment_id?: string | null;
+  latest_deployment_status?: DeploymentStatus | null;
+  latest_deployment_commit_sha?: string | null;
+  latest_deployment_commit_message?: string | null;
+  latest_deployment_created_at?: string | null;
+  latest_deployment_screenshot_path?: string | null;
+  created_at: string;
+  updated_at: string;
 }
 
 export interface DomainLogEvent {

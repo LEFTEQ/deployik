@@ -132,13 +132,15 @@ internal/
       016_project_email_settings.sql  Adds project_email_settings for Webglobe SMTP/reCAPTCHA onboarding metadata; encrypted credentials remain in env_variables as secrets
       017_api_tokens.sql        Adds api_tokens for Personal Access Tokens (Bearer auth alongside JWT)
       018_auto_production_auto_deploy.sql  Adds production auto-deploy opt-in and environment-aware webhook event idempotency
-    models.go             User, Organization, OrganizationMembership, RefreshSession, AuditLog, Project (with password fields, host_network_access, data_volume_enabled, data_mount_path), Deployment (with trigger/screenshot fields), BuildLog, Domain, ProjectVariable, VariableKind, AutoBuildConfig, WebhookEvent, ProjectWithLatestDeployment, DeploymentWithUser, DeploymentListResponse, DeploymentFilter
+      019_preview_instances.sql Adds preview_instances plus preview_instance_id on deployments/domains/webhook_events so branch previews can run as persistent targets
+    models.go             User, Organization, OrganizationMembership, RefreshSession, AuditLog, Project (with password fields, host_network_access, data_volume_enabled, data_mount_path), Deployment (with trigger/screenshot/preview target fields), BuildLog, Domain, PreviewInstance, ProjectVariable, VariableKind, AutoBuildConfig, WebhookEvent, ProjectWithLatestDeployment, DeploymentWithUser, DeploymentListResponse, DeploymentFilter
     queries_users.go      GetUserByGithubID, GetUserByID, UpsertUser
     queries_organizations.go  Personal workspace bootstrap, memberships, org listing
     queries_projects.go   ListProjectsWithLatestDeployment, GetProject, Create, Update, Delete (soft), GetProjectPassword, SetProjectPassword, ClearProjectPassword
     queries_deployments.go  ListDeploymentsFiltered (with pagination/filters), Get, Create, UpdateStatus/Container/Duration/Screenshot, GetLiveDeployment
     queries_envvars.go    ListProjectVariables, ListResolvedEnvVars/Secrets, BulkSet*, UpsertProjectVariable, Delete*, key conflict checks
     queries_domains.go    List, GetByName, Create, UpdateDNS/SSL/Environment, SetDomainPrimary, Delete, DeleteForProject
+    queries_preview_instances.go Preview branch target helpers: NormalizePreviewBranchSlug, GetOrCreatePreviewInstance, EnsurePreviewAutoDomains, container/volume naming helpers
     queries_buildlogs.go  Insert, GetBuildLogs, PruneBuildLogs
     queries_refresh_tokens.go  Create/GetActive/Rotate/Revoke refresh sessions
     queries_audit_logs.go CreateAuditLog

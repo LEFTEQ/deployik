@@ -197,18 +197,15 @@ func (h *ProjectHandler) Create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Auto-create preview domain
-	previewDomain := &db.Domain{
-		ProjectID:   project.ID,
-		DomainName:  name + ".preview.example.com",
-		Environment: "preview",
-		IsAuto:      true,
-		IsPrimary:   true,
-		SSLStatus:   "pending",
+	// Auto-create the default preview instance and its compatibility domains:
+	// {project}.preview.example.com plus {project}-{branch}.preview.example.com.
+	_, previewDomains, err := ensurePreviewTarget(h.DB, project, project.Branch)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to create preview target"})
+		return
 	}
-	h.DB.CreateDomain(previewDomain)
 
-	h.syncProjectAnalytics(project, []db.Domain{*previewDomain})
+	h.syncProjectAnalytics(project, previewDomains)
 
 	autoBuildEnabled := true
 	if req.AutoBuildEnabled != nil {
@@ -501,6 +498,14 @@ func (h *ProjectHandler) dispatchInitialDeployBestEffort(ctx context.Context, pr
 		TriggeredBy:         user.ID,
 		TriggeredByUsername: user.Username,
 	}
+	if environment == "preview" {
+		instance, _, err := ensurePreviewTarget(h.DB, project, project.Branch)
+		if err != nil {
+			log.Printf("Warning: failed to prepare initial preview target for project %s: %v", project.ID, err)
+			return
+		}
+		deployment.PreviewInstanceID = instance.ID
+	}
 	if err := h.DB.CreateDeployment(deployment); err != nil {
 		log.Printf("Warning: failed to create initial %s deployment for project %s: %v", environment, project.ID, err)
 		return
@@ -531,17 +536,28 @@ func (h *ProjectHandler) cleanupProjectRuntime(project *db.Project, domains []db
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	for _, environment := range []string{"preview", "production"} {
-		if h.Docker == nil {
-			break
+	if h.Docker != nil {
+		previewInstances, err := h.DB.ListPreviewInstances(project.ID)
+		if err != nil {
+			log.Printf("Warning: failed to load preview instances for deleted project %s: %v", project.ID, err)
 		}
-		containerName := fmt.Sprintf("deployik-%s-%s", project.Name, environment)
+		for _, instance := range previewInstances {
+			containerName := db.PreviewContainerName(project.Name, &instance)
+			containerID, exists := h.Docker.ContainerExists(ctx, containerName)
+			if !exists {
+				continue
+			}
+			if err := h.Docker.StopContainer(ctx, containerID); err != nil {
+				log.Printf("Warning: failed to stop deleted project container %s: %v", containerName, err)
+			}
+		}
+
+		containerName := db.DeploymentContainerName(project.Name, "production", nil)
 		containerID, exists := h.Docker.ContainerExists(ctx, containerName)
-		if !exists {
-			continue
-		}
-		if err := h.Docker.StopContainer(ctx, containerID); err != nil {
-			log.Printf("Warning: failed to stop deleted project container %s: %v", containerName, err)
+		if exists {
+			if err := h.Docker.StopContainer(ctx, containerID); err != nil {
+				log.Printf("Warning: failed to stop deleted project container %s: %v", containerName, err)
+			}
 		}
 	}
 

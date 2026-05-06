@@ -24,6 +24,8 @@ export const queryKeys = {
   deployments: (projectId: string) => ["deployments", projectId] as const,
   deployment: (deploymentId: string) => ["deployment", deploymentId] as const,
   buildLogs: (deploymentId: string) => ["build-logs", deploymentId] as const,
+  previewInstances: (projectId: string) =>
+    ["preview-instances", projectId] as const,
 
   // Domains
   domains: (projectId: string) => ["domains", projectId] as const,

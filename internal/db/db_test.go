@@ -24,7 +24,7 @@ func TestMigrations(t *testing.T) {
 	db := newTestDB(t)
 
 	// Verify tables exist
-	tables := []string{"users", "organizations", "organization_memberships", "projects", "project_analytics", "project_email_settings", "deployments", "build_logs", "domains", "env_variables", "refresh_tokens", "audit_logs", "api_tokens", "_migrations"}
+	tables := []string{"users", "organizations", "organization_memberships", "projects", "preview_instances", "project_analytics", "project_email_settings", "deployments", "build_logs", "domains", "env_variables", "refresh_tokens", "audit_logs", "api_tokens", "_migrations"}
 	for _, table := range tables {
 		var count int
 		err := db.QueryRow("SELECT COUNT(*) FROM " + table).Scan(&count)
@@ -1066,7 +1066,7 @@ func TestUpdateDomainEnvironmentAndSetPrimary(t *testing.T) {
 		t.Fatalf("CreateDomain(custom): %v", err)
 	}
 
-	if err := database.UpdateDomainEnvironment(custom.ID, "production"); err != nil {
+	if err := database.UpdateDomainEnvironment(custom.ID, "production", ""); err != nil {
 		t.Fatalf("UpdateDomainEnvironment: %v", err)
 	}
 
@@ -1512,16 +1512,13 @@ func TestMigration018AddsProductionOptInAndWebhookEventOutcomes(t *testing.T) {
 	if err := database.CreateProject(project); err != nil {
 		t.Fatalf("CreateProject: %v", err)
 	}
-	deployment := &Deployment{
-		ProjectID:     project.ID,
-		Environment:   "preview",
-		Branch:        "main",
-		Status:        "queued",
-		TriggerSource: "webhook",
-		TriggeredBy:   user.ID,
-	}
-	if err := database.CreateDeployment(deployment); err != nil {
-		t.Fatalf("CreateDeployment: %v", err)
+	deploymentID := NewID()
+	if _, err := database.Exec(
+		`INSERT INTO deployments (id, project_id, environment, branch, status, trigger_source, triggered_by)
+		 VALUES (?, ?, 'preview', 'main', 'queued', 'webhook', ?)`,
+		deploymentID, project.ID, user.ID,
+	); err != nil {
+		t.Fatalf("insert legacy deployment: %v", err)
 	}
 	if _, err := database.Exec(
 		`INSERT INTO auto_build_configs (id, project_id, enabled, production_branch, preview_branches, webhook_id, webhook_secret)
@@ -1533,7 +1530,7 @@ func TestMigration018AddsProductionOptInAndWebhookEventOutcomes(t *testing.T) {
 	if _, err := database.Exec(
 		`INSERT INTO webhook_events (project_id, github_delivery_id, event_type, branch, commit_sha, commit_message, pusher, deployment_id, status)
 		 VALUES (?, 'delivery-1', 'push', 'main', 'sha1', 'message', 'pusher', ?, 'processed')`,
-		project.ID, deployment.ID,
+		project.ID, deploymentID,
 	); err != nil {
 		t.Fatalf("insert legacy webhook_event: %v", err)
 	}

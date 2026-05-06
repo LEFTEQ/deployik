@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { ChevronDown, GlobeLock, Loader2, Rocket } from "lucide-react";
+import { ChevronDown, GitBranch, GlobeLock, Loader2, Rocket } from "lucide-react";
 
 import { api } from "@/lib/api";
 import { queryKeys } from "@/lib/queryKeys";
@@ -17,6 +17,8 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -29,6 +31,8 @@ export interface DeployMenuProps {
   projectId: string;
   /** Source branch shown in the production confirm dialog. Optional. */
   productionBranch?: string;
+  /** Default source branch for preview deployments. Optional. */
+  defaultBranch?: string;
 }
 
 /**
@@ -37,10 +41,17 @@ export interface DeployMenuProps {
  * production domain, and gates production behind an AlertDialog confirm so it
  * works inside menus that close on click.
  */
-export function DeployMenu({ projectId, productionBranch }: DeployMenuProps) {
+export function DeployMenu({
+  projectId,
+  productionBranch,
+  defaultBranch,
+}: DeployMenuProps) {
   const [confirmOpen, setConfirmOpen] = useState(false);
+  const [branchDialogOpen, setBranchDialogOpen] = useState(false);
+  const [previewBranch, setPreviewBranch] = useState(defaultBranch ?? "main");
   const {
     triggerPreview,
+    triggerPreviewBranch,
     triggerProductionConfirmed,
     isPending: isDeployPending,
   } = useFastDeploy(projectId);
@@ -72,6 +83,16 @@ export function DeployMenu({ projectId, productionBranch }: DeployMenuProps) {
             <Rocket className="h-3.5 w-3.5 text-sky-300" />
             <span>Deploy preview</span>
           </DropdownMenuItem>
+          <DropdownMenuItem
+            onSelect={(event) => {
+              event.preventDefault();
+              setPreviewBranch(defaultBranch ?? productionBranch ?? "main");
+              setBranchDialogOpen(true);
+            }}
+          >
+            <GitBranch className="h-3.5 w-3.5 text-sky-300" />
+            <span>Deploy preview branch</span>
+          </DropdownMenuItem>
           {hasProductionDomain ? (
             <>
               <DropdownMenuSeparator />
@@ -88,6 +109,44 @@ export function DeployMenu({ projectId, productionBranch }: DeployMenuProps) {
           ) : null}
         </DropdownMenuContent>
       </DropdownMenu>
+
+      <AlertDialog open={branchDialogOpen} onOpenChange={setBranchDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Deploy preview branch</AlertDialogTitle>
+            <AlertDialogDescription>
+              Deploying a branch creates or updates its preview URL under
+              preview.example.com.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <div className="space-y-2">
+            <Label htmlFor="preview-branch">Branch</Label>
+            <Input
+              id="preview-branch"
+              value={previewBranch}
+              onChange={(event) => setPreviewBranch(event.target.value)}
+              className="font-mono"
+              placeholder="feature/my-branch"
+            />
+          </div>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={isDeployPending}>
+              Cancel
+            </AlertDialogCancel>
+            <AlertDialogAction
+              disabled={isDeployPending || !previewBranch.trim()}
+              onClick={(event) => {
+                event.preventDefault();
+                triggerPreviewBranch(previewBranch.trim());
+                setBranchDialogOpen(false);
+              }}
+            >
+              <GitBranch className="h-3.5 w-3.5" />
+              Deploy branch
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       <AlertDialog open={confirmOpen} onOpenChange={setConfirmOpen}>
         <AlertDialogContent>

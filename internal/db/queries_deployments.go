@@ -12,7 +12,7 @@ func scanDeployment(row interface {
 }, d *Deployment) error {
 	var screenshotPath sql.NullString
 	err := row.Scan(
-		&d.ID, &d.ProjectID, &d.Environment, &d.CommitSHA, &d.CommitMessage,
+		&d.ID, &d.ProjectID, &d.Environment, &d.PreviewInstanceID, &d.CommitSHA, &d.CommitMessage,
 		&d.Branch, &d.Status, &d.ContainerID, &d.ContainerName, &d.ImageTag,
 		&d.BuildDuration, &d.TriggeredBy, &d.ErrorMessage, &d.CreatedAt, &d.FinishedAt,
 		&d.TriggerSource, &d.TriggeredByUsername, &screenshotPath,
@@ -29,7 +29,7 @@ func (db *DB) ListDeployments(projectID string, limit int) ([]Deployment, error)
 		limit = 20
 	}
 	rows, err := db.Query(
-		`SELECT id, project_id, environment, commit_sha, commit_message, branch, status,
+		`SELECT id, project_id, environment, COALESCE(preview_instance_id, ''), commit_sha, commit_message, branch, status,
 		        container_id, container_name, image_tag, build_duration, triggered_by,
 		        error_message, created_at, finished_at,
 		        trigger_source, triggered_by_username, screenshot_path
@@ -55,7 +55,7 @@ func (db *DB) ListDeployments(projectID string, limit int) ([]Deployment, error)
 func (db *DB) GetDeployment(id string) (*Deployment, error) {
 	d := &Deployment{}
 	row := db.QueryRow(
-		`SELECT id, project_id, environment, commit_sha, commit_message, branch, status,
+		`SELECT id, project_id, environment, COALESCE(preview_instance_id, ''), commit_sha, commit_message, branch, status,
 		        container_id, container_name, image_tag, build_duration, triggered_by,
 		        error_message, created_at, finished_at,
 		        trigger_source, triggered_by_username, screenshot_path
@@ -72,7 +72,7 @@ func (db *DB) GetDeployment(id string) (*Deployment, error) {
 func (db *DB) GetDeploymentForUser(id, userID string) (*Deployment, error) {
 	d := &Deployment{}
 	row := db.QueryRow(
-		`SELECT d.id, d.project_id, d.environment, d.commit_sha, d.commit_message, d.branch, d.status,
+		`SELECT d.id, d.project_id, d.environment, COALESCE(d.preview_instance_id, ''), d.commit_sha, d.commit_message, d.branch, d.status,
 		        d.container_id, d.container_name, d.image_tag, d.build_duration, d.triggered_by,
 		        d.error_message, d.created_at, d.finished_at,
 		        d.trigger_source, d.triggered_by_username, d.screenshot_path
@@ -104,10 +104,10 @@ func (db *DB) CreateDeployment(d *Deployment) error {
 		triggerSource = "manual"
 	}
 	_, err := db.Exec(
-		`INSERT INTO deployments (id, project_id, environment, commit_sha, commit_message,
+		`INSERT INTO deployments (id, project_id, environment, preview_instance_id, commit_sha, commit_message,
 		                          branch, status, triggered_by, trigger_source, triggered_by_username)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		d.ID, d.ProjectID, d.Environment, d.CommitSHA, d.CommitMessage,
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		d.ID, d.ProjectID, d.Environment, nullableString(d.PreviewInstanceID), d.CommitSHA, d.CommitMessage,
 		d.Branch, d.Status, d.TriggeredBy, triggerSource, d.TriggeredByUsername,
 	)
 	if err != nil {
@@ -141,6 +141,17 @@ func (db *DB) UpdateDeploymentContainer(id, containerID, containerName, imageTag
 	return nil
 }
 
+func (db *DB) UpdateDeploymentPreviewInstance(id, previewInstanceID string) error {
+	_, err := db.Exec(
+		`UPDATE deployments SET preview_instance_id = ? WHERE id = ?`,
+		nullableString(previewInstanceID), id,
+	)
+	if err != nil {
+		return fmt.Errorf("update deployment preview instance: %w", err)
+	}
+	return nil
+}
+
 func (db *DB) UpdateDeploymentDuration(id string, duration int) error {
 	_, err := db.Exec(
 		`UPDATE deployments SET build_duration = ? WHERE id = ?`, duration, id,
@@ -161,14 +172,19 @@ func (db *DB) UpdateDeploymentScreenshot(id, screenshotPath string) error {
 
 // GetLiveDeployment returns the current live deployment for a project+environment.
 func (db *DB) GetLiveDeployment(projectID, environment string) (*Deployment, error) {
+	return db.GetLiveDeploymentForTarget(projectID, environment, "")
+}
+
+func (db *DB) GetLiveDeploymentForTarget(projectID, environment, previewInstanceID string) (*Deployment, error) {
 	d := &Deployment{}
 	row := db.QueryRow(
-		`SELECT id, project_id, environment, commit_sha, commit_message, branch, status,
+		`SELECT id, project_id, environment, COALESCE(preview_instance_id, ''), commit_sha, commit_message, branch, status,
 		        container_id, container_name, image_tag, build_duration, triggered_by,
 		        error_message, created_at, finished_at,
 		        trigger_source, triggered_by_username, screenshot_path
-		 FROM deployments WHERE project_id = ? AND environment = ? AND status = 'live'
-		 ORDER BY created_at DESC LIMIT 1`, projectID, environment,
+		 FROM deployments
+		 WHERE project_id = ? AND environment = ? AND COALESCE(preview_instance_id, '') = ? AND status = 'live'
+		 ORDER BY created_at DESC LIMIT 1`, projectID, environment, previewInstanceID,
 	)
 	if err := scanDeployment(row, d); err == sql.ErrNoRows {
 		return nil, nil
@@ -196,6 +212,10 @@ func (db *DB) ListDeploymentsFiltered(f DeploymentFilter) (*DeploymentListRespon
 	if f.Environment != "" {
 		whereClauses = append(whereClauses, "d.environment = ?")
 		args = append(args, f.Environment)
+	}
+	if f.PreviewInstanceID != "" {
+		whereClauses = append(whereClauses, "d.preview_instance_id = ?")
+		args = append(args, f.PreviewInstanceID)
 	}
 	if f.Status != "" {
 		statuses := strings.Split(f.Status, ",")
@@ -228,7 +248,7 @@ func (db *DB) ListDeploymentsFiltered(f DeploymentFilter) (*DeploymentListRespon
 
 	dataArgs := append(args, f.Limit, f.Offset)
 	rows, err := db.Query(
-		`SELECT d.id, d.project_id, d.environment, d.commit_sha, d.commit_message, d.branch, d.status,
+		`SELECT d.id, d.project_id, d.environment, COALESCE(d.preview_instance_id, ''), d.commit_sha, d.commit_message, d.branch, d.status,
 		        d.container_id, d.container_name, d.image_tag, d.build_duration, d.triggered_by,
 		        d.error_message, d.created_at, d.finished_at,
 		        d.trigger_source, d.triggered_by_username, d.screenshot_path,
@@ -251,7 +271,7 @@ func (db *DB) ListDeploymentsFiltered(f DeploymentFilter) (*DeploymentListRespon
 		var screenshotPath sql.NullString
 		d := &dw.Deployment
 		if err := rows.Scan(
-			&d.ID, &d.ProjectID, &d.Environment, &d.CommitSHA, &d.CommitMessage,
+			&d.ID, &d.ProjectID, &d.Environment, &d.PreviewInstanceID, &d.CommitSHA, &d.CommitMessage,
 			&d.Branch, &d.Status, &d.ContainerID, &d.ContainerName, &d.ImageTag,
 			&d.BuildDuration, &d.TriggeredBy, &d.ErrorMessage, &d.CreatedAt, &d.FinishedAt,
 			&d.TriggerSource, &d.TriggeredByUsername, &screenshotPath,

@@ -353,7 +353,11 @@ func (h *ProtectionHandler) regenerateNginxForEnvironment(project *db.Project, e
 		}
 
 		plan := domain.ResolveVariantPlan(d.DomainName, d.Environment)
-		containerName := fmt.Sprintf("deployik-%s-%s", project.Name, environment)
+		var previewInstance *db.PreviewInstance
+		if d.Environment == "preview" && d.PreviewInstanceID != "" {
+			previewInstance, _ = h.DB.GetPreviewInstanceByID(d.PreviewInstanceID)
+		}
+		containerName := db.DeploymentContainerName(project.Name, environment, previewInstance)
 
 		_, err := h.Manager.WriteNginxConfig(domain.ProvisionConfig{
 			ProjectID:         project.ID,
@@ -430,4 +434,3 @@ func verifySiteAuth(secret, cookieValue, expectedProject, expectedEnv string) bo
 
 	return true
 }
-

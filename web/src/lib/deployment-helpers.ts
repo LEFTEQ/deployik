@@ -119,41 +119,73 @@ export function isDomainReady(domain: Domain): boolean {
 export function getEnvironmentDomains(
   domains: Domain[] | undefined,
   environment: Domain["environment"],
+  previewInstanceId?: string,
 ): Domain[] {
-  return (domains ?? []).filter((domain) => domain.environment === environment);
+  return (domains ?? []).filter((domain) => {
+    if (domain.environment !== environment) return false;
+    if (environment === "preview" && previewInstanceId) {
+      return domain.preview_instance_id === previewInstanceId;
+    }
+    return true;
+  });
 }
 
 /** Filters domains that are both in the given environment and ready. */
 export function getReadyEnvironmentDomains(
   domains: Domain[] | undefined,
   environment: Domain["environment"],
+  previewInstanceId?: string,
 ): Domain[] {
-  return getEnvironmentDomains(domains, environment).filter(isDomainReady);
+  return getEnvironmentDomains(domains, environment, previewInstanceId).filter(
+    isDomainReady,
+  );
 }
 
 /**
- * Returns the primary HTTPS URL for an environment, preferring auto domains
- * for preview and custom domains for production.
+ * Returns the preferred domain for an environment, even if DNS/SSL is not
+ * ready yet. Preview prefers auto domains; production prefers custom domains.
+ */
+export function getPreferredEnvironmentDomain(
+  domains: Domain[] | undefined,
+  environment: Domain["environment"],
+  previewInstanceId?: string,
+): Domain | null {
+  const environmentDomains = getEnvironmentDomains(
+    domains,
+    environment,
+    previewInstanceId,
+  );
+  if (!environmentDomains.length) return null;
+
+  const explicitPrimary = environmentDomains.find((domain) => domain.is_primary);
+  if (explicitPrimary) {
+    return explicitPrimary;
+  }
+
+  const fallback =
+    environmentDomains.find((domain) =>
+      environment === "preview" ? domain.is_auto : !domain.is_auto,
+    ) ?? environmentDomains[0];
+
+  return fallback ?? null;
+}
+
+/**
+ * Returns the primary HTTPS URL for an environment, using only domains with
+ * verified DNS and active SSL.
  */
 export function getPrimaryEnvironmentUrl(
   domains: Domain[] | undefined,
   environment: Domain["environment"],
+  previewInstanceId?: string,
 ): string | null {
-  const readyDomains = getReadyEnvironmentDomains(domains, environment);
-  if (!readyDomains.length) return null;
+  const domain = getPreferredEnvironmentDomain(
+    getReadyEnvironmentDomains(domains, environment, previewInstanceId),
+    environment,
+    previewInstanceId,
+  );
 
-  const explicitPrimary = readyDomains.find((domain) => domain.is_primary);
-  if (explicitPrimary) {
-    return `https://${explicitPrimary.domain}`;
-  }
-
-  const fallback =
-    readyDomains.find((domain) =>
-      environment === "preview" ? domain.is_auto : !domain.is_auto,
-    ) ?? readyDomains[0];
-  if (!fallback) return null;
-
-  return `https://${fallback.domain}`;
+  return domain ? `https://${domain.domain}` : null;
 }
 
 // ---------------------------------------------------------------------------

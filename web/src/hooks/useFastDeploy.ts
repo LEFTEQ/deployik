@@ -34,14 +34,17 @@ export function useFastDeploy(projectId: string) {
   useEffect(() => () => clearConfirmTimer(), [clearConfirmTimer]);
 
   const mutation = useMutation({
-    mutationFn: (env: FastDeployEnvironment) =>
-      api.triggerDeployment(projectId, { environment: env }),
+    mutationFn: (payload: { environment: FastDeployEnvironment; branch?: string }) =>
+      api.triggerDeployment(projectId, payload),
     onSuccess: (deployment: Deployment) => {
       queryClient.invalidateQueries({
         queryKey: queryKeys.deployments(projectId),
       });
       queryClient.invalidateQueries({
         queryKey: queryKeys.project(projectId),
+      });
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.previewInstances(projectId),
       });
       toast.success(
         `${deployment.environment === "production" ? "Production" : "Preview"} deploy triggered`,
@@ -56,8 +59,16 @@ export function useFastDeploy(projectId: string) {
 
   const triggerPreview = useCallback(() => {
     if (mutation.isPending) return;
-    mutation.mutate("preview");
+    mutation.mutate({ environment: "preview" });
   }, [mutation]);
+
+  const triggerPreviewBranch = useCallback(
+    (branch: string) => {
+      if (mutation.isPending) return;
+      mutation.mutate({ environment: "preview", branch });
+    },
+    [mutation],
+  );
 
   const triggerProduction = useCallback(() => {
     if (mutation.isPending) return;
@@ -72,7 +83,7 @@ export function useFastDeploy(projectId: string) {
     }
     clearConfirmTimer();
     setProductionState("idle");
-    mutation.mutate("production");
+    mutation.mutate({ environment: "production" });
   }, [clearConfirmTimer, mutation, productionState]);
 
   // Skips the 3-second confirm window for callers that gate the action behind
@@ -81,11 +92,12 @@ export function useFastDeploy(projectId: string) {
     if (mutation.isPending) return;
     clearConfirmTimer();
     setProductionState("idle");
-    mutation.mutate("production");
+    mutation.mutate({ environment: "production" });
   }, [clearConfirmTimer, mutation]);
 
   return {
     triggerPreview,
+    triggerPreviewBranch,
     triggerProduction,
     triggerProductionConfirmed,
     productionState,

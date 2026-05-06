@@ -138,6 +138,15 @@ func (p *Pipeline) Deploy(ctx context.Context, project *db.Project, deployment *
 	p.DB.UpdateDeploymentStatus(deployment.ID, "building", "")
 	emit(fmt.Sprintf("Starting build for %s/%s@%s", project.GithubOwner, project.GithubRepo, deployment.Branch))
 
+	previewInstance, err := p.ensureDeploymentPreviewTarget(project, deployment)
+	if err != nil {
+		fail(err, "Preview target preparation failed")
+		return
+	}
+	if previewInstance != nil {
+		emit(fmt.Sprintf("Preview target: %s", previewInstance.AutoDomain(project.Name)))
+	}
+
 	// Step 2: Clone repository
 	emit("Cloning repository...")
 	buildDir := fmt.Sprintf("%s/%s", p.BuildDir, deployment.ID)
@@ -258,8 +267,8 @@ func (p *Pipeline) Deploy(ctx context.Context, project *db.Project, deployment *
 	}
 
 	// Step 5: Docker build
-	containerName := fmt.Sprintf("deployik-%s-%s", project.Name, deployment.Environment)
-	imageTag := fmt.Sprintf("deployik-%s-%s:%s", project.Name, deployment.Environment, deployment.ID[:8])
+	containerName := db.DeploymentContainerName(project.Name, deployment.Environment, previewInstance)
+	imageTag := fmt.Sprintf("%s:%s", containerName, deployment.ID[:8])
 
 	emit(fmt.Sprintf("Building image %s...", imageTag))
 	_, err = p.Docker.BuildImage(ctx, repoDir, dockerfilePath, imageTag, BuildImageOptions{
@@ -293,7 +302,7 @@ func (p *Pipeline) Deploy(ctx context.Context, project *db.Project, deployment *
 
 	var volumeBinds []string
 	if project.DataVolumeEnabled {
-		volumeName := fmt.Sprintf("deployik-%s-%s-data", project.Name, deployment.Environment)
+		volumeName := db.DeploymentVolumeName(project.Name, deployment.Environment, previewInstance)
 		emit(fmt.Sprintf("Ensuring data volume %s...", volumeName))
 		if err := p.Docker.EnsureVolume(ctx, volumeName); err != nil {
 			emitErr(fmt.Sprintf("Warning: could not ensure data volume: %v", err))
@@ -367,7 +376,11 @@ func (p *Pipeline) Deploy(ctx context.Context, project *db.Project, deployment *
 	p.Docker.cli.ContainerRename(ctx, newContainerID, containerName)
 
 	// Step 9: Mark previous live deployment as replaced
-	if liveDeploy, _ := p.DB.GetLiveDeployment(project.ID, deployment.Environment); liveDeploy != nil && liveDeploy.ID != deployment.ID {
+	previewInstanceID := ""
+	if previewInstance != nil {
+		previewInstanceID = previewInstance.ID
+	}
+	if liveDeploy, _ := p.DB.GetLiveDeploymentForTarget(project.ID, deployment.Environment, previewInstanceID); liveDeploy != nil && liveDeploy.ID != deployment.ID {
 		p.DB.UpdateDeploymentStatus(liveDeploy.ID, "replaced", "")
 	}
 
@@ -402,7 +415,7 @@ func (p *Pipeline) Deploy(ctx context.Context, project *db.Project, deployment *
 			case <-time.After(5 * time.Second):
 			}
 
-			domain, err := p.DB.GetPrimaryDomain(project.ID, deployment.Environment)
+			domain, err := p.DB.GetPrimaryDomainForTarget(project.ID, deployment.Environment, previewInstanceID)
 			if err != nil {
 				log.Printf("Screenshot: failed to look up primary domain for %s: %v", deployment.ID, err)
 				return
@@ -428,6 +441,27 @@ func (p *Pipeline) Deploy(ctx context.Context, project *db.Project, deployment *
 	}
 }
 
+func (p *Pipeline) ensureDeploymentPreviewTarget(project *db.Project, deployment *db.Deployment) (*db.PreviewInstance, error) {
+	if deployment.Environment != "preview" {
+		return nil, nil
+	}
+
+	instance, err := p.DB.GetOrCreatePreviewInstance(project, deployment.Branch)
+	if err != nil {
+		return nil, err
+	}
+	if deployment.PreviewInstanceID == "" {
+		deployment.PreviewInstanceID = instance.ID
+		if err := p.DB.UpdateDeploymentPreviewInstance(deployment.ID, instance.ID); err != nil {
+			return nil, err
+		}
+	}
+	if _, err := p.DB.EnsurePreviewAutoDomains(project, instance); err != nil {
+		return nil, err
+	}
+	return instance, nil
+}
+
 func (p *Pipeline) ensureEnvironmentDomains(project *db.Project, deployment *db.Deployment, containerName, containerUpstream string, emit func(string)) error {
 	domains, err := p.DB.ListDomains(project.ID)
 	if err != nil {
@@ -437,6 +471,12 @@ func (p *Pipeline) ensureEnvironmentDomains(project *db.Project, deployment *db.
 	found := false
 	for _, d := range domains {
 		if d.Environment != deployment.Environment {
+			continue
+		}
+		if deployment.Environment == "preview" && d.PreviewInstanceID != deployment.PreviewInstanceID {
+			continue
+		}
+		if deployment.Environment == "production" && d.PreviewInstanceID != "" {
 			continue
 		}
 

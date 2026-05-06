@@ -10,10 +10,10 @@ func (db *DB) CreateWebhookEvent(e *WebhookEvent) error {
 		environment = "ignored"
 	}
 	_, err := db.Exec(
-		`INSERT INTO webhook_events (project_id, github_delivery_id, event_type, environment, branch,
+		`INSERT INTO webhook_events (project_id, github_delivery_id, event_type, environment, preview_instance_id, branch,
 		                             commit_sha, commit_message, pusher, deployment_id, status, error_message)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		e.ProjectID, e.GithubDeliveryID, e.EventType, environment, e.Branch,
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		e.ProjectID, e.GithubDeliveryID, e.EventType, environment, nullableString(e.PreviewInstanceID), e.Branch,
 		e.CommitSHA, e.CommitMessage, e.Pusher, nullableString(e.DeploymentID), e.Status, e.ErrorMessage,
 	)
 	if err != nil {

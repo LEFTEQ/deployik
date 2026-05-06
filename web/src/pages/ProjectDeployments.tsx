@@ -126,6 +126,9 @@ export function ProjectDeployments() {
     }) => api.triggerDeployment(id, payload),
     onSuccess: (_data, variables) => {
       queryClient.invalidateQueries({ queryKey: queryKeys.deployments(id) });
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.previewInstances(id),
+      });
       toast.success(
         variables.environment === "production"
           ? "Release queued"
@@ -235,10 +238,11 @@ export function ProjectDeployments() {
                 {optimisticDeployments.map((deployment) => {
                   const liveUrl =
                     deployment.status === "live"
-                      ? getPrimaryEnvironmentUrl(
-                          domains,
-                          deployment.environment,
-                        )
+                        ? getPrimaryEnvironmentUrl(
+                            domains,
+                            deployment.environment,
+                            deployment.preview_instance_id,
+                          )
                       : null;
                   const statusMeta = DEPLOYMENT_STATUS_META[deployment.status];
 

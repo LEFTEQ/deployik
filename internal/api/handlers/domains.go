@@ -56,7 +56,7 @@ func (h *DomainHandler) List(w http.ResponseWriter, r *http.Request) {
 func (h *DomainHandler) Add(w http.ResponseWriter, r *http.Request) {
 	projectID := chi.URLParam(r, "id")
 
-	_, _, ok := loadAuthorizedProject(w, r, h.DB, projectID)
+	project, _, ok := loadAuthorizedProject(w, r, h.DB, projectID)
 	if !ok {
 		return
 	}
@@ -84,6 +84,20 @@ func (h *DomainHandler) Add(w http.ResponseWriter, r *http.Request) {
 	if env == "" {
 		env = "production"
 	}
+	if env != "preview" && env != "production" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "environment must be preview or production"})
+		return
+	}
+
+	previewInstanceID := ""
+	if env == "preview" {
+		instance, _, err := ensurePreviewTarget(h.DB, project, project.Branch)
+		if err != nil {
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to prepare preview target"})
+			return
+		}
+		previewInstanceID = instance.ID
+	}
 
 	plan := domain.ResolveVariantPlan(cleanDomain, env)
 	if plan.CanonicalDomain == "" {
@@ -101,11 +115,12 @@ func (h *DomainHandler) Add(w http.ResponseWriter, r *http.Request) {
 	}
 
 	d := &db.Domain{
-		ProjectID:   projectID,
-		DomainName:  plan.CanonicalDomain,
-		Environment: env,
-		IsAuto:      false,
-		SSLStatus:   "pending",
+		ProjectID:         projectID,
+		PreviewInstanceID: previewInstanceID,
+		DomainName:        plan.CanonicalDomain,
+		Environment:       env,
+		IsAuto:            false,
+		SSLStatus:         "pending",
 	}
 
 	if err := h.DB.CreateDomain(d); err != nil {
@@ -222,6 +237,15 @@ func (h *DomainHandler) Update(w http.ResponseWriter, r *http.Request) {
 			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "environment must be preview or production"})
 			return
 		}
+		previewInstanceID := ""
+		if newEnv == "preview" {
+			instance, _, err := ensurePreviewTarget(h.DB, project, project.Branch)
+			if err != nil {
+				writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to prepare preview target"})
+				return
+			}
+			previewInstanceID = instance.ID
+		}
 
 		if _, loaded := h.verifying.LoadOrStore(projectID, domainID); loaded {
 			writeJSON(w, http.StatusConflict, map[string]string{"error": "a verification is already in progress for this project"})
@@ -230,16 +254,21 @@ func (h *DomainHandler) Update(w http.ResponseWriter, r *http.Request) {
 		defer h.verifying.Delete(projectID)
 
 		oldEnv := target.Environment
-		if err := h.DB.UpdateDomainEnvironment(domainID, newEnv); err != nil {
+		if err := h.DB.UpdateDomainEnvironment(domainID, newEnv, previewInstanceID); err != nil {
 			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to update environment"})
 			return
 		}
 
 		target.Environment = newEnv
+		target.PreviewInstanceID = previewInstanceID
 		target.IsPrimary = false
 
 		if h.Manager != nil && target.SSLStatus == "active" {
 			plan := domain.ResolveVariantPlan(target.DomainName, newEnv)
+			var previewInstance *db.PreviewInstance
+			if newEnv == "preview" && previewInstanceID != "" {
+				previewInstance, _ = h.DB.GetPreviewInstanceByID(previewInstanceID)
+			}
 			if err := h.Manager.ProvisionDomain(domain.ProvisionConfig{
 				ProjectID:      project.ID,
 				ProjectName:    project.Name,
@@ -247,7 +276,7 @@ func (h *DomainHandler) Update(w http.ResponseWriter, r *http.Request) {
 				RedirectDomain: plan.RedirectDomain,
 				SSLDomains:     plan.AllDomains(),
 				Environment:    newEnv,
-				ContainerName:  fmt.Sprintf("deployik-%s-%s", project.Name, newEnv),
+				ContainerName:  db.DeploymentContainerName(project.Name, newEnv, previewInstance),
 				Port:           project.Port,
 			}, false, nil); err != nil {
 				log.Printf("update domain: re-provision %s for %s: %v", target.DomainName, newEnv, err)
@@ -394,6 +423,10 @@ func (h *DomainHandler) Verify(w http.ResponseWriter, r *http.Request) {
 		h.DB.UpdateDomainDNS(domainID, true)
 
 		// SSL + Nginx provisioning via ProvisionDomain with logger
+		var previewInstance *db.PreviewInstance
+		if target.Environment == "preview" && target.PreviewInstanceID != "" {
+			previewInstance, _ = h.DB.GetPreviewInstanceByID(target.PreviewInstanceID)
+		}
 		if err := h.Manager.ProvisionDomain(domain.ProvisionConfig{
 			ProjectID:      project.ID,
 			ProjectName:    project.Name,
@@ -401,7 +434,7 @@ func (h *DomainHandler) Verify(w http.ResponseWriter, r *http.Request) {
 			RedirectDomain: plan.RedirectDomain,
 			SSLDomains:     plan.AllDomains(),
 			Environment:    target.Environment,
-			ContainerName:  "deployik-" + project.Name + "-" + target.Environment,
+			ContainerName:  db.DeploymentContainerName(project.Name, target.Environment, previewInstance),
 			Port:           project.Port,
 		}, false, emit); err != nil {
 			log.Printf("SSL cert request failed for %s: %v", target.DomainName, err)

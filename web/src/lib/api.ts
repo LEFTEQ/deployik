@@ -25,6 +25,7 @@ import type {
   VerifyDomainResponse,
   VolumeInfo,
   HealthResponse,
+  PreviewInstance,
   RepoInspection,
   APIToken,
   CreateAPITokenRequest,
@@ -257,6 +258,24 @@ class ApiClient {
       method: "POST",
       body: JSON.stringify(data),
     });
+  }
+
+  async listPreviewInstances(projectId: string): Promise<PreviewInstance[]> {
+    return this.request(`/projects/${projectId}/preview-instances`);
+  }
+
+  async deletePreviewInstance(
+    projectId: string,
+    previewInstanceId: string,
+    options?: { deleteVolume?: boolean },
+  ): Promise<void> {
+    const params = new URLSearchParams();
+    if (options?.deleteVolume) params.set("delete_volume", "1");
+    const query = params.toString();
+    return this.request(
+      `/projects/${projectId}/preview-instances/${previewInstanceId}${query ? `?${query}` : ""}`,
+      { method: "DELETE" },
+    );
   }
 
   // Domains

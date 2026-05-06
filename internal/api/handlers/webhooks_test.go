@@ -118,6 +118,15 @@ func deploymentEnvironmentCounts(t *testing.T, database *db.DB, projectID string
 	return counts
 }
 
+func deploymentsForProject(t *testing.T, database *db.DB, projectID string) []db.Deployment {
+	t.Helper()
+	deployments, err := database.ListDeployments(projectID, 10)
+	if err != nil {
+		t.Fatalf("ListDeployments: %v", err)
+	}
+	return deployments
+}
+
 func webhookEventCount(t *testing.T, database *db.DB, projectID, environment string) int {
 	t.Helper()
 	var count int
@@ -183,6 +192,58 @@ func TestWebhookMainBranchPreviewOnlyByDefault(t *testing.T) {
 		t.Fatal("expected one preview webhook event")
 	}
 	assertProcessedWebhookEvent(t, database, project.ID, "preview")
+}
+
+func TestWebhookFeatureBranchCreatesBranchPreviewInstance(t *testing.T) {
+	database, handler, project := setupWebhookProject(t, false, "*")
+
+	rr := sendGithubPush(t, handler, "delivery-feature-preview", "feature/checkout-flow")
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status = %d, body: %s", rr.Code, rr.Body.String())
+	}
+
+	deployments := deploymentsForProject(t, database, project.ID)
+	if len(deployments) != 1 {
+		t.Fatalf("deployments = %d, want 1", len(deployments))
+	}
+	deployment := deployments[0]
+	if deployment.Environment != "preview" {
+		t.Fatalf("environment = %q, want preview", deployment.Environment)
+	}
+	if deployment.Branch != "feature/checkout-flow" {
+		t.Fatalf("branch = %q, want feature/checkout-flow", deployment.Branch)
+	}
+	if deployment.PreviewInstanceID == "" {
+		t.Fatal("preview_instance_id should be set for branch preview deployment")
+	}
+
+	instance, err := database.GetPreviewInstanceByID(deployment.PreviewInstanceID)
+	if err != nil {
+		t.Fatalf("GetPreviewInstanceByID: %v", err)
+	}
+	if instance == nil {
+		t.Fatal("preview instance not found")
+	}
+	if instance.Branch != "feature/checkout-flow" {
+		t.Fatalf("instance branch = %q", instance.Branch)
+	}
+	if instance.BranchSlug != "feature-checkout-flow" {
+		t.Fatalf("instance slug = %q", instance.BranchSlug)
+	}
+
+	domains, err := database.ListDomains(project.ID)
+	if err != nil {
+		t.Fatalf("ListDomains: %v", err)
+	}
+	if len(domains) != 1 {
+		t.Fatalf("domains = %d, want 1", len(domains))
+	}
+	if domains[0].DomainName != "webhook-app-feature-checkout-flow.preview.example.com" {
+		t.Fatalf("domain = %q", domains[0].DomainName)
+	}
+	if domains[0].PreviewInstanceID != instance.ID {
+		t.Fatalf("domain preview_instance_id = %q, want %q", domains[0].PreviewInstanceID, instance.ID)
+	}
 }
 
 func TestWebhookMainBranchPreviewAndProductionWhenOptedIn(t *testing.T) {

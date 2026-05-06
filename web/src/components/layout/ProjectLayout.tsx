@@ -84,6 +84,7 @@ export function ProjectLayout() {
               <DeployMenu
                 projectId={id}
                 productionBranch={project.branch}
+                defaultBranch={project.branch}
               />
             ) : null}
             <CommandPalette />

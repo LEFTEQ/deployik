@@ -41,7 +41,12 @@ func ReconcileActiveConfigs(manager *Manager, targets []db.DomainProvisionTarget
 			}
 		}
 
-		containerName := fmt.Sprintf("deployik-%s-%s", target.ProjectName, target.Environment)
+		containerName := db.DeploymentContainerName(target.ProjectName, target.Environment, &db.PreviewInstance{
+			ID:         target.PreviewInstanceID,
+			Branch:     target.PreviewBranch,
+			BranchSlug: target.PreviewBranchSlug,
+			IsDefault:  target.PreviewInstanceDefault,
+		})
 		targetPort := target.Port
 		if targetPort <= 0 {
 			targetPort = 3000

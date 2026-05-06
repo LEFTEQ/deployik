@@ -7,7 +7,7 @@ Self-hosted deployment platform for the [Lovinka](https://example.com) VPS. A li
 - **GitHub Integration** -- Import repos, select branches, deploy with one click
 - **Framework Support** -- Next.js (standalone), Vite, Astro, and generic static sites
 - **Blue-Green Deploys** -- Zero-downtime container swaps with automatic health checks
-- **Automatic Domains** -- Preview URLs generated per project (`{name}.preview.example.com`)
+- **Automatic Domains** -- Preview URLs generated per project and branch (`{name}.preview.example.com`, `{name}-{branch}.preview.example.com`)
 - **Custom Domains** -- Add your own domain with DNS verification and auto-provisioned SSL (Let's Encrypt)
 - **Auto-Build on Push** -- GitHub webhooks deploy previews automatically; production can opt in to track pushes to the production branch without creating release tags
 - **Environment Variables and Secrets** -- Separate stores with shared/preview/production scoping, encrypted at rest (AES-256-GCM)
@@ -392,7 +392,7 @@ Deployik is deployed via GitHub Actions on every push to `main`:
 
 Projects can provision a GitHub webhook from the new-project wizard or Project Settings.
 
-- Preview auto-build is the default for imported projects and follows the preview branch rules (`*` by default).
+- Preview auto-build is the default for imported projects and follows the preview branch rules (`*` by default). Each matching branch gets its own persistent preview URL.
 - Production auto-deploy is explicit opt-in. When enabled, a push to the configured production branch creates a production deployment from the same commit.
 - A single GitHub delivery can create both preview and production deployments; idempotency is tracked per delivery, project, and environment.
 - Webhook-triggered production deployments do **not** create git tags. Tags remain tied to manual release actions.

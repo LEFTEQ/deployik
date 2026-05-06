@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate, useParams } from "@tanstack/react-router";
 import {
   ArrowRight,
@@ -10,6 +10,7 @@ import {
   GitBranch,
   GitCommit,
   Globe2,
+  Trash2,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -30,8 +31,18 @@ import { DeploymentThumbnail } from "@/components/projects/deployment-thumbnail"
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { LoadingState } from "@/components/ui/spinner";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { cn } from "@/lib/utils";
-import type { Deployment } from "@/types/api";
+import type { Deployment, PreviewInstance } from "@/types/api";
 
 export function ProjectOverview() {
   const { id } = useParams({ strict: false }) as { id: string };
@@ -57,6 +68,11 @@ export function ProjectOverview() {
   const { data: domains } = useQuery({
     queryKey: queryKeys.domains(id),
     queryFn: () => api.listDomains(id),
+  });
+
+  const { data: previewInstances } = useQuery({
+    queryKey: queryKeys.previewInstances(id),
+    queryFn: () => api.listPreviewInstances(id),
   });
 
   if (isLoading) {
@@ -85,6 +101,9 @@ export function ProjectOverview() {
   const maxDomainsShown = 3;
   const visibleDomains = readyDomains.slice(0, maxDomainsShown);
   const extraDomainCount = readyDomains.length - visibleDomains.length;
+  const githubRepoUrl = `https://github.com/${encodeURIComponent(
+    project.github_owner,
+  )}/${encodeURIComponent(project.github_repo)}`;
 
   const allDeployments = deployments ?? [];
   const latestPreview = getLatestEnvironmentDeployment(
@@ -125,9 +144,16 @@ export function ProjectOverview() {
           {project.name}
         </h1>
         <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-muted-foreground">
-          <span className="truncate">
+          <a
+            href={githubRepoUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            aria-label={`Open ${project.github_owner}/${project.github_repo} on GitHub`}
+            className="inline-flex min-w-0 items-center gap-1 truncate transition-colors hover:text-foreground hover:underline"
+          >
             {project.github_owner}/{project.github_repo}
-          </span>
+            <ExternalLink className="h-3 w-3 shrink-0" />
+          </a>
           <span className="flex items-center gap-1">
             <GitBranch className="h-3.5 w-3.5" />
             {project.branch}
@@ -180,7 +206,11 @@ export function ProjectOverview() {
           <h2 className="text-sm font-semibold text-foreground">
             Environments
           </h2>
-          <DeployMenu projectId={id} productionBranch={project.branch} />
+          <DeployMenu
+            projectId={id}
+            productionBranch={project.branch}
+            defaultBranch={project.branch}
+          />
         </div>
 
         <div className="divide-y divide-border rounded-lg border">
@@ -200,6 +230,11 @@ export function ProjectOverview() {
           />
         </div>
       </div>
+
+      <PreviewInstancesPanel
+        projectId={id}
+        instances={previewInstances ?? []}
+      />
 
       {/* Recent Deployments */}
       <div className="space-y-3">
@@ -263,9 +298,141 @@ export function ProjectOverview() {
               );
             })}
           </div>
-        )}
+	        )}
+	      </div>
+	    </div>
+	  );
+}
+
+function PreviewInstancesPanel({
+  projectId,
+  instances,
+}: {
+  projectId: string;
+  instances: PreviewInstance[];
+}) {
+  const queryClient = useQueryClient();
+  const [deleteTarget, setDeleteTarget] = useState<PreviewInstance | null>(null);
+
+  const deleteMutation = useMutation({
+    mutationFn: (instanceId: string) =>
+      api.deletePreviewInstance(projectId, instanceId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.previewInstances(projectId),
+      });
+      queryClient.invalidateQueries({ queryKey: queryKeys.deployments(projectId) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.domains(projectId) });
+      setDeleteTarget(null);
+      toast.success("Preview deleted");
+    },
+    onError: (err: Error) => toast.error(err.message),
+  });
+
+  if (!instances.length) {
+    return null;
+  }
+
+  return (
+    <div className="space-y-3">
+      <div className="flex items-center justify-between">
+        <h2 className="text-sm font-semibold text-foreground">
+          Branch Previews
+        </h2>
       </div>
 
+      <div className="divide-y divide-border rounded-lg border">
+        {instances.map((instance) => {
+          const status = instance.latest_deployment_status;
+          const statusMeta = status ? DEPLOYMENT_STATUS_META[status] : null;
+          return (
+            <div
+              key={instance.id}
+              className="flex flex-wrap items-center gap-3 px-4 py-3"
+            >
+              <GitBranch className="h-4 w-4 shrink-0 text-muted-foreground" />
+              <div className="min-w-[180px] flex-1">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="font-mono text-sm text-foreground">
+                    {instance.branch}
+                  </span>
+                  {instance.is_default ? (
+                    <Badge variant="outline" className="text-xs">
+                      Default
+                    </Badge>
+                  ) : null}
+                  {statusMeta ? (
+                    <Badge
+                      variant="outline"
+                      className={cn("text-xs", statusMeta.badgeClass)}
+                    >
+                      {statusMeta.label}
+                    </Badge>
+                  ) : null}
+                </div>
+                <p className="mt-1 truncate font-mono text-xs text-muted-foreground">
+                  {instance.domain}
+                </p>
+              </div>
+              {instance.domain ? (
+                <Button asChild size="sm" variant="ghost">
+                  <a
+                    href={`https://${instance.domain}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  >
+                    <ExternalLink className="h-3.5 w-3.5" />
+                    Open
+                  </a>
+                </Button>
+              ) : null}
+              {!instance.is_default ? (
+                <Button
+                  size="icon"
+                  variant="ghost"
+                  onClick={() => setDeleteTarget(instance)}
+                  disabled={deleteMutation.isPending}
+                  aria-label={`Delete ${instance.branch} preview`}
+                >
+                  <Trash2 className="h-4 w-4 text-muted-foreground" />
+                </Button>
+              ) : null}
+            </div>
+          );
+        })}
+      </div>
+
+      <AlertDialog
+        open={!!deleteTarget}
+        onOpenChange={(open) => !open && setDeleteTarget(null)}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete branch preview?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This stops the preview container and removes its automatic
+              preview domain. Deployment history remains available.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={deleteMutation.isPending}>
+              Cancel
+            </AlertDialogCancel>
+            <AlertDialogAction
+              disabled={deleteMutation.isPending || !deleteTarget}
+              onClick={(event) => {
+                event.preventDefault();
+                if (deleteTarget) {
+                  deleteMutation.mutate(deleteTarget.id);
+                }
+              }}
+            >
+              <Trash2 className="h-3.5 w-3.5" />
+              Delete preview
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

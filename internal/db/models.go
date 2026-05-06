@@ -207,6 +207,7 @@ type Deployment struct {
 	ID                  string       `json:"id"`
 	ProjectID           string       `json:"project_id"`
 	Environment         string       `json:"environment"`
+	PreviewInstanceID   string       `json:"preview_instance_id,omitempty"`
 	CommitSHA           string       `json:"commit_sha"`
 	CommitMessage       string       `json:"commit_message"`
 	Branch              string       `json:"branch"`
@@ -234,25 +235,41 @@ type BuildLog struct {
 }
 
 type Domain struct {
-	ID           string       `json:"id"`
-	ProjectID    string       `json:"project_id"`
-	DomainName   string       `json:"domain"`
-	Environment  string       `json:"environment"`
-	IsAuto       bool         `json:"is_auto"`
-	IsPrimary    bool         `json:"is_primary"`
-	DNSVerified  bool         `json:"dns_verified"`
-	SSLStatus    string       `json:"ssl_status"`
-	SSLExpiresAt NullableTime `json:"ssl_expires_at,omitempty"`
-	CreatedAt    time.Time    `json:"created_at"`
+	ID                string       `json:"id"`
+	ProjectID         string       `json:"project_id"`
+	PreviewInstanceID string       `json:"preview_instance_id,omitempty"`
+	DomainName        string       `json:"domain"`
+	Environment       string       `json:"environment"`
+	IsAuto            bool         `json:"is_auto"`
+	IsPrimary         bool         `json:"is_primary"`
+	DNSVerified       bool         `json:"dns_verified"`
+	SSLStatus         string       `json:"ssl_status"`
+	SSLExpiresAt      NullableTime `json:"ssl_expires_at,omitempty"`
+	CreatedAt         time.Time    `json:"created_at"`
 }
 
 type DomainProvisionTarget struct {
-	ProjectID         string
-	ProjectName       string
-	DomainName        string
-	Environment       string
-	PasswordProtected bool
-	Port              int
+	ProjectID              string
+	ProjectName            string
+	DomainName             string
+	Environment            string
+	PreviewInstanceID      string
+	PreviewBranch          string
+	PreviewBranchSlug      string
+	PreviewInstanceDefault bool
+	PasswordProtected      bool
+	Port                   int
+}
+
+type PreviewInstance struct {
+	ID         string    `json:"id"`
+	ProjectID  string    `json:"project_id"`
+	Branch     string    `json:"branch"`
+	BranchSlug string    `json:"branch_slug"`
+	IsDefault  bool      `json:"is_default"`
+	Status     string    `json:"status"`
+	CreatedAt  time.Time `json:"created_at"`
+	UpdatedAt  time.Time `json:"updated_at"`
 }
 
 type VariableKind string
@@ -289,19 +306,20 @@ type AutoBuildConfig struct {
 }
 
 type WebhookEvent struct {
-	ID               int64     `json:"id"`
-	ProjectID        string    `json:"project_id"`
-	GithubDeliveryID string    `json:"github_delivery_id"`
-	EventType        string    `json:"event_type"`
-	Environment      string    `json:"environment"`
-	Branch           string    `json:"branch"`
-	CommitSHA        string    `json:"commit_sha"`
-	CommitMessage    string    `json:"commit_message"`
-	Pusher           string    `json:"pusher"`
-	DeploymentID     string    `json:"deployment_id,omitempty"`
-	Status           string    `json:"status"`
-	ErrorMessage     *string   `json:"error_message,omitempty"`
-	CreatedAt        time.Time `json:"created_at"`
+	ID                int64     `json:"id"`
+	ProjectID         string    `json:"project_id"`
+	GithubDeliveryID  string    `json:"github_delivery_id"`
+	EventType         string    `json:"event_type"`
+	Environment       string    `json:"environment"`
+	PreviewInstanceID string    `json:"preview_instance_id,omitempty"`
+	Branch            string    `json:"branch"`
+	CommitSHA         string    `json:"commit_sha"`
+	CommitMessage     string    `json:"commit_message"`
+	Pusher            string    `json:"pusher"`
+	DeploymentID      string    `json:"deployment_id,omitempty"`
+	Status            string    `json:"status"`
+	ErrorMessage      *string   `json:"error_message,omitempty"`
+	CreatedAt         time.Time `json:"created_at"`
 }
 
 type ProjectWithLatestDeployment struct {
@@ -322,19 +340,31 @@ type DeploymentWithUser struct {
 	AvatarURL string `json:"avatar_url"`
 }
 
+type PreviewInstanceSummary struct {
+	PreviewInstance
+	DomainName              string     `json:"domain"`
+	LatestDeploymentID      *string    `json:"latest_deployment_id,omitempty"`
+	LatestDeploymentStatus  *string    `json:"latest_deployment_status,omitempty"`
+	LatestDeploymentSHA     *string    `json:"latest_deployment_commit_sha,omitempty"`
+	LatestDeploymentMessage *string    `json:"latest_deployment_commit_message,omitempty"`
+	LatestDeploymentAt      *time.Time `json:"latest_deployment_created_at,omitempty"`
+	LatestScreenshotPath    *string    `json:"latest_deployment_screenshot_path,omitempty"`
+}
+
 type DeploymentListResponse struct {
 	Deployments []DeploymentWithUser `json:"deployments"`
 	Total       int                  `json:"total"`
 }
 
 type DeploymentFilter struct {
-	ProjectID   string
-	Branch      string
-	Environment string
-	Status      string
-	TriggeredBy string
-	From        string
-	To          string
-	Limit       int
-	Offset      int
+	ProjectID         string
+	Branch            string
+	Environment       string
+	PreviewInstanceID string
+	Status            string
+	TriggeredBy       string
+	From              string
+	To                string
+	Limit             int
+	Offset            int
 }

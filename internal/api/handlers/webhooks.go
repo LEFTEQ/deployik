@@ -101,7 +101,7 @@ func (h *WebhookHandler) HandleGithub(w http.ResponseWriter, r *http.Request) {
 		}
 
 		if len(targets) == 0 {
-			claimed, err := claimWebhookEvent(h.DB, webhookEventPayload(config, deliveryID, "ignored", branch, payload, "ignored", "", nil))
+			claimed, err := claimWebhookEvent(h.DB, webhookEventPayload(config, deliveryID, "ignored", "", branch, payload, "ignored", "", nil))
 			if err != nil {
 				log.Printf("Webhook: failed to claim ignored event for project %s: %v", config.ProjectID, err)
 			}
@@ -129,7 +129,22 @@ func (h *WebhookHandler) HandleGithub(w http.ResponseWriter, r *http.Request) {
 		}
 
 		for _, environment := range targets {
-			claimed, err := claimWebhookEvent(h.DB, webhookEventPayload(config, deliveryID, environment, branch, payload, "received", "", nil))
+			var previewInstance *db.PreviewInstance
+			if environment == "preview" {
+				instance, _, err := ensurePreviewTarget(h.DB, project, branch)
+				if err != nil {
+					log.Printf("Webhook: failed to prepare preview target for project %s branch %s: %v", config.ProjectID, branch, err)
+					continue
+				}
+				previewInstance = instance
+			}
+
+			previewInstanceID := ""
+			if previewInstance != nil {
+				previewInstanceID = previewInstance.ID
+			}
+
+			claimed, err := claimWebhookEvent(h.DB, webhookEventPayload(config, deliveryID, environment, previewInstanceID, branch, payload, "received", "", nil))
 			if err != nil {
 				log.Printf("Webhook: failed to claim %s webhook event for project %s: %v", environment, config.ProjectID, err)
 				continue
@@ -141,6 +156,7 @@ func (h *WebhookHandler) HandleGithub(w http.ResponseWriter, r *http.Request) {
 			deployment := &db.Deployment{
 				ProjectID:           project.ID,
 				Environment:         environment,
+				PreviewInstanceID:   previewInstanceID,
 				Branch:              branch,
 				CommitSHA:           payload.After,
 				CommitMessage:       commitMessageFromPayload(payload),
@@ -182,19 +198,20 @@ func webhookTargetEnvironments(branch string, config db.AutoBuildConfig) []strin
 	return environments
 }
 
-func webhookEventPayload(config db.AutoBuildConfig, deliveryID, environment, branch string, payload githubPushPayload, status string, deploymentID string, errorMsg *string) *db.WebhookEvent {
+func webhookEventPayload(config db.AutoBuildConfig, deliveryID, environment, previewInstanceID, branch string, payload githubPushPayload, status string, deploymentID string, errorMsg *string) *db.WebhookEvent {
 	return &db.WebhookEvent{
-		ProjectID:        config.ProjectID,
-		GithubDeliveryID: deliveryID,
-		EventType:        "push",
-		Environment:      environment,
-		Branch:           branch,
-		CommitSHA:        payload.After,
-		CommitMessage:    commitMessageFromPayload(payload),
-		Pusher:           payload.Pusher.Name,
-		DeploymentID:     deploymentID,
-		Status:           status,
-		ErrorMessage:     errorMsg,
+		ProjectID:         config.ProjectID,
+		GithubDeliveryID:  deliveryID,
+		EventType:         "push",
+		Environment:       environment,
+		PreviewInstanceID: previewInstanceID,
+		Branch:            branch,
+		CommitSHA:         payload.After,
+		CommitMessage:     commitMessageFromPayload(payload),
+		Pusher:            payload.Pusher.Name,
+		DeploymentID:      deploymentID,
+		Status:            status,
+		ErrorMessage:      errorMsg,
 	}
 }
 

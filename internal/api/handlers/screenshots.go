@@ -87,10 +87,24 @@ func (h *ScreenshotHandler) Capture(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "environment must be 'preview' or 'production'"})
 		return
 	}
+	previewInstanceID := ""
+	if env == "preview" {
+		previewInstanceID = r.URL.Query().Get("preview_instance_id")
+		if previewInstanceID == "" {
+			instance, err := h.DB.GetDefaultPreviewInstance(projectID)
+			if err != nil {
+				writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to look up preview target"})
+				return
+			}
+			if instance != nil {
+				previewInstanceID = instance.ID
+			}
+		}
+	}
 	force := r.URL.Query().Get("force") == "1"
 	sync := r.URL.Query().Get("sync") == "1"
 
-	deployment, err := h.DB.GetLiveDeployment(projectID, env)
+	deployment, err := h.DB.GetLiveDeploymentForTarget(projectID, env, previewInstanceID)
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to look up live deployment"})
 		return
@@ -114,7 +128,7 @@ func (h *ScreenshotHandler) Capture(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Need a target URL. Without an SSL-active domain there is nothing to capture.
-	primary, err := h.DB.GetPrimaryDomain(projectID, env)
+	primary, err := h.DB.GetPrimaryDomainForTarget(projectID, env, previewInstanceID)
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to look up primary domain"})
 		return

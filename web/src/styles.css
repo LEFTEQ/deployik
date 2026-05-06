@@ -148,6 +148,45 @@
   --color-sidebar: var(--sidebar);
 }
 
+@layer components {
+  .deployment-domain-shimmer {
+    position: relative;
+    overflow: hidden;
+    isolation: isolate;
+  }
+
+  .deployment-domain-shimmer::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+    background: linear-gradient(
+      105deg,
+      transparent 0%,
+      color-mix(in oklch, var(--primary) 34%, transparent) 42%,
+      color-mix(in oklch, white 18%, transparent) 50%,
+      color-mix(in oklch, var(--primary) 26%, transparent) 58%,
+      transparent 100%
+    );
+    transform: translateX(-120%);
+    animation: deployment-domain-shimmer 1.8s ease-in-out infinite;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .deployment-domain-shimmer::after {
+      animation: none;
+      transform: translateX(0);
+      opacity: 0.18;
+    }
+  }
+}
+
+@keyframes deployment-domain-shimmer {
+  100% {
+    transform: translateX(120%);
+  }
+}
+
 @layer base {
   * {
     @apply border-border outline-ring/50;
