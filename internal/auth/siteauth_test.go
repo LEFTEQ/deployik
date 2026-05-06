@@ -41,7 +41,11 @@ func TestVerifyBypassToken_RejectsForeignEnvironment(t *testing.T) {
 
 func TestVerifyBypassToken_RejectsTamperedSignature(t *testing.T) {
 	token := MintSiteAuthBypassToken(testSecret, "proj-123", "production")
-	tampered := token[:len(token)-1] + "0"
+	replacement := "0"
+	if token[len(token)-1] == '0' {
+		replacement = "1"
+	}
+	tampered := token[:len(token)-1] + replacement
 
 	if VerifySiteAuthBypass(testSecret, tampered, "proj-123", "production") {
 		t.Fatal("tampered token should not verify")
