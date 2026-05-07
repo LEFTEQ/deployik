@@ -149,41 +149,35 @@
 }
 
 @layer components {
-  .deployment-domain-shimmer {
-    position: relative;
-    overflow: hidden;
-    isolation: isolate;
-  }
-
-  .deployment-domain-shimmer::after {
-    content: "";
-    position: absolute;
-    inset: 0;
-    z-index: -1;
-    background: linear-gradient(
-      105deg,
-      transparent 0%,
-      color-mix(in oklch, var(--primary) 34%, transparent) 42%,
-      color-mix(in oklch, white 18%, transparent) 50%,
-      color-mix(in oklch, var(--primary) 26%, transparent) 58%,
-      transparent 100%
+  .deployment-domain-text-shimmer {
+    background-image: linear-gradient(
+      100deg,
+      var(--muted-foreground) 0%,
+      var(--muted-foreground) 40%,
+      var(--foreground) 50%,
+      var(--muted-foreground) 60%,
+      var(--muted-foreground) 100%
     );
-    transform: translateX(-120%);
-    animation: deployment-domain-shimmer 1.8s ease-in-out infinite;
+    background-size: 220% 100%;
+    background-position: 100% 0;
+    background-clip: text;
+    -webkit-background-clip: text;
+    color: transparent;
+    -webkit-text-fill-color: transparent;
+    animation: deployment-domain-text-shimmer 1.8s ease-in-out infinite;
   }
 
   @media (prefers-reduced-motion: reduce) {
-    .deployment-domain-shimmer::after {
+    .deployment-domain-text-shimmer {
       animation: none;
-      transform: translateX(0);
-      opacity: 0.18;
+      background-position: 50% 0;
     }
   }
 }
 
-@keyframes deployment-domain-shimmer {
+@keyframes deployment-domain-text-shimmer {
   100% {
-    transform: translateX(120%);
+    background-position: -120% 0;
   }
 }
 

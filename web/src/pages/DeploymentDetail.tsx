@@ -111,9 +111,12 @@ export function DeploymentDetail() {
     canOpenDeployment
       ? "border-primary/25 bg-primary/10 text-primary hover:bg-primary/15"
       : "cursor-not-allowed border-white/10 bg-white/[0.03] text-muted-foreground/80",
-    (isActive || isDomainsLoading) &&
-      (preferredDomain || isDomainsLoading) &&
-      "deployment-domain-shimmer",
+  );
+  const isDomainShimmering =
+    (isActive || isDomainsLoading) && (preferredDomain || isDomainsLoading);
+  const domainTextClassName = cn(
+    "truncate",
+    isDomainShimmering && "deployment-domain-text-shimmer",
   );
   const domainLabel = preferredDomain?.domain ?? (
     isDomainsLoading ? "Loading domain" : "No domain"
@@ -179,12 +182,12 @@ export function DeploymentDetail() {
                 rel="noopener noreferrer"
                 className={domainClassName}
               >
-                <span className="truncate">{domainLabel}</span>
+                <span className={domainTextClassName}>{domainLabel}</span>
                 <ExternalLink className="h-3.5 w-3.5 shrink-0" />
               </a>
             ) : (
               <span className={domainClassName} aria-disabled="true">
-                <span className="truncate">{domainLabel}</span>
+                <span className={domainTextClassName}>{domainLabel}</span>
                 {preferredDomain && (
                   <ExternalLink className="h-3.5 w-3.5 shrink-0" />
                 )}
