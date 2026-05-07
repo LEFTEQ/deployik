@@ -388,15 +388,37 @@ function AutoBuildSection({
                 <GitBranch className="h-3.5 w-3.5" />
                 Preview Branches
               </Label>
-              <Input
-                value={previewBranches}
-                onChange={(e) => setPreviewBranches(e.target.value)}
-                placeholder="* (all other branches)"
-              />
-              <p className="text-xs text-muted-foreground">
-                Use * for all source branches, or comma-separated branch names,
-                to create preview deployments on push.
-              </p>
+              <div className="flex items-center justify-between gap-3 rounded-md border px-3 py-2">
+                <div className="space-y-0.5">
+                  <p className="text-sm font-medium">All branches</p>
+                  <p className="text-xs text-muted-foreground">
+                    Every push to any branch deploys a preview.
+                  </p>
+                </div>
+                <Switch
+                  id="preview-all-branches"
+                  checked={previewBranches.trim() === "*"}
+                  onCheckedChange={(checked) =>
+                    setPreviewBranches(
+                      checked ? "*" : (defaultBranch || "main"),
+                    )
+                  }
+                  disabled={updateMutation.isPending}
+                />
+              </div>
+              {previewBranches.trim() !== "*" && (
+                <>
+                  <Input
+                    value={previewBranches}
+                    onChange={(e) => setPreviewBranches(e.target.value)}
+                    placeholder="develop,staging"
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Comma-separated branch names. Pushes to other branches
+                    won't deploy a preview.
+                  </p>
+                </>
+              )}
             </div>
           </div>
           <Button

@@ -73,7 +73,7 @@ func (h *AutoBuildHandler) Get(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, autoBuildResponse{
 			Enabled:               false,
 			ProductionBranch:      defaultAutoBuildBranch(project),
-			PreviewBranches:       defaultAutoBuildBranch(project),
+			PreviewBranches:       "*",
 			AutoProductionEnabled: false,
 		})
 		return
@@ -153,7 +153,7 @@ func (h *AutoBuildHandler) Put(w http.ResponseWriter, r *http.Request) {
 		req.ProductionBranch = defaultAutoBuildBranch(project)
 	}
 	if req.PreviewBranches == "" {
-		req.PreviewBranches = defaultAutoBuildBranch(project)
+		req.PreviewBranches = "*"
 	}
 
 	// Get project owner's GitHub token

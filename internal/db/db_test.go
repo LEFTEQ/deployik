@@ -119,6 +119,117 @@ func TestMigration015HandlesExistingEnvVariables(t *testing.T) {
 	}
 }
 
+func TestMigration020RewritesProjectBranchPreviewToWildcard(t *testing.T) {
+	database, err := OpenMemory()
+	if err != nil {
+		t.Fatalf("OpenMemory: %v", err)
+	}
+	t.Cleanup(func() { database.Close() })
+
+	if _, err := database.Exec(`
+		CREATE TABLE IF NOT EXISTS _migrations (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			name TEXT UNIQUE NOT NULL,
+			applied_at DATETIME NOT NULL DEFAULT (datetime('now'))
+		)
+	`); err != nil {
+		t.Fatalf("create migrations table: %v", err)
+	}
+
+	entries, err := migrationsFS.ReadDir("migrations")
+	if err != nil {
+		t.Fatalf("ReadDir migrations: %v", err)
+	}
+	sort.Slice(entries, func(i, j int) bool { return entries[i].Name() < entries[j].Name() })
+	for _, entry := range entries {
+		// Apply everything strictly before 020.
+		if entry.IsDir() || entry.Name() >= "020_default_preview_all_branches.sql" {
+			continue
+		}
+		content, err := migrationsFS.ReadFile("migrations/" + entry.Name())
+		if err != nil {
+			t.Fatalf("ReadFile(%s): %v", entry.Name(), err)
+		}
+		if _, err := database.Exec(string(content)); err != nil {
+			t.Fatalf("exec migration %s: %v", entry.Name(), err)
+		}
+		if _, err := database.Exec("INSERT INTO _migrations (name) VALUES (?)", entry.Name()); err != nil {
+			t.Fatalf("record migration %s: %v", entry.Name(), err)
+		}
+	}
+
+	user := &User{ID: NewID(), GithubID: 99, Username: "owner", Role: "admin"}
+	if err := database.UpsertUser(user); err != nil {
+		t.Fatalf("UpsertUser: %v", err)
+	}
+
+	// Three projects: bad-default, explicit-list, already-wildcard.
+	type seed struct {
+		name           string
+		branch         string
+		previewBranch  string
+		wantPostMigr   string
+	}
+	seeds := []seed{
+		{name: "bad-default-main", branch: "main", previewBranch: "main", wantPostMigr: "*"},
+		{name: "bad-default-develop", branch: "develop", previewBranch: "develop", wantPostMigr: "*"},
+		{name: "explicit-list", branch: "main", previewBranch: "develop,staging", wantPostMigr: "develop,staging"},
+		{name: "already-wildcard", branch: "main", previewBranch: "*", wantPostMigr: "*"},
+		{name: "explicit-single-not-matching-branch", branch: "main", previewBranch: "release", wantPostMigr: "release"},
+	}
+	projectIDs := make(map[string]string, len(seeds))
+	for _, s := range seeds {
+		project := &Project{
+			Name: s.name, GithubRepo: "repo", GithubOwner: "owner", Branch: s.branch,
+			UserID: user.ID, Framework: "nextjs", BuildCommand: "build", InstallCommand: "install",
+			NodeVersion: "22", Status: "active",
+		}
+		if err := database.CreateProject(project); err != nil {
+			t.Fatalf("CreateProject(%s): %v", s.name, err)
+		}
+		if _, err := database.Exec(
+			`INSERT INTO auto_build_configs
+			   (id, project_id, enabled, production_branch, preview_branches, auto_production_enabled, webhook_secret)
+			 VALUES (?, ?, 1, ?, ?, 0, 'secret')`,
+			NewID(), project.ID, s.branch, s.previewBranch,
+		); err != nil {
+			t.Fatalf("insert auto_build_configs(%s): %v", s.name, err)
+		}
+		projectIDs[s.name] = project.ID
+	}
+
+	if err := database.Migrate(); err != nil {
+		t.Fatalf("Migrate (apply 020): %v", err)
+	}
+
+	for _, s := range seeds {
+		var got string
+		if err := database.QueryRow(
+			`SELECT preview_branches FROM auto_build_configs WHERE project_id = ?`,
+			projectIDs[s.name],
+		).Scan(&got); err != nil {
+			t.Fatalf("select(%s): %v", s.name, err)
+		}
+		if got != s.wantPostMigr {
+			t.Errorf("%s: preview_branches = %q, want %q", s.name, got, s.wantPostMigr)
+		}
+	}
+
+	// Migration 020 must be recorded.
+	var applied int
+	if err := database.QueryRow(`SELECT COUNT(*) FROM _migrations WHERE name = ?`, "020_default_preview_all_branches.sql").Scan(&applied); err != nil {
+		t.Fatalf("count migration 020: %v", err)
+	}
+	if applied != 1 {
+		t.Fatalf("migration 020 applied count = %d, want 1", applied)
+	}
+
+	// Re-running should be idempotent (no-op, no errors).
+	if err := database.Migrate(); err != nil {
+		t.Fatalf("Migrate (re-run): %v", err)
+	}
+}
+
 func TestUserCRUD(t *testing.T) {
 	db := newTestDB(t)
 

@@ -139,8 +139,8 @@ func TestProjectCreate_AutoDeploysAndProvisionsWebhook(t *testing.T) {
 	if config.ProductionBranch != "main" {
 		t.Errorf("expected production_branch=main, got %q", config.ProductionBranch)
 	}
-	if config.PreviewBranches != "main" {
-		t.Errorf("expected preview_branches=main, got %q", config.PreviewBranches)
+	if config.PreviewBranches != "*" {
+		t.Errorf("expected preview_branches=* (deploy all branches by default), got %q", config.PreviewBranches)
 	}
 	if !config.Enabled {
 		t.Error("expected auto-build config to be enabled")

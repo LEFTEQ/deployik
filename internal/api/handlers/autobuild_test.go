@@ -91,7 +91,7 @@ func TestAutoBuildGetMissingConfigReturnsAutoProductionDisabled(t *testing.T) {
 	}
 }
 
-func TestAutoBuildGetMissingConfigDefaultsProductionBranchToProjectBranch(t *testing.T) {
+func TestAutoBuildGetMissingConfigDefaultsProductionBranchToProjectBranchAndPreviewBranchesToWildcard(t *testing.T) {
 	database, encryptor, user := setupProjectTestDB(t)
 	t.Cleanup(func() { database.Close() })
 
@@ -120,12 +120,12 @@ func TestAutoBuildGetMissingConfigDefaultsProductionBranchToProjectBranch(t *tes
 	if got := body["production_branch"]; got != "develop" {
 		t.Fatalf("production_branch = %#v, want develop", got)
 	}
-	if got := body["preview_branches"]; got != "develop" {
-		t.Fatalf("preview_branches = %#v, want develop", got)
+	if got := body["preview_branches"]; got != "*" {
+		t.Fatalf("preview_branches = %#v, want * (default = all branches)", got)
 	}
 }
 
-func TestAutoBuildPutDefaultsProductionBranchToProjectBranch(t *testing.T) {
+func TestAutoBuildPutDefaultsProductionBranchToProjectBranchAndPreviewBranchesToWildcard(t *testing.T) {
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
 			http.NotFound(w, r)
@@ -177,8 +177,8 @@ func TestAutoBuildPutDefaultsProductionBranchToProjectBranch(t *testing.T) {
 	if config.ProductionBranch != "develop" {
 		t.Fatalf("production_branch = %q, want develop", config.ProductionBranch)
 	}
-	if config.PreviewBranches != "develop" {
-		t.Fatalf("preview_branches = %q, want develop", config.PreviewBranches)
+	if config.PreviewBranches != "*" {
+		t.Fatalf("preview_branches = %q, want * (default = all branches)", config.PreviewBranches)
 	}
 }
 
