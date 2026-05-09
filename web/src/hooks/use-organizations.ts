@@ -9,6 +9,8 @@ export function useOrganizations() {
   const {
     selectedOrganizationId,
     setSelectedOrganizationId,
+    projectsView,
+    setProjectsView,
     hydrateOrganizations,
   } = useOrganizationStore();
 
@@ -37,5 +39,7 @@ export function useOrganizations() {
     selectedOrganizationId: selectedOrganization?.id ?? null,
     selectedOrganization,
     setSelectedOrganizationId,
+    projectsView,
+    setProjectsView,
   };
 }
