@@ -61,7 +61,16 @@ func CaptureScreenshot(ctx context.Context, docker *DockerClient, url, deploymen
 	}
 	defer screenshotSemaphore.Release()
 
-	os.MkdirAll(screenshotDir, 0755)
+	os.MkdirAll(screenshotDir, 0o755)
+	// zenika/alpine-chrome runs as uid 1000 (chrome), but deployik runs as
+	// root so the bind-mounted screenshot dir is created 0755-root. Chrome
+	// can read but not write, and chrome's `--screenshot=` failure surfaces
+	// as container exit code 2. Chmod after MkdirAll handles both fresh
+	// installs (where MkdirAll creates the dir) and existing installs (where
+	// the dir already exists with the old 0755 mode). Errors are ignored on
+	// purpose: a Chmod failure is not fatal here, and the chrome run will
+	// still exit cleanly with a clear error if perms remain wrong.
+	_ = os.Chmod(screenshotDir, 0o777)
 
 	ctx, cancel := context.WithTimeout(ctx, screenshotTimeout)
 	defer cancel()
