@@ -5,9 +5,11 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"io"
 	"log"
 	"net/http"
+	"net/url"
 	"strings"
 
 	"github.com/LEFTEQ/lovinka-deployik/internal/build"
@@ -57,8 +59,19 @@ func (h *WebhookHandler) HandleGithub(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// GitHub supports two content types for webhook deliveries:
+	//   application/json              — body is the JSON object directly
+	//   application/x-www-form-urlencoded — body is `payload=<url-encoded JSON>`
+	// HMAC is always computed over the raw transport bytes, so signature
+	// validation downstream keeps using `body` regardless of shape.
+	jsonBytes, err := extractGithubPayloadJSON(body, r.Header.Get("Content-Type"))
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid payload"})
+		return
+	}
+
 	var payload githubPushPayload
-	if err := json.Unmarshal(body, &payload); err != nil {
+	if err := json.Unmarshal(jsonBytes, &payload); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid payload"})
 		return
 	}
@@ -252,6 +265,28 @@ func validateGithubSignature(secret string, body []byte, signatureHeader string)
 	mac.Write(body)
 	return hmac.Equal(sig, mac.Sum(nil))
 }
+
+// extractGithubPayloadJSON returns the JSON bytes inside a webhook body,
+// handling both application/json (body is JSON) and application/x-www-form-urlencoded
+// (body is `payload=<url-encoded JSON>`). Unknown / missing content types fall
+// back to treating the body as JSON, which matches the historical behaviour.
+func extractGithubPayloadJSON(body []byte, contentType string) ([]byte, error) {
+	mediaType := strings.TrimSpace(strings.ToLower(strings.SplitN(contentType, ";", 2)[0]))
+	if mediaType == "application/x-www-form-urlencoded" {
+		values, err := url.ParseQuery(string(body))
+		if err != nil {
+			return nil, err
+		}
+		raw := values.Get("payload")
+		if raw == "" {
+			return nil, errMissingFormPayload
+		}
+		return []byte(raw), nil
+	}
+	return body, nil
+}
+
+var errMissingFormPayload = errors.New("form body missing payload field")
 
 func matchesPreviewBranches(branch, pattern string) bool {
 	pattern = strings.TrimSpace(pattern)

@@ -8,6 +8,8 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
+	"strings"
 	"testing"
 
 	"github.com/LEFTEQ/lovinka-deployik/internal/build"
@@ -317,6 +319,124 @@ func TestWebhookRedeliveryDoesNotDuplicateDeployments(t *testing.T) {
 	}
 	if counts["production"] != 1 {
 		t.Fatalf("production deployments = %d, want 1", counts["production"])
+	}
+}
+
+// sendGithubPushFormEncoded mirrors sendGithubPush but transports the payload
+// as application/x-www-form-urlencoded (GitHub's "Form" content type), which
+// wraps the JSON inside a `payload=<url-encoded-JSON>` body. HMAC is computed
+// over the raw form-encoded bytes, matching how GitHub signs.
+func sendGithubPushFormEncoded(t *testing.T, handler *WebhookHandler, deliveryID string, branch string) *httptest.ResponseRecorder {
+	t.Helper()
+	payload := map[string]any{
+		"ref":     "refs/heads/" + branch,
+		"after":   "abcdef1234567890",
+		"deleted": false,
+		"repository": map[string]any{
+			"full_name": "owner/repo",
+		},
+		"pusher": map[string]any{
+			"name": "alice",
+		},
+		"head_commit": map[string]any{
+			"message": "Ship homepage",
+		},
+	}
+	jsonBytes, err := json.Marshal(payload)
+	if err != nil {
+		t.Fatalf("marshal payload: %v", err)
+	}
+	form := url.Values{}
+	form.Set("payload", string(jsonBytes))
+	body := []byte(form.Encode())
+	mac := hmac.New(sha256.New, []byte(webhookSecretForTests))
+	mac.Write(body)
+	signature := "sha256=" + hex.EncodeToString(mac.Sum(nil))
+
+	req := httptest.NewRequest(http.MethodPost, "/api/webhooks/github", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.Header.Set("X-GitHub-Event", "push")
+	req.Header.Set("X-GitHub-Delivery", deliveryID)
+	req.Header.Set("X-Hub-Signature-256", signature)
+	rr := httptest.NewRecorder()
+	handler.HandleGithub(rr, req)
+	return rr
+}
+
+func TestWebhookAcceptsFormEncodedBody(t *testing.T) {
+	database, handler, project := setupWebhookProject(t, false, "*")
+
+	rr := sendGithubPushFormEncoded(t, handler, "delivery-form-encoded", "main")
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status = %d, body: %s", rr.Code, rr.Body.String())
+	}
+
+	counts := deploymentEnvironmentCounts(t, database, project.ID)
+	if counts["preview"] != 1 {
+		t.Fatalf("preview deployments = %d, want 1", counts["preview"])
+	}
+	if webhookEventCount(t, database, project.ID, "preview") != 1 {
+		t.Fatal("expected one preview webhook event")
+	}
+	assertProcessedWebhookEvent(t, database, project.ID, "preview")
+}
+
+func TestWebhookFormEncodedInvalidSignatureRejected(t *testing.T) {
+	database, handler, project := setupWebhookProject(t, false, "*")
+
+	// Build a form-encoded body, then sign it with the WRONG secret.
+	payload := `{"ref":"refs/heads/main","after":"abcdef1234567890","deleted":false,` +
+		`"repository":{"full_name":"owner/repo"},"pusher":{"name":"alice"},` +
+		`"head_commit":{"message":"Ship homepage"}}`
+	form := url.Values{}
+	form.Set("payload", payload)
+	body := []byte(form.Encode())
+	mac := hmac.New(sha256.New, []byte("wrong-secret"))
+	mac.Write(body)
+	signature := "sha256=" + hex.EncodeToString(mac.Sum(nil))
+
+	req := httptest.NewRequest(http.MethodPost, "/api/webhooks/github", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.Header.Set("X-GitHub-Event", "push")
+	req.Header.Set("X-GitHub-Delivery", "delivery-form-bad-sig")
+	req.Header.Set("X-Hub-Signature-256", signature)
+	rr := httptest.NewRecorder()
+	handler.HandleGithub(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status = %d, body: %s", rr.Code, rr.Body.String())
+	}
+	counts := deploymentEnvironmentCounts(t, database, project.ID)
+	if counts["preview"] != 0 {
+		t.Fatalf("preview deployments = %d, want 0 (invalid signature must not deploy)", counts["preview"])
+	}
+}
+
+func TestWebhookFormEncodedRejectsMissingPayloadField(t *testing.T) {
+	database, handler, project := setupWebhookProject(t, false, "*")
+
+	// Form-encoded body with no `payload=` field. HMAC is over the literal bytes.
+	body := []byte("not_payload=garbage")
+	mac := hmac.New(sha256.New, []byte(webhookSecretForTests))
+	mac.Write(body)
+	signature := "sha256=" + hex.EncodeToString(mac.Sum(nil))
+
+	req := httptest.NewRequest(http.MethodPost, "/api/webhooks/github", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.Header.Set("X-GitHub-Event", "push")
+	req.Header.Set("X-GitHub-Delivery", "delivery-form-missing-field")
+	req.Header.Set("X-Hub-Signature-256", signature)
+	rr := httptest.NewRecorder()
+	handler.HandleGithub(rr, req)
+
+	if rr.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400", rr.Code)
+	}
+	if !strings.Contains(rr.Body.String(), "invalid payload") {
+		t.Fatalf("body = %q, want it to mention invalid payload", rr.Body.String())
+	}
+	if deploymentEnvironmentCounts(t, database, project.ID)["preview"] != 0 {
+		t.Fatal("no deployment should be created for missing payload field")
 	}
 }
 
