@@ -1,7 +1,7 @@
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link, useNavigate } from "@tanstack/react-router";
-import { ChevronRight, Plus } from "lucide-react";
+import { ChevronRight, Plus, Search, X } from "lucide-react";
 import { api } from "@/lib/api";
 import { queryKeys } from "@/lib/queryKeys";
 import { useOrganizations } from "@/hooks/use-organizations";
@@ -13,6 +13,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
 import { LoadingState } from "@/components/ui/spinner";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
@@ -112,12 +113,35 @@ export function Projects() {
   }, [organizations, projectsView]);
   const activeView = projectsViewIsValid ? projectsView : "all";
 
+  const [search, setSearch] = useState("");
+  const trimmedSearch = search.trim();
+
   const { data: projects, isLoading } = useQuery({
     queryKey: queryKeys.projects(activeView),
     queryFn: () =>
       api.listProjects(activeView === "all" ? undefined : activeView),
     enabled: !organizationsLoading,
   });
+
+  const filteredProjects = useMemo(() => {
+    if (!projects) return undefined;
+    if (!trimmedSearch) return projects;
+    const needle = trimmedSearch.toLowerCase();
+    const tokens = needle.split(/\s+/).filter(Boolean);
+    return projects.filter((project) => {
+      const haystack = [
+        project.name,
+        `${project.github_owner}/${project.github_repo}`,
+        project.branch,
+        project.latest_deployment_branch ?? "",
+        project.latest_deployment_environment ?? "",
+        project.latest_deployment_status ?? "",
+      ]
+        .join(" ")
+        .toLowerCase();
+      return tokens.every((token) => haystack.includes(token));
+    });
+  }, [projects, trimmedSearch]);
 
   const subtitle =
     activeView === "all"
@@ -140,20 +164,42 @@ export function Projects() {
       </div>
 
       {organizations.length > 0 && (
-        <Tabs
-          value={activeView}
-          onValueChange={(value) => setProjectsView(value)}
-          className="mb-4"
-        >
-          <TabsList variant="line">
-            <TabsTrigger value="all">All</TabsTrigger>
-            {organizations.map((organization) => (
-              <TabsTrigger key={organization.id} value={organization.id}>
-                {organization.name}
-              </TabsTrigger>
-            ))}
-          </TabsList>
-        </Tabs>
+        <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <Tabs
+            value={activeView}
+            onValueChange={(value) => setProjectsView(value)}
+          >
+            <TabsList variant="line">
+              <TabsTrigger value="all">All</TabsTrigger>
+              {organizations.map((organization) => (
+                <TabsTrigger key={organization.id} value={organization.id}>
+                  {organization.name}
+                </TabsTrigger>
+              ))}
+            </TabsList>
+          </Tabs>
+          <div className="relative w-full sm:w-72">
+            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              type="search"
+              value={search}
+              onChange={(event) => setSearch(event.target.value)}
+              placeholder="Search projects, repos, branches…"
+              className="pl-9 pr-9"
+              aria-label="Search projects"
+            />
+            {search && (
+              <button
+                type="button"
+                onClick={() => setSearch("")}
+                className="absolute right-2 top-1/2 -translate-y-1/2 rounded p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                aria-label="Clear search"
+              >
+                <X className="h-3.5 w-3.5" />
+              </button>
+            )}
+          </div>
+        </div>
       )}
 
       {organizationsLoading || isLoading ? (
@@ -188,6 +234,22 @@ export function Projects() {
             </Button>
           </Link>
         </div>
+      ) : !filteredProjects?.length ? (
+        <div className="flex flex-col items-center justify-center rounded-lg border border-dashed border-white/10 py-16">
+          <p className="text-lg font-medium">No projects match your search</p>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Nothing in {activeView === "all" ? "any workspace" : selectedOrganization?.name ?? "this workspace"} matched
+            <span className="mx-1 font-mono">“{trimmedSearch}”</span>.
+          </p>
+          <Button
+            variant="outline"
+            size="sm"
+            className="mt-4"
+            onClick={() => setSearch("")}
+          >
+            Clear search
+          </Button>
+        </div>
       ) : (
         <Card className="overflow-hidden">
           <CardContent className="p-0">
@@ -202,7 +264,7 @@ export function Projects() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {projects.map((project) => (
+                {filteredProjects.map((project) => (
                   <ProjectTableRow key={project.id} project={project} />
                 ))}
               </TableBody>
