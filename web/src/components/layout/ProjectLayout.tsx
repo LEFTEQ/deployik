@@ -6,11 +6,13 @@ import { FolderKanban } from "lucide-react";
 import { api } from "@/lib/api";
 import { queryKeys } from "@/lib/queryKeys";
 import { AppSidebar } from "@/components/layout/AppSidebar";
+import { BreadcrumbProjectSwitcher } from "@/components/layout/BreadcrumbProjectSwitcher";
 import { CommandPalette } from "@/components/layout/CommandPalette";
 import { ErrorBoundary } from "@/components/layout/ErrorBoundary";
 import { DeployMenu } from "@/components/projects/deploy-menu";
 import { LoadingState } from "@/components/ui/spinner";
 import { useAuthStore } from "@/store/auth";
+import { useOrganizations } from "@/hooks/use-organizations";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Separator } from "@/components/ui/separator";
 import { SidebarInset, SidebarTrigger } from "@/components/ui/sidebar";
@@ -33,6 +35,10 @@ export function ProjectLayout() {
     queryKey: queryKeys.project(id),
     queryFn: () => api.getProject(id),
   });
+  const { organizations } = useOrganizations();
+  const workspace = organizations.find(
+    (o) => o.id === project?.organization_id,
+  );
 
   // Derive current page name from pathname
   const base = `/projects/${id}`;
@@ -68,10 +74,15 @@ export function ProjectLayout() {
             <BreadcrumbList>
               <BreadcrumbItem className="hidden md:block">
                 <BreadcrumbLink asChild>
-                  <Link to="/projects/$id" params={{ id }}>
-                    {project?.name ?? "..."}
-                  </Link>
+                  <Link to="/">{workspace?.name ?? "Workspace"}</Link>
                 </BreadcrumbLink>
+              </BreadcrumbItem>
+              <BreadcrumbSeparator className="hidden md:block" />
+              <BreadcrumbItem className="hidden md:block">
+                <BreadcrumbProjectSwitcher
+                  currentProjectId={id}
+                  currentProjectName={project?.name ?? "..."}
+                />
               </BreadcrumbItem>
               <BreadcrumbSeparator className="hidden md:block" />
               <BreadcrumbItem>

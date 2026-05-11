@@ -1,5 +1,4 @@
 import { Link, useRouterState } from "@tanstack/react-router";
-import { useQuery } from "@tanstack/react-query";
 import {
   ArrowLeft,
   BarChart3,
@@ -20,12 +19,9 @@ import {
   Wrench,
 } from "lucide-react";
 
-import { api } from "@/lib/api";
-import { queryKeys } from "@/lib/queryKeys";
 import { useAuthStore } from "@/store/auth";
 import { useOrganizationStore } from "@/store/organization";
 import { useOrganizations } from "@/hooks/use-organizations";
-import { ProjectPicker } from "@/components/layout/ProjectPicker";
 import { VersionRow } from "@/components/layout/VersionRow";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import {
@@ -200,12 +196,6 @@ export function AppSidebar({ context, projectId, ...props }: AppSidebarProps) {
     setSelectedOrganizationId,
   } = useOrganizations();
 
-  const { data: project } = useQuery({
-    queryKey: queryKeys.project(projectId ?? ""),
-    queryFn: () => api.getProject(projectId!),
-    enabled: context === "project" && !!projectId,
-  });
-
   const items =
     context === "project" && projectId
       ? getProjectItems(projectId)
@@ -229,26 +219,17 @@ export function AppSidebar({ context, projectId, ...props }: AppSidebarProps) {
       <SidebarHeader>
         <SidebarMenu>
           <SidebarMenuItem>
-            {context === "project" && projectId ? (
-              <ProjectPicker
-                currentProjectId={projectId}
-                currentProjectName={project?.name ?? "..."}
-              />
-            ) : (
-              <SidebarMenuButton size="lg" asChild>
-                <Link to="/">
-                  <div className="flex aspect-square size-8 items-center justify-center rounded-lg bg-sidebar-primary text-sidebar-primary-foreground">
-                    <FolderKanban className="size-4" />
-                  </div>
-                  <div className="flex flex-col gap-0.5 leading-none">
-                    <span className="font-semibold">Deployik</span>
-                    <span className="text-xs text-muted-foreground">
-                      Dashboard
-                    </span>
-                  </div>
-                </Link>
-              </SidebarMenuButton>
-            )}
+            <SidebarMenuButton size="lg" asChild tooltip="Deployik">
+              <Link to="/">
+                <div className="flex aspect-square size-8 items-center justify-center rounded-lg bg-sidebar-primary text-sidebar-primary-foreground">
+                  <FolderKanban className="size-4" />
+                </div>
+                <div className="flex flex-col gap-0.5 leading-none">
+                  <span className="font-semibold">Deployik</span>
+                  <span className="text-xs text-muted-foreground">Home</span>
+                </div>
+              </Link>
+            </SidebarMenuButton>
           </SidebarMenuItem>
         </SidebarMenu>
       </SidebarHeader>

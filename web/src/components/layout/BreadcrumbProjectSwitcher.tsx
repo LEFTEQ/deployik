@@ -19,18 +19,17 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
-import { SidebarMenuButton } from "@/components/ui/sidebar";
 import { cn } from "@/lib/utils";
 
-interface ProjectPickerProps {
+interface BreadcrumbProjectSwitcherProps {
   currentProjectId: string;
   currentProjectName: string;
 }
 
-export function ProjectPicker({
+export function BreadcrumbProjectSwitcher({
   currentProjectId,
   currentProjectName,
-}: ProjectPickerProps) {
+}: BreadcrumbProjectSwitcherProps) {
   const [open, setOpen] = useState(false);
   const navigate = useNavigate();
   const { selectedOrganizationId } = useOrganizations();
@@ -43,23 +42,19 @@ export function ProjectPicker({
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
-        <SidebarMenuButton
-          size="lg"
-          className="data-[state=open]:bg-sidebar-accent data-[state=open]:text-sidebar-accent-foreground"
+        <button
+          type="button"
+          aria-label="Switch project"
+          className={cn(
+            "inline-flex max-w-[200px] items-center gap-1 rounded-md px-1.5 py-0.5",
+            "text-foreground transition-colors hover:bg-accent hover:text-accent-foreground",
+            "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+            "data-[state=open]:bg-accent",
+          )}
         >
-          <div className="flex aspect-square size-8 items-center justify-center rounded-lg bg-sidebar-primary text-sidebar-primary-foreground">
-            <FolderKanban className="size-4" />
-          </div>
-          <div className="flex min-w-0 flex-col gap-0.5 leading-none">
-            <span className="truncate font-semibold">
-              {currentProjectName}
-            </span>
-            <span className="text-xs text-muted-foreground">
-              Switch project
-            </span>
-          </div>
-          <ChevronsUpDown className="ml-auto size-4 shrink-0 opacity-50" />
-        </SidebarMenuButton>
+          <span className="truncate font-medium">{currentProjectName}</span>
+          <ChevronsUpDown className="size-3 shrink-0 opacity-50" />
+        </button>
       </PopoverTrigger>
       <PopoverContent className="w-64 p-0" align="start" side="bottom">
         <Command>
