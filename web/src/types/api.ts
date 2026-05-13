@@ -76,6 +76,8 @@ export interface Project {
   data_volume_enabled: boolean;
   data_mount_path: string;
   resource_tier: ResourceTier;
+  start_command: string;
+  health_path: string;
   status: "active" | "paused" | "deleted";
   latest_deployment_id: string | null;
   latest_deployment_status: string | null;
