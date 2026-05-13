@@ -141,6 +141,8 @@ export function NewProject() {
         build_command: buildSettings.buildCommand,
         node_version: buildSettings.nodeVersion,
         port: buildSettings.port,
+        start_command: buildSettings.startCommand,
+        health_path: buildSettings.healthPath,
         auto_build_enabled: autoBuildEnabled,
         auto_production_enabled: shouldEnableProductionAutoDeploy(
           autoBuildEnabled,

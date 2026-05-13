@@ -107,6 +107,8 @@ export interface CreateProjectPayload {
   install_command: string;
   node_version: string;
   port: number;
+  start_command?: string;
+  health_path?: string;
   host_network_access?: boolean;
   data_volume_enabled?: boolean;
   data_mount_path?: string;
