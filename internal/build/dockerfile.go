@@ -132,10 +132,14 @@ func GenerateDockerfile(repoDir string, data DockerfileData) (string, error) {
 }
 
 func generateDockerfileContent(data DockerfileData) string {
-	if data.Runtime == projectconfig.RuntimeStatic {
+	switch data.Runtime {
+	case projectconfig.RuntimeStatic:
 		return generateStaticDockerfile(data)
+	case projectconfig.RuntimeNodeAPI:
+		return generateNodeAPIDockerfile(data)
+	default:
+		return generateNextJSDockerfile(data)
 	}
-	return generateNextJSDockerfile(data)
 }
 
 func generateNextJSDockerfile(data DockerfileData) string {
@@ -251,6 +255,79 @@ func generateStaticDockerfile(data DockerfileData) string {
 	b.WriteString("HEALTHCHECK --interval=30s --timeout=3s --start-period=10s --retries=3 \\\n")
 	b.WriteString(fmt.Sprintf("  CMD node -e \"require('http').get('http://localhost:%d/',(r)=>{process.exit(r.statusCode===200?0:1)}).on('error',()=>process.exit(1))\"\n", port))
 	b.WriteString(fmt.Sprintf("CMD [\"serve\", \"-s\", \"site\", \"-l\", \"%d\"]\n", port))
+
+	return b.String()
+}
+
+// generateNodeAPIDockerfile produces a multi-stage Dockerfile for a Node API
+// (NestJS / Express / Hono / Fastify). The runner stage stays slim: it
+// re-uses node_modules from the deps stage (assumed to be prod-only when the
+// project's install command uses `--production`; otherwise it carries dev
+// deps too, which is the same trade-off the static runtime already accepts).
+// CMD is wrapped in `sh -c` so users can chain commands (e.g.
+// "prisma migrate deploy && node dist/main.js") without rewriting the array.
+func generateNodeAPIDockerfile(data DockerfileData) string {
+	var b strings.Builder
+	appDir := dockerAppDir(data.RootDirectory)
+	installDir := dockerAppDir(data.InstallDirectory)
+	outputDir := dockerProjectPath(data.RootDirectory, data.OutputDirectory)
+	port := effectivePort(data.Port)
+	healthPath := data.HealthPath
+	if healthPath == "" {
+		healthPath = "/health"
+	}
+	startCommand := data.StartCommand
+	if startCommand == "" {
+		startCommand = "node dist/main.js"
+	}
+
+	b.WriteString("# syntax=docker/dockerfile:1.7\n")
+	b.WriteString(fmt.Sprintf("FROM node:%s-alpine AS base\n", data.NodeVersion))
+	b.WriteString("WORKDIR /app\n\n")
+
+	// Dependencies stage
+	b.WriteString("FROM base AS deps\n")
+	b.WriteString("COPY . .\n")
+	if installDir != "/app" {
+		b.WriteString(fmt.Sprintf("WORKDIR %s\n", installDir))
+	}
+	if data.UseBun {
+		b.WriteString("RUN npm i -g bun\n")
+	} else if data.UsePnpm {
+		b.WriteString("RUN corepack enable\n")
+	} else if data.UseYarn {
+		b.WriteString("RUN corepack enable\n")
+	}
+	b.WriteString(installRunLine(data))
+
+	// Builder stage
+	b.WriteString("\nFROM deps AS builder\n")
+	b.WriteString(fmt.Sprintf("WORKDIR %s\n", appDir))
+	for _, ev := range data.BuildEnvVars {
+		b.WriteString(fmt.Sprintf("ENV %s=%s\n", ev.Key, strconv.Quote(ev.Value)))
+	}
+	b.WriteString(buildRunLine(data.BuildCommand, []string{
+		"--mount=type=secret,id=deployik-secrets",
+	}))
+	b.WriteString("\n")
+
+	// Runner stage — slim image that copies the built output + reuses
+	// node_modules from deps. We keep the deps stage's node_modules instead of
+	// reinstalling prod-only here because the install command is user-driven
+	// (`bun install`, `pnpm install`, etc.) and reinstalling in the runner
+	// would duplicate npm/pnpm/bun in the runtime image.
+	b.WriteString("FROM base AS runner\n")
+	b.WriteString("ENV NODE_ENV=production\n")
+	b.WriteString("RUN apk --no-cache del wget curl 2>/dev/null; rm -rf /var/cache/apk/*\n\n")
+	b.WriteString(fmt.Sprintf("COPY --from=builder %s ./dist\n", outputDir))
+	b.WriteString(fmt.Sprintf("COPY --from=deps %s/node_modules ./node_modules\n", installDir))
+	b.WriteString(fmt.Sprintf("COPY --from=deps %s/package.json ./package.json\n\n", installDir))
+
+	b.WriteString(fmt.Sprintf("EXPOSE %d\n", port))
+	b.WriteString(fmt.Sprintf("ENV PORT=%d\n", port))
+	b.WriteString("HEALTHCHECK --interval=30s --timeout=3s --start-period=15s --retries=3 \\\n")
+	b.WriteString(fmt.Sprintf("  CMD node -e \"require('http').get('http://localhost:%d%s',(r)=>{process.exit(r.statusCode<400?0:1)}).on('error',()=>process.exit(1))\"\n", port, healthPath))
+	b.WriteString(fmt.Sprintf("CMD [\"sh\", \"-c\", %s]\n", strconv.Quote(startCommand)))
 
 	return b.String()
 }

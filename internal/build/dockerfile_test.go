@@ -331,3 +331,68 @@ func TestGenerateDockerfileSupportsYarnPackageManager(t *testing.T) {
 		t.Fatalf("expected yarn build command, got:\n%s", got)
 	}
 }
+
+func TestGenerateDockerfileSupportsNodeAPIRuntime(t *testing.T) {
+	t.Parallel()
+
+	repoDir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(repoDir, "package.json"), []byte(`{"name":"api"}`), 0644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(repoDir, "bun.lock"), []byte("# bun lockfile v1\n"), 0644); err != nil {
+		t.Fatalf("WriteFile bun.lock: %v", err)
+	}
+
+	dockerfilePath, err := GenerateDockerfile(repoDir, DockerfileData{
+		PackageManager:  projectconfig.PackageManagerBun,
+		NodeVersion:     "22",
+		OutputDirectory: "dist",
+		Runtime:         projectconfig.RuntimeNodeAPI,
+		BuildCommand:    "bun run build",
+		InstallCommand:  "bun install",
+		StartCommand:    "node dist/main.js",
+		HealthPath:      "/health",
+		Port:            3000,
+	})
+	if err != nil {
+		t.Fatalf("GenerateDockerfile: %v", err)
+	}
+
+	got, err := os.ReadFile(dockerfilePath)
+	if err != nil {
+		t.Fatalf("ReadFile: %v", err)
+	}
+	content := string(got)
+
+	requireAll(t, content,
+		"# syntax=docker/dockerfile:1.7",
+		"FROM node:22-alpine AS base",
+		"FROM base AS deps",
+		"FROM deps AS builder",
+		"--mount=type=secret,id=deployik-secrets",
+		"FROM base AS runner",
+		"ENV NODE_ENV=production",
+		"COPY --from=builder /app/dist ./dist",
+		"COPY --from=deps /app/node_modules ./node_modules",
+		"EXPOSE 3000",
+		"ENV PORT=3000",
+		"HEALTHCHECK",
+		"/health",
+		`CMD ["sh", "-c", "node dist/main.js"]`,
+	)
+}
+
+// requireAll fails the test if `content` is missing any of the expected
+// substrings, reporting all misses in one shot instead of one per t.Fatalf.
+func requireAll(t *testing.T, content string, needles ...string) {
+	t.Helper()
+	var missing []string
+	for _, n := range needles {
+		if !strings.Contains(content, n) {
+			missing = append(missing, n)
+		}
+	}
+	if len(missing) > 0 {
+		t.Fatalf("Dockerfile missing %d expected substrings: %v\n--- generated ---\n%s", len(missing), missing, content)
+	}
+}
