@@ -142,6 +142,27 @@ func (d *DockerClient) EnsureBuildxBuilder(ctx context.Context) error {
 	return nil
 }
 
+// applyBuildxTierCaps re-applies the BuildKit container's cgroup limits to the
+// given tier's BuildMemoryMB / BuildCPUCores values. Called before each build
+// because `docker buildx build` does not accept per-build resource flags — the
+// only place to enforce a per-tier cap is the BuildKit container's cgroup, and
+// it's shared across builds (so we re-cap per build, relying on the build
+// semaphore to serialize). Clamped to the platform-wide ceiling defined by
+// BuildxBuilderMemory / BuildxBuilderCPUs so a tier can never exceed it.
+func applyBuildxTierCaps(ctx context.Context, builder string, tier ResourceTier) {
+	if tier.BuildMemoryMB <= 0 || tier.BuildCPUCores <= 0 {
+		return
+	}
+	builderContainer := "buildx_buildkit_" + builder + "0"
+	memArg := fmt.Sprintf("--memory=%dm", tier.BuildMemoryMB)
+	swapArg := fmt.Sprintf("--memory-swap=%dm", tier.BuildMemoryMB)
+	cpuArg := fmt.Sprintf("--cpus=%.2f", tier.BuildCPUCores)
+	if out, err := exec.CommandContext(ctx, "docker", "update", memArg, swapArg, cpuArg, builderContainer).CombinedOutput(); err != nil {
+		log.Printf("Warning: could not re-cap buildx builder %s to %d MB / %.2f CPUs: %v: %s",
+			builderContainer, tier.BuildMemoryMB, tier.BuildCPUCores, err, strings.TrimSpace(string(out)))
+	}
+}
+
 // BuildImageOptions carries optional knobs for BuildImage. All fields are optional.
 type BuildImageOptions struct {
 	// Builder is the buildx builder name. Defaults to BuildxBuilderName.
@@ -179,14 +200,20 @@ func (d *DockerClient) BuildImage(ctx context.Context, contextDir, dockerfilePat
 		tier = Tiers[SmallTier]
 	}
 
+	// `docker buildx build` does not accept --memory / --memory-swap / --cpus
+	// (those were legacy `docker build` flags). The only way to bound a BuildKit
+	// build is to cap the underlying BuildKit container's cgroup. Builds are
+	// serialized (Pipeline.Semaphore defaults to 1), so we apply the tier caps
+	// live via `docker update` immediately before each build. Best-effort: a
+	// failed cap is logged but does not block the build — the platform-wide
+	// ceiling from EnsureBuildxBuilder still applies.
+	applyBuildxTierCaps(ctx, builder, tier)
+
 	args := []string{
 		"buildx", "build",
 		"--builder", builder,
 		"--load",
 		"--progress=plain",
-		fmt.Sprintf("--memory=%dm", tier.BuildMemoryMB),
-		fmt.Sprintf("--memory-swap=%dm", tier.BuildMemoryMB),
-		fmt.Sprintf("--cpus=%.2f", tier.BuildCPUCores),
 		"-t", imageTag,
 		"-f", dockerfileArg,
 	}
