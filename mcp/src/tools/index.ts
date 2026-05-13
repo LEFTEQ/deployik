@@ -1,0 +1,35 @@
+import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { registerProjectTools } from "./projects.js";
+import { registerDeploymentTools } from "./deployments.js";
+import { registerEnvTools } from "./env.js";
+import { registerSecretTools } from "./secrets.js";
+import { registerDomainTools } from "./domains.js";
+import { registerAutoBuildTools } from "./auto_build.js";
+import { registerProtectionTools } from "./protection.js";
+import { registerVolumeTools } from "./volumes.js";
+import { registerGithubTools } from "./github.js";
+import { registerWorkspaceTools } from "./workspaces.js";
+import { registerAnalyticsTools } from "./analytics.js";
+import { registerEmailTools } from "./email.js";
+import { registerTokenTools } from "./tokens.js";
+import { registerHelpTools } from "./help.js";
+import { registerWorkflowTools } from "./workflows.js";
+import type { ToolContext } from "./_helpers.js";
+
+export function registerAllTools(server: McpServer, ctx: ToolContext): void {
+  registerProjectTools(server, ctx);
+  registerDeploymentTools(server, ctx);
+  registerEnvTools(server, ctx);
+  registerSecretTools(server, ctx);
+  registerDomainTools(server, ctx);
+  registerAutoBuildTools(server, ctx);
+  registerProtectionTools(server, ctx);
+  registerVolumeTools(server, ctx);
+  registerGithubTools(server, ctx);
+  registerWorkspaceTools(server, ctx);
+  registerAnalyticsTools(server, ctx);
+  registerEmailTools(server, ctx);
+  registerTokenTools(server, ctx);
+  registerHelpTools(server, ctx);
+  registerWorkflowTools(server, ctx);
+}

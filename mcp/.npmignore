@@ -1,0 +1,7 @@
+src
+scripts
+tsconfig.json
+bun.lock
+.env*
+*.tsbuildinfo
+.gitignore

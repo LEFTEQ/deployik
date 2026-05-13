@@ -3,6 +3,7 @@ package handlers
 import (
 	"encoding/json"
 	"fmt"
+	"log"
 	"net/http"
 	"regexp"
 	"strings"
@@ -310,7 +311,8 @@ func (h *VariableHandler) Upsert(w http.ResponseWriter, r *http.Request) {
 		Value:       encryptedValue,
 	}
 	if err := h.DB.UpsertProjectVariable(v); err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": fmt.Sprintf("failed to save %s", h.storeLabel())})
+		log.Printf("envvars upsert: project=%s scope=%s key=%s kind=%s: %v", projectID, environment, key, h.Kind, err)
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": fmt.Sprintf("failed to save %s: %s", h.storeLabel(), err.Error())})
 		return
 	}
 

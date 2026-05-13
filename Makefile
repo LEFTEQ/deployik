@@ -1,4 +1,4 @@
-.PHONY: dev-api dev-web dev-seed build-web build run docker-build clean
+.PHONY: dev-api dev-web dev-seed build-web build run docker-build clean mcp-install mcp-build mcp-dev mcp-inspect mcp-typecheck mcp-publish
 
 # Development
 # Sources .env when present (so GITHUB_CLIENT_ID/SECRET etc. are picked up) and
@@ -38,6 +38,25 @@ docker-run:
 		-e DEV_MODE=true \
 		deployik:latest
 
+# MCP server (mcp/ package — @lovinka/deployik-mcp)
+mcp-install:
+	cd mcp && bun install
+
+mcp-build:
+	cd mcp && bun run build
+
+mcp-dev:
+	cd mcp && bun run dev
+
+mcp-inspect:
+	cd mcp && bun run inspect
+
+mcp-typecheck:
+	cd mcp && bun run typecheck
+
+mcp-publish:
+	cd mcp && bun run build && npm publish --access public
+
 # Clean
 clean:
-	rm -rf bin/ cmd/server/web_dist web/dist web/node_modules
+	rm -rf bin/ cmd/server/web_dist web/dist web/node_modules mcp/dist mcp/node_modules
