@@ -20,6 +20,36 @@ func newTestDB(t *testing.T) *DB {
 	return db
 }
 
+// insertHistoricProject inserts a minimal projects row using only columns
+// present in migration 001. Migration-history tests must NOT call
+// db.CreateProject directly because that helper's INSERT evolves with each
+// new column (e.g. resource_tier in migration 021) and would fail against
+// pre-migration schemas. Defaults are intentionally minimal; tests can
+// override status/branch on the passed-in struct.
+func insertHistoricProject(t *testing.T, database *DB, p *Project) {
+	t.Helper()
+	if p.ID == "" {
+		p.ID = NewID()
+	}
+	branch := p.Branch
+	if branch == "" {
+		branch = "main"
+	}
+	status := p.Status
+	if status == "" {
+		status = "active"
+	}
+	if _, err := database.Exec(
+		`INSERT INTO projects (id, name, github_repo, github_owner, branch, user_id, status)
+		 VALUES (?, ?, ?, ?, ?, ?, ?)`,
+		p.ID, p.Name, p.GithubRepo, p.GithubOwner, branch, p.UserID, status,
+	); err != nil {
+		t.Fatalf("insertHistoricProject(%s): %v", p.Name, err)
+	}
+	p.Branch = branch
+	p.Status = status
+}
+
 func TestMigrations(t *testing.T) {
 	db := newTestDB(t)
 
@@ -84,9 +114,7 @@ func TestMigration015HandlesExistingEnvVariables(t *testing.T) {
 	project := &Project{Name: "pre-migration-project", GithubRepo: "repo", GithubOwner: "owner", Branch: "main",
 		UserID: user.ID, Framework: "nextjs", BuildCommand: "build", InstallCommand: "install",
 		NodeVersion: "22", Status: "active"}
-	if err := database.CreateProject(project); err != nil {
-		t.Fatalf("CreateProject: %v", err)
-	}
+	insertHistoricProject(t, database, project)
 	if _, err := database.Exec(
 		`INSERT INTO env_variables (id, project_id, environment, kind, key, value)
 		 VALUES (?, ?, 'preview', 'env', 'LEGACY_KEY', 'legacy-value')`,
@@ -165,10 +193,10 @@ func TestMigration020RewritesProjectBranchPreviewToWildcard(t *testing.T) {
 
 	// Three projects: bad-default, explicit-list, already-wildcard.
 	type seed struct {
-		name           string
-		branch         string
-		previewBranch  string
-		wantPostMigr   string
+		name          string
+		branch        string
+		previewBranch string
+		wantPostMigr  string
 	}
 	seeds := []seed{
 		{name: "bad-default-main", branch: "main", previewBranch: "main", wantPostMigr: "*"},
@@ -184,9 +212,7 @@ func TestMigration020RewritesProjectBranchPreviewToWildcard(t *testing.T) {
 			UserID: user.ID, Framework: "nextjs", BuildCommand: "build", InstallCommand: "install",
 			NodeVersion: "22", Status: "active",
 		}
-		if err := database.CreateProject(project); err != nil {
-			t.Fatalf("CreateProject(%s): %v", s.name, err)
-		}
+		insertHistoricProject(t, database, project)
 		if _, err := database.Exec(
 			`INSERT INTO auto_build_configs
 			   (id, project_id, enabled, production_branch, preview_branches, auto_production_enabled, webhook_secret)
@@ -1084,9 +1110,7 @@ func TestDomainIsPrimaryBackfill(t *testing.T) {
 		NodeVersion:    "22",
 		Status:         "active",
 	}
-	if err := database.CreateProject(project); err != nil {
-		t.Fatalf("CreateProject: %v", err)
-	}
+	insertHistoricProject(t, database, project)
 
 	base := time.Date(2026, 4, 21, 12, 0, 0, 0, time.UTC)
 	insert := func(id, domainName, environment string, isAuto bool, createdAt time.Time) {
@@ -1620,9 +1644,7 @@ func TestMigration018AddsProductionOptInAndWebhookEventOutcomes(t *testing.T) {
 		NodeVersion:    "22",
 		Status:         "active",
 	}
-	if err := database.CreateProject(project); err != nil {
-		t.Fatalf("CreateProject: %v", err)
-	}
+	insertHistoricProject(t, database, project)
 	deploymentID := NewID()
 	if _, err := database.Exec(
 		`INSERT INTO deployments (id, project_id, environment, branch, status, trigger_source, triggered_by)

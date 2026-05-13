@@ -270,9 +270,17 @@ func (p *Pipeline) Deploy(ctx context.Context, project *db.Project, deployment *
 	containerName := db.DeploymentContainerName(project.Name, deployment.Environment, previewInstance)
 	imageTag := fmt.Sprintf("%s:%s", containerName, deployment.ID[:8])
 
+	// Resolve resource tier once per deploy — the same tier governs both the
+	// build-phase --memory/--cpus caps and the runtime container limits, so a
+	// project that's bumped to Medium for runtime also gets a 3 GB build budget.
+	tier := TierOrDefault(project.ResourceTier)
+	emit(fmt.Sprintf("Resources: %s (runtime %d MB / %.1f CPU · build %d MB / %.1f CPU)",
+		tier.Label, tier.MemoryMB, tier.CPUCores, tier.BuildMemoryMB, tier.BuildCPUCores))
+
 	emit(fmt.Sprintf("Building image %s...", imageTag))
 	_, err = p.Docker.BuildImage(ctx, repoDir, dockerfilePath, imageTag, BuildImageOptions{
 		SecretsFile: secretsFile,
+		Tier:        tier,
 		OnLog: func(line string) {
 			logLineNum++
 			p.DB.InsertBuildLog(deployment.ID, logLineNum, line, "stdout")
@@ -323,6 +331,7 @@ func (p *Pipeline) Deploy(ctx context.Context, project *db.Project, deployment *
 		BindHostPort: p.ProxyType == "host-port",
 		VolumeBinds:  volumeBinds,
 		Port:         project.Port,
+		Tier:         tier,
 	}
 	newContainerID, err := p.Docker.RunContainer(ctx, tempName, imageTag, runtimeEnvVars, p.ProxyNetwork, opts)
 	if err != nil {
@@ -391,6 +400,11 @@ func (p *Pipeline) Deploy(ctx context.Context, project *db.Project, deployment *
 	p.DB.UpdateDeploymentStatus(deployment.ID, "live", "")
 
 	emit(fmt.Sprintf("Deployment live! (%ds)", duration))
+
+	// Step 10b: Prune images beyond the retention window for this target.
+	// Best-effort, runs on its own goroutine so it never blocks the response
+	// or the screenshot below. Failures are logged inside PruneOldImages.
+	go p.PruneOldImages(project.ID, deployment.Environment, previewInstanceID, imageTag, DefaultImageRetention)
 
 	// Step 11: Capture screenshot asynchronously. Participates in the pipeline
 	// WaitGroup and honors pipeline-level cancellation.

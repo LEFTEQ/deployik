@@ -3,8 +3,82 @@ import type {
   Deployment,
   DeploymentStatus,
   Domain,
+  ResourceTier,
   VariableScope,
 } from "@/types/api";
+
+/**
+ * Resource tier metadata for the project Resources picker. Numeric values
+ * MUST match `internal/build/tiers.go`. A frontend unit test cross-checks
+ * the keys against the backend's known set so a drift in either direction
+ * fails CI before it reaches production.
+ */
+export const RESOURCE_TIER_META = {
+  nano: {
+    label: "Nano",
+    description: "Static sites and very light pages.",
+    memoryMB: 256,
+    cpuCores: 0.5,
+    buildMemoryMB: 1536,
+    buildCpuCores: 1.0,
+    badgeClass: "border-white/10 bg-white/5 text-slate-200",
+  },
+  small: {
+    label: "Small",
+    description: "Default. Most marketing sites and small apps.",
+    memoryMB: 512,
+    cpuCores: 1.0,
+    buildMemoryMB: 2048,
+    buildCpuCores: 2.0,
+    badgeClass: "border-sky-400/25 bg-sky-400/12 text-sky-100",
+  },
+  medium: {
+    label: "Medium",
+    description: "Real Next.js apps with moderate traffic.",
+    memoryMB: 1024,
+    cpuCores: 2.0,
+    buildMemoryMB: 3072,
+    buildCpuCores: 2.0,
+    badgeClass: "border-violet-400/25 bg-violet-400/12 text-violet-100",
+  },
+  large: {
+    label: "Large",
+    description: "Heavy workloads with bigger Node heaps.",
+    memoryMB: 2048,
+    cpuCores: 2.0,
+    buildMemoryMB: 4096,
+    buildCpuCores: 2.0,
+    badgeClass: "border-amber-400/25 bg-amber-400/12 text-amber-100",
+  },
+} satisfies Record<
+  ResourceTier,
+  {
+    label: string;
+    description: string;
+    memoryMB: number;
+    cpuCores: number;
+    buildMemoryMB: number;
+    buildCpuCores: number;
+    badgeClass: string;
+  }
+>;
+
+export const RESOURCE_TIER_ORDER: ResourceTier[] = [
+  "nano",
+  "small",
+  "medium",
+  "large",
+];
+
+/**
+ * Pretty memory render: 1024 → "1 GB", 512 → "512 MB".
+ */
+export function formatTierMemory(memoryMB: number): string {
+  if (memoryMB >= 1024 && memoryMB % 1024 === 0) {
+    return `${memoryMB / 1024} GB`;
+  }
+  return `${memoryMB} MB`;
+}
 
 /**
  * Deployment statuses that indicate the deployment is still in progress.

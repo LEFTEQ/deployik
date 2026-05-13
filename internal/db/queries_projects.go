@@ -21,7 +21,7 @@ func parseSQLiteDateTime(val string) *time.Time {
 		"2006-01-02 15:04:05.999999999",
 		time.RFC3339Nano,
 		time.RFC3339,
-		"2006-01-02 15:04:05 -0700 MST",        // time.Time.String() default
+		"2006-01-02 15:04:05 -0700 MST", // time.Time.String() default
 		"2006-01-02 15:04:05.999999999 -0700 MST",
 	}
 	for _, layout := range formats {
@@ -40,7 +40,7 @@ func (db *DB) ListProjects(userID, organizationID string) ([]Project, error) {
 		       p.status, COALESCE(p.preview_password, ''), COALESCE(p.production_password, ''),
 		       p.created_at, p.updated_at,
 		       p.host_network_access, p.data_volume_enabled, COALESCE(p.data_mount_path, '/app/data'),
-		       p.port
+		       p.port, COALESCE(p.resource_tier, 'small')
 		FROM projects p
 		LEFT JOIN organizations o ON o.id = p.organization_id
 		WHERE p.status != 'deleted'
@@ -74,7 +74,7 @@ func (db *DB) ListProjects(userID, organizationID string) ([]Project, error) {
 			&p.Status, &p.PreviewPassword, &p.ProductionPassword,
 			&p.CreatedAt, &p.UpdatedAt,
 			&p.HostNetworkAccess, &p.DataVolumeEnabled, &p.DataMountPath,
-			&p.Port); err != nil {
+			&p.Port, &p.ResourceTier); err != nil {
 			return nil, fmt.Errorf("scan project: %w", err)
 		}
 		projects = append(projects, p)
@@ -92,7 +92,7 @@ func (db *DB) GetProject(id string) (*Project, error) {
 		        COALESCE(p.preview_password, ''), COALESCE(p.production_password, ''),
 		        p.created_at, p.updated_at,
 		        p.host_network_access, p.data_volume_enabled, COALESCE(p.data_mount_path, '/app/data'),
-		        p.port,
+		        p.port, COALESCE(p.resource_tier, 'small'),
 		        (SELECT MAX(created_at) FROM deployments
 		         WHERE project_id = p.id AND environment = 'preview' AND status = 'live'),
 		        (SELECT MAX(created_at) FROM deployments
@@ -105,7 +105,7 @@ func (db *DB) GetProject(id string) (*Project, error) {
 		&p.Status, &p.PreviewPassword, &p.ProductionPassword,
 		&p.CreatedAt, &p.UpdatedAt,
 		&p.HostNetworkAccess, &p.DataVolumeEnabled, &p.DataMountPath,
-		&p.Port,
+		&p.Port, &p.ResourceTier,
 		&previewDeploy, &productionDeploy)
 	if err == sql.ErrNoRows {
 		return nil, nil
@@ -132,7 +132,7 @@ func (db *DB) GetProjectForUser(id, userID string) (*Project, error) {
 		        COALESCE(p.preview_password, ''), COALESCE(p.production_password, ''),
 		        p.created_at, p.updated_at,
 		        p.host_network_access, p.data_volume_enabled, COALESCE(p.data_mount_path, '/app/data'),
-		        p.port,
+		        p.port, COALESCE(p.resource_tier, 'small'),
 		        (SELECT MAX(created_at) FROM deployments
 		         WHERE project_id = p.id AND environment = 'preview' AND status = 'live'),
 		        (SELECT MAX(created_at) FROM deployments
@@ -153,7 +153,7 @@ func (db *DB) GetProjectForUser(id, userID string) (*Project, error) {
 		&p.Status, &p.PreviewPassword, &p.ProductionPassword,
 		&p.CreatedAt, &p.UpdatedAt,
 		&p.HostNetworkAccess, &p.DataVolumeEnabled, &p.DataMountPath,
-		&p.Port,
+		&p.Port, &p.ResourceTier,
 		&previewDeploy, &productionDeploy)
 	if err == sql.ErrNoRows {
 		return nil, nil
@@ -174,41 +174,45 @@ func (db *DB) CreateProject(p *Project) error {
 	p.ID = NewID()
 	packageManager := normalizeStoredPackageManager(p.PackageManager)
 	port := normalizePort(p.Port)
+	resourceTier := normalizeStoredResourceTier(p.ResourceTier)
 	_, err := db.Exec(
 		`INSERT INTO projects (id, name, github_repo, github_owner, branch, user_id, organization_id, framework, package_manager,
 		                       root_directory, output_directory, build_command, install_command, node_version, status,
-		                       host_network_access, data_volume_enabled, data_mount_path, port)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		                       host_network_access, data_volume_enabled, data_mount_path, port, resource_tier)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		p.ID, p.Name, p.GithubRepo, p.GithubOwner, p.Branch, p.UserID, nullableString(p.OrganizationID), p.Framework, packageManager,
 		p.RootDirectory, p.OutputDirectory, p.BuildCommand, p.InstallCommand, p.NodeVersion, p.Status,
-		p.HostNetworkAccess, p.DataVolumeEnabled, p.DataMountPath, port,
+		p.HostNetworkAccess, p.DataVolumeEnabled, p.DataMountPath, port, resourceTier,
 	)
 	if err != nil {
 		return fmt.Errorf("create project: %w", err)
 	}
 	p.PackageManager = packageManager
 	p.Port = port
+	p.ResourceTier = resourceTier
 	return nil
 }
 
 func (db *DB) UpdateProject(p *Project) error {
 	packageManager := normalizeStoredPackageManager(p.PackageManager)
 	port := normalizePort(p.Port)
+	resourceTier := normalizeStoredResourceTier(p.ResourceTier)
 	_, err := db.Exec(
 		`UPDATE projects SET name = ?, branch = ?, framework = ?, package_manager = ?, root_directory = ?, output_directory = ?, build_command = ?,
 		        install_command = ?, node_version = ?, status = ?,
-		        host_network_access = ?, data_volume_enabled = ?, data_mount_path = ?, port = ?,
+		        host_network_access = ?, data_volume_enabled = ?, data_mount_path = ?, port = ?, resource_tier = ?,
 		        updated_at = datetime('now')
 		 WHERE id = ?`,
 		p.Name, p.Branch, p.Framework, packageManager, p.RootDirectory, p.OutputDirectory, p.BuildCommand, p.InstallCommand,
 		p.NodeVersion, p.Status,
-		p.HostNetworkAccess, p.DataVolumeEnabled, p.DataMountPath, port, p.ID,
+		p.HostNetworkAccess, p.DataVolumeEnabled, p.DataMountPath, port, resourceTier, p.ID,
 	)
 	if err != nil {
 		return fmt.Errorf("update project: %w", err)
 	}
 	p.PackageManager = packageManager
 	p.Port = port
+	p.ResourceTier = resourceTier
 	return nil
 }
 
@@ -248,7 +252,7 @@ func (db *DB) ListProjectsWithLatestDeployment(userID, orgID string) ([]ProjectW
 		       p.status, COALESCE(p.preview_password, ''), COALESCE(p.production_password, ''),
 		       p.created_at, p.updated_at,
 		       p.host_network_access, p.data_volume_enabled, COALESCE(p.data_mount_path, '/app/data'),
-		       p.port,
+		       p.port, COALESCE(p.resource_tier, 'small'),
 		       (SELECT MAX(created_at) FROM deployments
 		        WHERE project_id = p.id AND environment = 'preview' AND status = 'live'),
 		       (SELECT MAX(created_at) FROM deployments
@@ -304,7 +308,7 @@ func (db *DB) ListProjectsWithLatestDeployment(userID, orgID string) ([]ProjectW
 			&p.Status, &p.PreviewPassword, &p.ProductionPassword,
 			&p.CreatedAt, &p.UpdatedAt,
 			&p.HostNetworkAccess, &p.DataVolumeEnabled, &p.DataMountPath,
-			&p.Port,
+			&p.Port, &p.ResourceTier,
 			&previewDeploy, &productionDeploy,
 			&ldID, &ldStatus, &ldBranch, &ldCommitSHA, &ldCommitMsg, &ldCreatedAt,
 			&ldEnvironment, &ldScreenshotPath,
@@ -344,6 +348,25 @@ func (db *DB) ListProjectsWithLatestDeployment(userID, orgID string) ([]ProjectW
 		projects = append(projects, pw)
 	}
 	return projects, rows.Err()
+}
+
+// normalizeStoredResourceTier guards the DB write path against empty strings
+// (a freshly-decoded Project before defaults are applied) and rejects unknown
+// values. The DB CHECK constraint is the final backstop, but defaulting here
+// keeps INSERT/UPDATE callers from having to know the canonical default.
+func normalizeStoredResourceTier(value string) string {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "nano":
+		return "nano"
+	case "small", "":
+		return "small"
+	case "medium":
+		return "medium"
+	case "large":
+		return "large"
+	default:
+		return "small"
+	}
 }
 
 func normalizeStoredPackageManager(value string) string {

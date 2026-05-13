@@ -48,6 +48,13 @@ export interface PlatformInfo {
   dns_target_ip: string;
 }
 
+/**
+ * Resource tier identifiers — mirrors `internal/build/tiers.go`. Backend is the
+ * source of truth; the table in `lib/deployment-helpers.ts` carries the
+ * matching UI metadata (RAM / CPU / labels) and must stay in sync.
+ */
+export type ResourceTier = "nano" | "small" | "medium" | "large";
+
 export interface Project {
   id: string;
   name: string;
@@ -68,6 +75,7 @@ export interface Project {
   host_network_access: boolean;
   data_volume_enabled: boolean;
   data_mount_path: string;
+  resource_tier: ResourceTier;
   status: "active" | "paused" | "deleted";
   latest_deployment_id: string | null;
   latest_deployment_status: string | null;
@@ -100,6 +108,7 @@ export interface CreateProjectPayload {
   host_network_access?: boolean;
   data_volume_enabled?: boolean;
   data_mount_path?: string;
+  resource_tier?: ResourceTier;
   auto_build_enabled?: boolean;
   auto_production_enabled?: boolean;
 }

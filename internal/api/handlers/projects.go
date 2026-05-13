@@ -54,6 +54,7 @@ type createProjectRequest struct {
 	HostNetworkAccess     bool   `json:"host_network_access"`
 	DataVolumeEnabled     bool   `json:"data_volume_enabled"`
 	DataMountPath         string `json:"data_mount_path"`
+	ResourceTier          string `json:"resource_tier"`
 	AutoBuildEnabled      *bool  `json:"auto_build_enabled"`
 	AutoProductionEnabled bool   `json:"auto_production_enabled"`
 }
@@ -72,6 +73,7 @@ type updateProjectRequest struct {
 	HostNetworkAccess *bool   `json:"host_network_access,omitempty"`
 	DataVolumeEnabled *bool   `json:"data_volume_enabled,omitempty"`
 	DataMountPath     *string `json:"data_mount_path,omitempty"`
+	ResourceTier      *string `json:"resource_tier,omitempty"`
 }
 
 // validateProjectPort rejects obviously-invalid ports. 0 is treated as "unset"
@@ -147,6 +149,15 @@ func (h *ProjectHandler) Create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	resourceTier := strings.ToLower(strings.TrimSpace(req.ResourceTier))
+	if resourceTier == "" {
+		resourceTier = build.SmallTier
+	}
+	if !build.IsValidTier(resourceTier) {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "resource_tier must be one of: nano, small, medium, large"})
+		return
+	}
+
 	organizationID, err := h.resolveCreateOrganizationID(claims.UserID, strings.TrimSpace(req.OrganizationID))
 	if err != nil {
 		status := http.StatusInternalServerError
@@ -175,6 +186,7 @@ func (h *ProjectHandler) Create(w http.ResponseWriter, r *http.Request) {
 		HostNetworkAccess: req.HostNetworkAccess,
 		DataVolumeEnabled: req.DataVolumeEnabled,
 		DataMountPath:     req.DataMountPath,
+		ResourceTier:      resourceTier,
 		Status:            "active",
 	}
 	if project.DataMountPath == "" {
@@ -328,6 +340,14 @@ func (h *ProjectHandler) Update(w http.ResponseWriter, r *http.Request) {
 		}
 		project.DataMountPath = mp
 	}
+	if req.ResourceTier != nil {
+		tier := strings.ToLower(strings.TrimSpace(*req.ResourceTier))
+		if !build.IsValidTier(tier) {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "resource_tier must be one of: nano, small, medium, large"})
+			return
+		}
+		project.ResourceTier = tier
+	}
 	if err := projectconfig.ApplyProjectDefaults(project); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 		return
@@ -358,6 +378,7 @@ func (h *ProjectHandler) Update(w http.ResponseWriter, r *http.Request) {
 			"framework":       project.Framework,
 			"package_manager": project.PackageManager,
 			"root_directory":  project.RootDirectory,
+			"resource_tier":   project.ResourceTier,
 		},
 	})
 }

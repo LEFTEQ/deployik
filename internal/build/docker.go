@@ -84,32 +84,60 @@ func (d *DockerClient) ResolveHostPath(ctx context.Context, containerPath string
 //   - isolation from whatever the host's default buildx config is.
 const BuildxBuilderName = "deployik-builder"
 
+// BuildxBuilderMemory caps the BuildKit container itself so a single runaway
+// build cannot consume more than this much RAM regardless of per-build
+// --memory flags. This is the platform-wide ceiling: per-build caps from the
+// ResourceTier table (Nano 1.5 GB → Large 4 GB) must fit inside it.
+const (
+	BuildxBuilderMemory = "6g"
+	BuildxBuilderCPUs   = "4.0"
+)
+
 // EnsureBuildxBuilder makes sure the `deployik-builder` named buildx builder
-// exists and is started. Safe to call repeatedly (idempotent).
+// exists and is started, then caps its container at BuildxBuilderMemory /
+// BuildxBuilderCPUs so it cannot OOM-kill neighbor stacks on the VPS. Safe to
+// call repeatedly (idempotent).
 //
 // Lifecycle:
 //   - On first call, creates the builder with the docker-container driver and
 //     bootstraps the BuildKit container.
 //   - On subsequent calls, `buildx inspect --bootstrap` is a no-op when the
 //     builder is already running, and will start it if it was stopped.
+//   - After bootstrap, `docker update` re-applies the memory/CPU caps on the
+//     underlying container (the container name is `buildx_buildkit_<name>0`).
+//     This is the only way to bound BuildKit itself — `buildx create --driver-opt`
+//     does not expose memory/CPU limits.
 //
 // Non-fatal on failure: the caller logs a warning and continues; BuildImage
 // will surface a clearer error on the next build if the builder truly isn't
-// available.
+// available. The `docker update` cap step is best-effort too — a missing cap
+// is preferable to a missing builder, so we never fail boot just because
+// resource pinning didn't take.
 func (d *DockerClient) EnsureBuildxBuilder(ctx context.Context) error {
 	// Fast path: builder already exists → bootstrap starts it if stopped.
-	if err := exec.CommandContext(ctx, "docker", "buildx", "inspect", "--bootstrap", BuildxBuilderName).Run(); err == nil {
-		return nil
+	if err := exec.CommandContext(ctx, "docker", "buildx", "inspect", "--bootstrap", BuildxBuilderName).Run(); err != nil {
+		create := exec.CommandContext(ctx, "docker", "buildx", "create",
+			"--name", BuildxBuilderName,
+			"--driver", "docker-container",
+			"--bootstrap",
+		)
+		out, err := create.CombinedOutput()
+		if err != nil {
+			return fmt.Errorf("create buildx builder %s: %w: %s", BuildxBuilderName, err, strings.TrimSpace(string(out)))
+		}
 	}
 
-	create := exec.CommandContext(ctx, "docker", "buildx", "create",
-		"--name", BuildxBuilderName,
-		"--driver", "docker-container",
-		"--bootstrap",
-	)
-	out, err := create.CombinedOutput()
-	if err != nil {
-		return fmt.Errorf("create buildx builder %s: %w: %s", BuildxBuilderName, err, strings.TrimSpace(string(out)))
+	// Cap the BuildKit container's resource ceiling. Buildx names the
+	// underlying container `buildx_buildkit_<builder-name>0`.
+	builderContainer := "buildx_buildkit_" + BuildxBuilderName + "0"
+	if out, err := exec.CommandContext(ctx, "docker", "update",
+		"--memory="+BuildxBuilderMemory,
+		"--memory-swap="+BuildxBuilderMemory,
+		"--cpus="+BuildxBuilderCPUs,
+		builderContainer,
+	).CombinedOutput(); err != nil {
+		log.Printf("Warning: could not cap buildx builder %s at %s / %s CPUs: %v: %s",
+			builderContainer, BuildxBuilderMemory, BuildxBuilderCPUs, err, strings.TrimSpace(string(out)))
 	}
 	return nil
 }
@@ -123,6 +151,10 @@ type BuildImageOptions struct {
 	// The Dockerfile can source it in a RUN step that uses
 	// `--mount=type=secret,id=deployik-secrets`. Empty → no secret mount.
 	SecretsFile string
+	// Tier governs the per-build --memory / --memory-swap / --cpus flags so
+	// one project's webpack/turbopack pass cannot exhaust the host. Zero
+	// values fall back to the Small tier (2 GB / 2.0 CPUs).
+	Tier ResourceTier
 	// OnLog receives one build-output line at a time (merged stdout+stderr).
 	OnLog func(line string)
 }
@@ -142,11 +174,19 @@ func (d *DockerClient) BuildImage(ctx context.Context, contextDir, dockerfilePat
 		builder = BuildxBuilderName
 	}
 
+	tier := opts.Tier
+	if tier.BuildMemoryMB == 0 {
+		tier = Tiers[SmallTier]
+	}
+
 	args := []string{
 		"buildx", "build",
 		"--builder", builder,
 		"--load",
 		"--progress=plain",
+		fmt.Sprintf("--memory=%dm", tier.BuildMemoryMB),
+		fmt.Sprintf("--memory-swap=%dm", tier.BuildMemoryMB),
+		fmt.Sprintf("--cpus=%.2f", tier.BuildCPUCores),
 		"-t", imageTag,
 		"-f", dockerfileArg,
 	}
@@ -235,7 +275,14 @@ type RunContainerOptions struct {
 	// as ExposedPorts and, when BindHostPort is set, maps to a random host port).
 	// Zero defaults to 3000 — the port our generated Dockerfiles bind to.
 	Port int
+	// Tier carries the per-project runtime caps (memory, CPU, OOM score).
+	// Zero value falls back to the Small tier so a partially-populated caller
+	// never accidentally launches an uncapped container.
+	Tier ResourceTier
 }
+
+// ptrInt64 returns a pointer to v. Used for *int64 fields like PidsLimit.
+func ptrInt64(v int64) *int64 { return &v }
 
 // RunContainer starts a container from an image.
 // Returns the container ID.
@@ -246,13 +293,23 @@ func (d *DockerClient) RunContainer(ctx context.Context, name, imageTag string, 
 	}
 	containerPort := nat.Port(fmt.Sprintf("%d/tcp", port))
 
+	tier := opts.Tier
+	if tier.MemoryMB == 0 {
+		tier = Tiers[SmallTier]
+	}
+	memBytes := tier.MemoryMB * 1024 * 1024
+
 	hostConfig := &container.HostConfig{
 		RestartPolicy: container.RestartPolicy{Name: "unless-stopped"},
 		Resources: container.Resources{
-			Memory:    512 * 1024 * 1024, // 512MB
-			CPUQuota:  100000,            // 1.0 CPU
-			CPUPeriod: 100000,
+			Memory:            memBytes,
+			MemorySwap:        memBytes, // disable swap — fail fast instead of thrashing the host
+			MemoryReservation: memBytes / 2,
+			CPUQuota:          int64(tier.CPUCores * 100000),
+			CPUPeriod:         100000,
+			PidsLimit:         ptrInt64(256),
 		},
+		OomScoreAdj: tier.OomScoreAdj,
 		SecurityOpt: []string{"no-new-privileges=true"},
 		Tmpfs: map[string]string{
 			"/tmp":             "size=64m,noexec,nosuid,nodev",

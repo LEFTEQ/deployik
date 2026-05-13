@@ -6,7 +6,7 @@
 
 set -euo pipefail
 
-API="http://localhost:8080/api"
+API="${API:-http://localhost:8080/api}"
 COOKIE_JAR=$(mktemp)
 trap 'rm -f "$COOKIE_JAR"' EXIT
 

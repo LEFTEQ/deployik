@@ -94,6 +94,7 @@ type Project struct {
 	HostNetworkAccess  bool      `json:"host_network_access"`
 	DataVolumeEnabled  bool      `json:"data_volume_enabled"`
 	DataMountPath      string    `json:"data_mount_path"`
+	ResourceTier       string    `json:"resource_tier"`
 	Status             string    `json:"status"`
 	PreviewPassword    string    `json:"-"` // encrypted, never expose in JSON
 	ProductionPassword string    `json:"-"` // encrypted, never expose in JSON

@@ -100,6 +100,17 @@ func CaptureScreenshot(ctx context.Context, docker *DockerClient, url, deploymen
 				Mounts: []mount.Mount{
 					{Type: mount.TypeBind, Source: bindSource, Target: "/screenshot"},
 				},
+				// Cap Chrome: a hostile or heavyweight page can otherwise pin
+				// a full CPU and grow the rendering process unbounded. Two of
+				// these can run concurrently (screenshotSemaphore), so total
+				// fan-out is bounded at 1 GB / 2.0 CPUs.
+				Resources: container.Resources{
+					Memory:     512 * 1024 * 1024,
+					MemorySwap: 512 * 1024 * 1024,
+					CPUQuota:   100000,
+					CPUPeriod:  100000,
+					PidsLimit:  ptrInt64(128),
+				},
 				AutoRemove: true,
 			},
 			nil, nil, containerName,
