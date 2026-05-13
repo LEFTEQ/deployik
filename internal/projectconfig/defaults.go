@@ -9,10 +9,11 @@ import (
 )
 
 const (
-	FrameworkNextJS = "nextjs"
-	FrameworkVite   = "vite"
-	FrameworkAstro  = "astro"
-	FrameworkStatic = "static"
+	FrameworkNextJS  = "nextjs"
+	FrameworkVite    = "vite"
+	FrameworkAstro   = "astro"
+	FrameworkStatic  = "static"
+	FrameworkNodeAPI = "node-api"
 )
 
 const (
@@ -111,6 +112,8 @@ func NormalizeFramework(value string) string {
 		return FrameworkAstro
 	case FrameworkStatic:
 		return FrameworkStatic
+	case FrameworkNodeAPI:
+		return FrameworkNodeAPI
 	default:
 		return FrameworkStatic
 	}

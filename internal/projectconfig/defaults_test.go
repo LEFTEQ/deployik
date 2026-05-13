@@ -152,3 +152,18 @@ func TestResolveRejectsEscapingProjectPaths(t *testing.T) {
 		t.Fatal("Resolve should reject escaping paths")
 	}
 }
+
+func TestNormalizeFrameworkNodeAPI(t *testing.T) {
+	t.Parallel()
+
+	cases := map[string]string{
+		"node-api":  FrameworkNodeAPI,
+		"NODE-API":  FrameworkNodeAPI,
+		" node-api": FrameworkNodeAPI,
+	}
+	for input, want := range cases {
+		if got := NormalizeFramework(input); got != want {
+			t.Errorf("NormalizeFramework(%q) = %q, want %q", input, got, want)
+		}
+	}
+}
