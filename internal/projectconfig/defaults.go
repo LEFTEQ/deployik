@@ -27,6 +27,7 @@ const (
 const (
 	RuntimeNextJSStandalone = "nextjs-standalone"
 	RuntimeStatic           = "static"
+	RuntimeNodeAPI          = "node-api"
 	defaultNodeVersion      = "22"
 )
 
@@ -120,10 +121,14 @@ func NormalizeFramework(value string) string {
 }
 
 func RuntimeForFramework(framework string) string {
-	if NormalizeFramework(framework) == FrameworkNextJS {
+	switch NormalizeFramework(framework) {
+	case FrameworkNextJS:
 		return RuntimeNextJSStandalone
+	case FrameworkNodeAPI:
+		return RuntimeNodeAPI
+	default:
+		return RuntimeStatic
 	}
-	return RuntimeStatic
 }
 
 func NormalizePackageManager(value string) string {

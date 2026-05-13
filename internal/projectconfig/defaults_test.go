@@ -167,3 +167,14 @@ func TestNormalizeFrameworkNodeAPI(t *testing.T) {
 		}
 	}
 }
+
+func TestRuntimeForFrameworkNodeAPI(t *testing.T) {
+	t.Parallel()
+
+	if got := RuntimeForFramework(FrameworkNodeAPI); got != RuntimeNodeAPI {
+		t.Errorf("RuntimeForFramework(node-api) = %q, want %q", got, RuntimeNodeAPI)
+	}
+	if got := RuntimeForFramework(FrameworkVite); got != RuntimeStatic {
+		t.Errorf("RuntimeForFramework(vite) = %q, want %q (regression check)", got, RuntimeStatic)
+	}
+}
