@@ -40,6 +40,8 @@ type Settings struct {
 	InstallCommand  string
 	BuildCommand    string
 	NodeVersion     string
+	StartCommand    string
+	HealthPath      string
 }
 
 func ApplyProjectDefaults(project *db.Project) error {
@@ -55,6 +57,8 @@ func ApplyProjectDefaults(project *db.Project) error {
 	project.InstallCommand = settings.InstallCommand
 	project.BuildCommand = settings.BuildCommand
 	project.NodeVersion = settings.NodeVersion
+	project.StartCommand = settings.StartCommand
+	project.HealthPath = settings.HealthPath
 	return nil
 }
 
@@ -91,15 +95,29 @@ func Resolve(project *db.Project) (Settings, error) {
 		nodeVersion = defaultNodeVersion
 	}
 
+	runtime := RuntimeForFramework(framework)
+
+	startCommand := strings.TrimSpace(project.StartCommand)
+	if startCommand == "" {
+		startCommand = DefaultStartCommand(runtime)
+	}
+
+	healthPath := strings.TrimSpace(project.HealthPath)
+	if healthPath == "" {
+		healthPath = DefaultHealthPath(runtime)
+	}
+
 	return Settings{
 		Framework:       framework,
 		PackageManager:  packageManager,
-		Runtime:         RuntimeForFramework(framework),
+		Runtime:         runtime,
 		RootDirectory:   rootDirectory,
 		OutputDirectory: outputDirectory,
 		InstallCommand:  installCommand,
 		BuildCommand:    buildCommand,
 		NodeVersion:     nodeVersion,
+		StartCommand:    startCommand,
+		HealthPath:      healthPath,
 	}, nil
 }
 

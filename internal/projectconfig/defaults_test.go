@@ -208,3 +208,46 @@ func TestDefaultHealthPathByRuntime(t *testing.T) {
 		}
 	}
 }
+
+func TestResolveNodeAPIDefaults(t *testing.T) {
+	t.Parallel()
+
+	settings, err := Resolve(&db.Project{Framework: "node-api"})
+	if err != nil {
+		t.Fatalf("Resolve: %v", err)
+	}
+	if settings.Framework != FrameworkNodeAPI {
+		t.Errorf("Framework = %q", settings.Framework)
+	}
+	if settings.Runtime != RuntimeNodeAPI {
+		t.Errorf("Runtime = %q", settings.Runtime)
+	}
+	if settings.OutputDirectory != "dist" {
+		t.Errorf("OutputDirectory = %q, want dist", settings.OutputDirectory)
+	}
+	if settings.StartCommand != "node dist/main.js" {
+		t.Errorf("StartCommand = %q, want default", settings.StartCommand)
+	}
+	if settings.HealthPath != "/health" {
+		t.Errorf("HealthPath = %q, want /health", settings.HealthPath)
+	}
+}
+
+func TestResolveNodeAPIUserOverrides(t *testing.T) {
+	t.Parallel()
+
+	settings, err := Resolve(&db.Project{
+		Framework:    "node-api",
+		StartCommand: "bun run dist/server.js",
+		HealthPath:   "/api/healthz",
+	})
+	if err != nil {
+		t.Fatalf("Resolve: %v", err)
+	}
+	if settings.StartCommand != "bun run dist/server.js" {
+		t.Errorf("StartCommand = %q (user override should win)", settings.StartCommand)
+	}
+	if settings.HealthPath != "/api/healthz" {
+		t.Errorf("HealthPath = %q (user override should win)", settings.HealthPath)
+	}
+}
