@@ -95,6 +95,11 @@ type Project struct {
 	DataVolumeEnabled  bool      `json:"data_volume_enabled"`
 	DataMountPath      string    `json:"data_mount_path"`
 	ResourceTier       string    `json:"resource_tier"`
+	// StartCommand and HealthPath drive the generated node-api Dockerfile's
+	// CMD and HEALTHCHECK. Empty values mean "use the runtime default" — see
+	// projectconfig.DefaultStartCommand and DefaultHealthPath.
+	StartCommand       string    `json:"start_command"`
+	HealthPath         string    `json:"health_path"`
 	Status             string    `json:"status"`
 	PreviewPassword    string    `json:"-"` // encrypted, never expose in JSON
 	ProductionPassword string    `json:"-"` // encrypted, never expose in JSON

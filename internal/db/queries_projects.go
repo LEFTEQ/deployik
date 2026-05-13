@@ -40,7 +40,7 @@ func (db *DB) ListProjects(userID, organizationID string) ([]Project, error) {
 		       p.status, COALESCE(p.preview_password, ''), COALESCE(p.production_password, ''),
 		       p.created_at, p.updated_at,
 		       p.host_network_access, p.data_volume_enabled, COALESCE(p.data_mount_path, '/app/data'),
-		       p.port, COALESCE(p.resource_tier, 'small')
+		       p.port, COALESCE(p.resource_tier, 'small'), p.start_command, p.health_path
 		FROM projects p
 		LEFT JOIN organizations o ON o.id = p.organization_id
 		WHERE p.status != 'deleted'
@@ -74,7 +74,7 @@ func (db *DB) ListProjects(userID, organizationID string) ([]Project, error) {
 			&p.Status, &p.PreviewPassword, &p.ProductionPassword,
 			&p.CreatedAt, &p.UpdatedAt,
 			&p.HostNetworkAccess, &p.DataVolumeEnabled, &p.DataMountPath,
-			&p.Port, &p.ResourceTier); err != nil {
+			&p.Port, &p.ResourceTier, &p.StartCommand, &p.HealthPath); err != nil {
 			return nil, fmt.Errorf("scan project: %w", err)
 		}
 		projects = append(projects, p)
@@ -92,7 +92,7 @@ func (db *DB) GetProject(id string) (*Project, error) {
 		        COALESCE(p.preview_password, ''), COALESCE(p.production_password, ''),
 		        p.created_at, p.updated_at,
 		        p.host_network_access, p.data_volume_enabled, COALESCE(p.data_mount_path, '/app/data'),
-		        p.port, COALESCE(p.resource_tier, 'small'),
+		        p.port, COALESCE(p.resource_tier, 'small'), p.start_command, p.health_path,
 		        (SELECT MAX(created_at) FROM deployments
 		         WHERE project_id = p.id AND environment = 'preview' AND status = 'live'),
 		        (SELECT MAX(created_at) FROM deployments
@@ -105,7 +105,7 @@ func (db *DB) GetProject(id string) (*Project, error) {
 		&p.Status, &p.PreviewPassword, &p.ProductionPassword,
 		&p.CreatedAt, &p.UpdatedAt,
 		&p.HostNetworkAccess, &p.DataVolumeEnabled, &p.DataMountPath,
-		&p.Port, &p.ResourceTier,
+		&p.Port, &p.ResourceTier, &p.StartCommand, &p.HealthPath,
 		&previewDeploy, &productionDeploy)
 	if err == sql.ErrNoRows {
 		return nil, nil
@@ -132,7 +132,7 @@ func (db *DB) GetProjectForUser(id, userID string) (*Project, error) {
 		        COALESCE(p.preview_password, ''), COALESCE(p.production_password, ''),
 		        p.created_at, p.updated_at,
 		        p.host_network_access, p.data_volume_enabled, COALESCE(p.data_mount_path, '/app/data'),
-		        p.port, COALESCE(p.resource_tier, 'small'),
+		        p.port, COALESCE(p.resource_tier, 'small'), p.start_command, p.health_path,
 		        (SELECT MAX(created_at) FROM deployments
 		         WHERE project_id = p.id AND environment = 'preview' AND status = 'live'),
 		        (SELECT MAX(created_at) FROM deployments
@@ -153,7 +153,7 @@ func (db *DB) GetProjectForUser(id, userID string) (*Project, error) {
 		&p.Status, &p.PreviewPassword, &p.ProductionPassword,
 		&p.CreatedAt, &p.UpdatedAt,
 		&p.HostNetworkAccess, &p.DataVolumeEnabled, &p.DataMountPath,
-		&p.Port, &p.ResourceTier,
+		&p.Port, &p.ResourceTier, &p.StartCommand, &p.HealthPath,
 		&previewDeploy, &productionDeploy)
 	if err == sql.ErrNoRows {
 		return nil, nil
@@ -178,11 +178,13 @@ func (db *DB) CreateProject(p *Project) error {
 	_, err := db.Exec(
 		`INSERT INTO projects (id, name, github_repo, github_owner, branch, user_id, organization_id, framework, package_manager,
 		                       root_directory, output_directory, build_command, install_command, node_version, status,
-		                       host_network_access, data_volume_enabled, data_mount_path, port, resource_tier)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		                       host_network_access, data_volume_enabled, data_mount_path, port, resource_tier,
+		                       start_command, health_path)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		p.ID, p.Name, p.GithubRepo, p.GithubOwner, p.Branch, p.UserID, nullableString(p.OrganizationID), p.Framework, packageManager,
 		p.RootDirectory, p.OutputDirectory, p.BuildCommand, p.InstallCommand, p.NodeVersion, p.Status,
 		p.HostNetworkAccess, p.DataVolumeEnabled, p.DataMountPath, port, resourceTier,
+		p.StartCommand, p.HealthPath,
 	)
 	if err != nil {
 		return fmt.Errorf("create project: %w", err)
@@ -201,11 +203,13 @@ func (db *DB) UpdateProject(p *Project) error {
 		`UPDATE projects SET name = ?, branch = ?, framework = ?, package_manager = ?, root_directory = ?, output_directory = ?, build_command = ?,
 		        install_command = ?, node_version = ?, status = ?,
 		        host_network_access = ?, data_volume_enabled = ?, data_mount_path = ?, port = ?, resource_tier = ?,
+		        start_command = ?, health_path = ?,
 		        updated_at = datetime('now')
 		 WHERE id = ?`,
 		p.Name, p.Branch, p.Framework, packageManager, p.RootDirectory, p.OutputDirectory, p.BuildCommand, p.InstallCommand,
 		p.NodeVersion, p.Status,
-		p.HostNetworkAccess, p.DataVolumeEnabled, p.DataMountPath, port, resourceTier, p.ID,
+		p.HostNetworkAccess, p.DataVolumeEnabled, p.DataMountPath, port, resourceTier,
+		p.StartCommand, p.HealthPath, p.ID,
 	)
 	if err != nil {
 		return fmt.Errorf("update project: %w", err)
@@ -252,7 +256,7 @@ func (db *DB) ListProjectsWithLatestDeployment(userID, orgID string) ([]ProjectW
 		       p.status, COALESCE(p.preview_password, ''), COALESCE(p.production_password, ''),
 		       p.created_at, p.updated_at,
 		       p.host_network_access, p.data_volume_enabled, COALESCE(p.data_mount_path, '/app/data'),
-		       p.port, COALESCE(p.resource_tier, 'small'),
+		       p.port, COALESCE(p.resource_tier, 'small'), p.start_command, p.health_path,
 		       (SELECT MAX(created_at) FROM deployments
 		        WHERE project_id = p.id AND environment = 'preview' AND status = 'live'),
 		       (SELECT MAX(created_at) FROM deployments
@@ -308,7 +312,7 @@ func (db *DB) ListProjectsWithLatestDeployment(userID, orgID string) ([]ProjectW
 			&p.Status, &p.PreviewPassword, &p.ProductionPassword,
 			&p.CreatedAt, &p.UpdatedAt,
 			&p.HostNetworkAccess, &p.DataVolumeEnabled, &p.DataMountPath,
-			&p.Port, &p.ResourceTier,
+			&p.Port, &p.ResourceTier, &p.StartCommand, &p.HealthPath,
 			&previewDeploy, &productionDeploy,
 			&ldID, &ldStatus, &ldBranch, &ldCommitSHA, &ldCommitMsg, &ldCreatedAt,
 			&ldEnvironment, &ldScreenshotPath,
