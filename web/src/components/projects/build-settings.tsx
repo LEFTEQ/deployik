@@ -13,7 +13,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 
-export type FrameworkPreset = "nextjs" | "vite" | "astro" | "static";
+export type FrameworkPreset = "nextjs" | "vite" | "astro" | "static" | "node-api";
 export type PackageManagerPreset = "auto" | "bun" | "pnpm" | "npm" | "yarn";
 
 export interface BuildSettingsValues {
@@ -25,6 +25,8 @@ export interface BuildSettingsValues {
   buildCommand: string;
   nodeVersion: string;
   port: number;
+  startCommand: string;
+  healthPath: string;
 }
 
 // Default container listen port. Deployik's generated runtimes (Next.js
@@ -64,6 +66,11 @@ const FRAMEWORK_OPTIONS: FrameworkOption[] = [
     value: "static",
     label: "Static Site",
     description: "Generic static build output with a configurable folder.",
+  },
+  {
+    value: "node-api",
+    label: "Node API",
+    description: "NestJS / Express / Hono / Fastify on Node.js with a configurable start command.",
   },
 ];
 
@@ -105,6 +112,8 @@ export function normalizeFrameworkPreset(
       return "astro";
     case "static":
       return "static";
+    case "node-api":
+      return "node-api";
     case "nextjs":
     default:
       return "nextjs";
@@ -183,6 +192,8 @@ export function getFrameworkDefaults(
     ),
     nodeVersion: "22",
     port: DEFAULT_PROJECT_PORT,
+    startCommand: normalized === "node-api" ? "node dist/main.js" : "",
+    healthPath: normalized === "node-api" ? "/health" : "",
   };
 }
 
@@ -220,6 +231,16 @@ export function syncBuildSettingsWithFramework(
         ? nextDefaults.nodeVersion
         : values.nodeVersion,
     port: values.port,
+    startCommand:
+      values.startCommand.trim() === "" ||
+      values.startCommand === currentDefaults.startCommand
+        ? nextDefaults.startCommand
+        : values.startCommand,
+    healthPath:
+      values.healthPath.trim() === "" ||
+      values.healthPath === currentDefaults.healthPath
+        ? nextDefaults.healthPath
+        : values.healthPath,
   };
 }
 
@@ -339,6 +360,8 @@ export function BuildSettingsFields({
               buildCommand: defaults.buildCommand,
               nodeVersion: defaults.nodeVersion,
               port: DEFAULT_PROJECT_PORT,
+              startCommand: defaults.startCommand,
+              healthPath: defaults.healthPath,
             })
           }
         >
@@ -479,6 +502,37 @@ export function BuildSettingsFields({
             serves on a different port (e.g. nginx on 80, Flask on 5000).
           </p>
         </div>
+
+        {selectedFramework === "node-api" ? (
+          <div className="space-y-2">
+            <Label>Start Command</Label>
+            <Input
+              value={value.startCommand}
+              onChange={(event) => patch({ startCommand: event.target.value })}
+              placeholder={defaults.startCommand}
+            />
+            <p className="text-xs text-muted-foreground">
+              How the container starts. Chain a migration (e.g.{" "}
+              <code>prisma migrate deploy &amp;&amp; node dist/main.js</code>)
+              when you need one.
+            </p>
+          </div>
+        ) : null}
+
+        {selectedFramework === "node-api" ? (
+          <div className="space-y-2">
+            <Label>Health Check Path</Label>
+            <Input
+              value={value.healthPath}
+              onChange={(event) => patch({ healthPath: event.target.value })}
+              placeholder={defaults.healthPath}
+            />
+            <p className="text-xs text-muted-foreground">
+              Path the container's HEALTHCHECK probes. Common: <code>/health</code>,{" "}
+              <code>/healthz</code>, <code>/api/health</code>.
+            </p>
+          </div>
+        ) : null}
       </div>
 
       <p className="text-xs text-muted-foreground">

@@ -105,6 +105,8 @@ function BuildSettingsSection({
     installCommand: project.install_command,
     nodeVersion: project.node_version,
     port: project.port || 3000,
+    startCommand: "",
+    healthPath: "",
   });
 
   const updateMutation = useMutation({
