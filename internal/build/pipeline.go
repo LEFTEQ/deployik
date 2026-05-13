@@ -245,6 +245,8 @@ func (p *Pipeline) Deploy(ctx context.Context, project *db.Project, deployment *
 		BuildEnvVars:    buildEnvVars,
 		ProjectID:       project.ID,
 		Port:            project.Port,
+		StartCommand:    settings.StartCommand,
+		HealthPath:      settings.HealthPath,
 	})
 	if err != nil {
 		fail(err, "Dockerfile generation failed")
