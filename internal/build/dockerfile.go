@@ -38,6 +38,13 @@ type DockerfileData struct {
 	// `ENV PORT=<port>`, `EXPOSE <port>`, HEALTHCHECK URL, and `serve -l` port.
 	// Zero defaults to 3000 (Deployik's historical default).
 	Port int
+	// StartCommand is the container CMD for the node-api runtime. Ignored by
+	// nextjs-standalone and static runtimes (they bake CMD directly). When
+	// empty the runtime's DefaultStartCommand is substituted.
+	StartCommand string
+	// HealthPath is the HTTP path probed by the generated HEALTHCHECK. When
+	// empty the runtime's DefaultHealthPath ("/" or "/health") is substituted.
+	HealthPath string
 }
 
 type EnvVar struct {
