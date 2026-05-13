@@ -13,6 +13,7 @@ import (
 	"github.com/LEFTEQ/lovinka-deployik/internal/crypto"
 	"github.com/LEFTEQ/lovinka-deployik/internal/db"
 	"github.com/LEFTEQ/lovinka-deployik/internal/github"
+	"github.com/LEFTEQ/lovinka-deployik/internal/projectconfig"
 )
 
 // setupProjectTestDB creates an in-memory DB, migrates it, creates a test
@@ -504,5 +505,170 @@ func TestProjectCreate_CanDisableAutoBuildProvisioning(t *testing.T) {
 	}
 	if deployments[0].Environment != "preview" {
 		t.Fatalf("initial deployment environment = %q, want preview", deployments[0].Environment)
+	}
+}
+
+// TestCreateProjectAcceptsNodeAPIFields verifies that POST /api/projects accepts
+// `start_command` and `health_path` for the node-api framework and persists them
+// verbatim (rather than letting the projectconfig defaults overwrite them).
+func TestCreateProjectAcceptsNodeAPIFields(t *testing.T) {
+	// Serve a fake GitHub API that accepts webhook creation.
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPost {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusCreated)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{
+				"id":     67890,
+				"active": true,
+			})
+			return
+		}
+		http.NotFound(w, r)
+	}))
+	defer ts.Close()
+
+	restore := github.SetTestAPIBase(ts.URL)
+	defer restore()
+
+	database, enc, user := setupProjectTestDB(t)
+	pipeline := &build.Pipeline{DB: database, Encryptor: enc, EnqueueOnly: true}
+	h := &ProjectHandler{
+		DB:         database,
+		Encryptor:  enc,
+		Audit:      &audit.Recorder{DB: database},
+		Pipeline:   pipeline,
+		WebhookURL: ts.URL + "/webhook",
+	}
+
+	req := makeCreateProjectReq(t, user.ID, map[string]interface{}{
+		"name":          "node-api-app",
+		"github_repo":   "my-repo",
+		"github_owner":  "testuser",
+		"branch":        "main",
+		"framework":     projectconfig.FrameworkNodeAPI,
+		"start_command": "bun run dist/server.js",
+		"health_path":   "/api/health",
+		"port":          4321,
+	})
+	w := httptest.NewRecorder()
+	h.Create(w, req)
+
+	if w.Code != http.StatusCreated {
+		t.Fatalf("expected 201, got %d; body: %s", w.Code, w.Body.String())
+	}
+
+	var project db.Project
+	if err := json.NewDecoder(w.Body).Decode(&project); err != nil {
+		t.Fatalf("decode project response: %v", err)
+	}
+
+	if project.Framework != projectconfig.FrameworkNodeAPI {
+		t.Errorf("framework = %q, want %q", project.Framework, projectconfig.FrameworkNodeAPI)
+	}
+	if project.StartCommand != "bun run dist/server.js" {
+		t.Errorf("start_command = %q, want %q", project.StartCommand, "bun run dist/server.js")
+	}
+	if project.HealthPath != "/api/health" {
+		t.Errorf("health_path = %q, want %q", project.HealthPath, "/api/health")
+	}
+	if project.Port != 4321 {
+		t.Errorf("port = %d, want 4321", project.Port)
+	}
+
+	// And the values must be persisted, not just echoed in the response body.
+	stored, err := database.GetProject(project.ID)
+	if err != nil {
+		t.Fatalf("load persisted project: %v", err)
+	}
+	if stored == nil {
+		t.Fatal("expected persisted project, got nil")
+	}
+	if stored.StartCommand != "bun run dist/server.js" {
+		t.Errorf("persisted start_command = %q, want %q", stored.StartCommand, "bun run dist/server.js")
+	}
+	if stored.HealthPath != "/api/health" {
+		t.Errorf("persisted health_path = %q, want %q", stored.HealthPath, "/api/health")
+	}
+}
+
+// TestUpdateProjectAcceptsNodeAPIFields verifies that PATCH /api/projects/{id}
+// accepts and persists `start_command` and `health_path` on an existing project.
+func TestUpdateProjectAcceptsNodeAPIFields(t *testing.T) {
+	database, _, user := setupProjectTestDB(t)
+
+	// Seed a project owned by the authed user, with node-api framework and
+	// initial start_command/health_path values that we expect the PATCH to
+	// overwrite.
+	org, err := database.EnsurePersonalOrganization(user)
+	if err != nil {
+		t.Fatalf("ensure personal org: %v", err)
+	}
+	project := &db.Project{
+		OrganizationID: org.ID,
+		Name:           "existing-node-api",
+		GithubRepo:     "my-repo",
+		GithubOwner:    "testuser",
+		Branch:         "main",
+		UserID:         user.ID,
+		Framework:      projectconfig.FrameworkNodeAPI,
+		StartCommand:   "node dist/main.js",
+		HealthPath:     "/health",
+		Status:         "active",
+	}
+	if err := projectconfig.ApplyProjectDefaults(project); err != nil {
+		t.Fatalf("apply defaults: %v", err)
+	}
+	if err := database.CreateProject(project); err != nil {
+		t.Fatalf("create project: %v", err)
+	}
+
+	h := &ProjectHandler{
+		DB:    database,
+		Audit: &audit.Recorder{DB: database},
+	}
+
+	body, err := json.Marshal(map[string]interface{}{
+		"start_command": "node bin/server.js",
+		"health_path":   "/healthz",
+	})
+	if err != nil {
+		t.Fatalf("marshal body: %v", err)
+	}
+	req := httptest.NewRequest(http.MethodPatch, "/api/projects/"+project.ID, bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	ctx := auth.WithClaims(req.Context(), &auth.Claims{UserID: user.ID})
+	ctx = withChiID(ctx, "id", project.ID)
+	req = req.WithContext(ctx)
+
+	w := httptest.NewRecorder()
+	h.Update(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d; body: %s", w.Code, w.Body.String())
+	}
+
+	var updated db.Project
+	if err := json.NewDecoder(w.Body).Decode(&updated); err != nil {
+		t.Fatalf("decode updated project: %v", err)
+	}
+	if updated.StartCommand != "node bin/server.js" {
+		t.Errorf("response start_command = %q, want %q", updated.StartCommand, "node bin/server.js")
+	}
+	if updated.HealthPath != "/healthz" {
+		t.Errorf("response health_path = %q, want %q", updated.HealthPath, "/healthz")
+	}
+
+	stored, err := database.GetProject(project.ID)
+	if err != nil {
+		t.Fatalf("load persisted project: %v", err)
+	}
+	if stored == nil {
+		t.Fatal("expected persisted project, got nil")
+	}
+	if stored.StartCommand != "node bin/server.js" {
+		t.Errorf("persisted start_command = %q, want %q", stored.StartCommand, "node bin/server.js")
+	}
+	if stored.HealthPath != "/healthz" {
+		t.Errorf("persisted health_path = %q, want %q", stored.HealthPath, "/healthz")
 	}
 }

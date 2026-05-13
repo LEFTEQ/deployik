@@ -54,6 +54,8 @@ type createProjectRequest struct {
 	HostNetworkAccess     bool   `json:"host_network_access"`
 	DataVolumeEnabled     bool   `json:"data_volume_enabled"`
 	DataMountPath         string `json:"data_mount_path"`
+	StartCommand          string `json:"start_command"`
+	HealthPath            string `json:"health_path"`
 	ResourceTier          string `json:"resource_tier"`
 	AutoBuildEnabled      *bool  `json:"auto_build_enabled"`
 	AutoProductionEnabled bool   `json:"auto_production_enabled"`
@@ -73,6 +75,8 @@ type updateProjectRequest struct {
 	HostNetworkAccess *bool   `json:"host_network_access,omitempty"`
 	DataVolumeEnabled *bool   `json:"data_volume_enabled,omitempty"`
 	DataMountPath     *string `json:"data_mount_path,omitempty"`
+	StartCommand      *string `json:"start_command,omitempty"`
+	HealthPath        *string `json:"health_path,omitempty"`
 	ResourceTier      *string `json:"resource_tier,omitempty"`
 }
 
@@ -186,6 +190,8 @@ func (h *ProjectHandler) Create(w http.ResponseWriter, r *http.Request) {
 		HostNetworkAccess: req.HostNetworkAccess,
 		DataVolumeEnabled: req.DataVolumeEnabled,
 		DataMountPath:     req.DataMountPath,
+		StartCommand:      req.StartCommand,
+		HealthPath:        req.HealthPath,
 		ResourceTier:      resourceTier,
 		Status:            "active",
 	}
@@ -339,6 +345,12 @@ func (h *ProjectHandler) Update(w http.ResponseWriter, r *http.Request) {
 			mp = "/app/data"
 		}
 		project.DataMountPath = mp
+	}
+	if req.StartCommand != nil {
+		project.StartCommand = *req.StartCommand
+	}
+	if req.HealthPath != nil {
+		project.HealthPath = *req.HealthPath
 	}
 	if req.ResourceTier != nil {
 		tier := strings.ToLower(strings.TrimSpace(*req.ResourceTier))
