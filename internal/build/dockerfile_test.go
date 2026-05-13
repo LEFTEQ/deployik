@@ -383,6 +383,47 @@ func TestGenerateDockerfileSupportsNodeAPIRuntime(t *testing.T) {
 	)
 }
 
+func TestGenerateDockerfileNodeAPIUserOverrides(t *testing.T) {
+	t.Parallel()
+
+	repoDir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(repoDir, "package.json"), []byte(`{"name":"api"}`), 0644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(repoDir, "bun.lock"), []byte("# bun lockfile v1\n"), 0644); err != nil {
+		t.Fatalf("WriteFile bun.lock: %v", err)
+	}
+
+	dockerfilePath, err := GenerateDockerfile(repoDir, DockerfileData{
+		PackageManager:  projectconfig.PackageManagerBun,
+		NodeVersion:     "22",
+		OutputDirectory: "build",
+		Runtime:         projectconfig.RuntimeNodeAPI,
+		BuildCommand:    "bun run build",
+		InstallCommand:  "bun install",
+		StartCommand:    "bun run dist/server.js",
+		HealthPath:      "/api/healthz",
+		Port:            4321,
+	})
+	if err != nil {
+		t.Fatalf("GenerateDockerfile: %v", err)
+	}
+
+	content, err := os.ReadFile(dockerfilePath)
+	if err != nil {
+		t.Fatalf("ReadFile: %v", err)
+	}
+	got := string(content)
+
+	requireAll(t, got,
+		"EXPOSE 4321",
+		"ENV PORT=4321",
+		"/api/healthz",
+		`CMD ["sh", "-c", "bun run dist/server.js"]`,
+		"COPY --from=builder /app/build ./dist",
+	)
+}
+
 // requireAll fails the test if `content` is missing any of the expected
 // substrings, reporting all misses in one shot instead of one per t.Fatalf.
 func requireAll(t *testing.T, content string, needles ...string) {
