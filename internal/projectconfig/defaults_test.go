@@ -178,3 +178,33 @@ func TestRuntimeForFrameworkNodeAPI(t *testing.T) {
 		t.Errorf("RuntimeForFramework(vite) = %q, want %q (regression check)", got, RuntimeStatic)
 	}
 }
+
+func TestDefaultStartCommandByRuntime(t *testing.T) {
+	t.Parallel()
+
+	cases := map[string]string{
+		RuntimeNodeAPI:          "node dist/main.js",
+		RuntimeNextJSStandalone: "",
+		RuntimeStatic:           "",
+	}
+	for runtime, want := range cases {
+		if got := DefaultStartCommand(runtime); got != want {
+			t.Errorf("DefaultStartCommand(%q) = %q, want %q", runtime, got, want)
+		}
+	}
+}
+
+func TestDefaultHealthPathByRuntime(t *testing.T) {
+	t.Parallel()
+
+	cases := map[string]string{
+		RuntimeNodeAPI:          "/health",
+		RuntimeNextJSStandalone: "/",
+		RuntimeStatic:           "/",
+	}
+	for runtime, want := range cases {
+		if got := DefaultHealthPath(runtime); got != want {
+			t.Errorf("DefaultHealthPath(%q) = %q, want %q", runtime, got, want)
+		}
+	}
+}

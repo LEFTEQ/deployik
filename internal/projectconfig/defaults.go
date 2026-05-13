@@ -185,6 +185,26 @@ func DefaultOutputDirectory(framework string) string {
 	return "dist"
 }
 
+// DefaultStartCommand returns the runtime's default container start command.
+// Only the node-api runtime has a non-empty default; the Next.js standalone
+// and static runtimes bake their CMD into the generated Dockerfile directly.
+func DefaultStartCommand(runtime string) string {
+	if runtime == RuntimeNodeAPI {
+		return "node dist/main.js"
+	}
+	return ""
+}
+
+// DefaultHealthPath returns the HTTP path the runtime's HEALTHCHECK probes.
+// node-api defaults to /health (NestJS / Hono / Fastify convention); static
+// and Next.js standalone probe the root document.
+func DefaultHealthPath(runtime string) string {
+	if runtime == RuntimeNodeAPI {
+		return "/health"
+	}
+	return "/"
+}
+
 func DefaultNodeVersion() string {
 	return defaultNodeVersion
 }
