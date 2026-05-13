@@ -274,11 +274,11 @@ func generateNodeAPIDockerfile(data DockerfileData) string {
 	port := effectivePort(data.Port)
 	healthPath := data.HealthPath
 	if healthPath == "" {
-		healthPath = "/health"
+		healthPath = projectconfig.DefaultHealthPath(projectconfig.RuntimeNodeAPI)
 	}
 	startCommand := data.StartCommand
 	if startCommand == "" {
-		startCommand = "node dist/main.js"
+		startCommand = projectconfig.DefaultStartCommand(projectconfig.RuntimeNodeAPI)
 	}
 
 	b.WriteString("# syntax=docker/dockerfile:1.7\n")
@@ -325,6 +325,7 @@ func generateNodeAPIDockerfile(data DockerfileData) string {
 
 	b.WriteString(fmt.Sprintf("EXPOSE %d\n", port))
 	b.WriteString(fmt.Sprintf("ENV PORT=%d\n", port))
+	b.WriteString("ENV HOSTNAME=\"0.0.0.0\"\n")
 	b.WriteString("HEALTHCHECK --interval=30s --timeout=3s --start-period=15s --retries=3 \\\n")
 	b.WriteString(fmt.Sprintf("  CMD node -e \"require('http').get('http://localhost:%d%s',(r)=>{process.exit(r.statusCode<400?0:1)}).on('error',()=>process.exit(1))\"\n", port, healthPath))
 	b.WriteString(fmt.Sprintf("CMD [\"sh\", \"-c\", %s]\n", strconv.Quote(startCommand)))

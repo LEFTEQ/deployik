@@ -376,6 +376,7 @@ func TestGenerateDockerfileSupportsNodeAPIRuntime(t *testing.T) {
 		"COPY --from=deps /app/node_modules ./node_modules",
 		"EXPOSE 3000",
 		"ENV PORT=3000",
+		"ENV HOSTNAME=\"0.0.0.0\"",
 		"HEALTHCHECK",
 		"/health",
 		`CMD ["sh", "-c", "node dist/main.js"]`,
