@@ -22,7 +22,13 @@ Self-hosted deployment platform for the [Lovinka](https://example.com) VPS. A li
 - **Apache Support** -- Generates Apache VirtualHost configs alongside nginx, with wildcard SSL cert support
 - **Single Binary** -- Go backend embeds the React SPA via `go:embed`, ships as one container
 - **Safe SQLite Backups** -- Companion `deployik-backup` binary creates verified live snapshots for systemd/offsite backup jobs
-- **AI Control via MCP** -- The `mcp/` package ships an MCP server (`@lovinka/deployik-mcp`) that lets Claude, Cursor, or any MCP-aware AI drive Deployik end-to-end through Personal Access Tokens — create projects, set secrets, trigger deployments, debug builds, manage domains — without touching the UI. See `mcp/README.md` for the one-shot install snippet.
+- **AI Control via MCP** -- The `mcp/` package ships an MCP server (`@lovinka/deployik-mcp`) that lets Claude, Cursor, or any MCP-aware AI drive Deployik end-to-end through Personal Access Tokens — create projects, set secrets, trigger deployments, debug builds, manage domains — without touching the UI. One-shot install:
+
+    ```bash
+    npx -y @lovinka/deployik-mcp install
+    ```
+
+    Prompts for your Deployik URL + Personal Access Token, then registers the MCP server in `~/.claude.json` (Claude Code) **and** Claude Desktop (if installed), plus copies the Deployik how-to recipes into `~/.claude/skills/deployik-howto/` so `/skills` surfaces them. Pass `--local` to install per-project instead, or `--yes --token=dpk_…` for non-interactive runs. See `mcp/README.md` for the full reference and advanced options.
 
 ## Tech Stack
 

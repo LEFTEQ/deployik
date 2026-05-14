@@ -119,7 +119,14 @@ async function main(): Promise<void> {
     process.exit(0);
   }
   if (sub && !sub.startsWith("-")) {
-    process.stderr.write(`Unknown subcommand: ${sub}\nRun \`deployik-mcp --help\` for usage.\n`);
+    process.stderr.write(
+      `Unknown subcommand: ${sub} (this build is @lovinka/deployik-mcp ${VERSION}).\n` +
+        `Run \`deployik-mcp --help\` for usage.\n` +
+        `\nIf you expected this subcommand to exist, your npx cache may be serving\n` +
+        `an old version. Force a refresh with one of:\n` +
+        `  npx -y @lovinka/deployik-mcp@latest ${sub}\n` +
+        `  rm -rf ~/.npm/_npx && npx -y @lovinka/deployik-mcp ${sub}\n`,
+    );
     process.exit(2);
   }
 
