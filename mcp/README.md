@@ -2,9 +2,52 @@
 
 MCP server for [Deployik](https://github.com/lefteq/lovinka-deployik). Lets any MCP-aware AI drive Deployik end-to-end — create projects, set secrets, trigger deployments, debug failed builds, manage domains — without touching the dashboard.
 
-## Install (one-shot config)
+## Install (one-shot, no JSON editing)
 
-Add to your MCP client config (Claude Desktop, Claude Code, etc.):
+```bash
+npx -y @lovinka/deployik-mcp install
+```
+
+Prompts for your Deployik URL and Personal Access Token, then:
+
+- Registers the `deployik` MCP server in `~/.claude.json` (Claude Code) **and** the Claude Desktop config (if installed) so every project + every window can use it.
+- Copies the Deployik how-to recipes into `~/.claude/skills/deployik-howto/` so `/skills` surfaces them.
+- Backs up any pre-existing config to `<path>.bak.<timestamp>` before merging.
+
+Restart Claude Code / Claude Desktop afterwards.
+
+### Scopes
+
+```bash
+# Global (recommended) — once installed, available everywhere
+npx -y @lovinka/deployik-mcp install --global
+
+# Local — writes <cwd>/.mcp.json + <cwd>/.claude/skills/
+# MCP only fires when Claude is opened in this folder
+npx -y @lovinka/deployik-mcp install --local
+```
+
+### Non-interactive
+
+```bash
+npx -y @lovinka/deployik-mcp install \
+  --yes \
+  --url=https://deployik.example.com \
+  --token=dpk_xxx
+```
+
+Or set `DEPLOYIK_URL` / `DEPLOYIK_TOKEN` env vars and pass `--yes`.
+
+### Granular subcommands
+
+| Command | What it does |
+|---|---|
+| `install` | MCP registration + skill files (default) |
+| `install-mcp` | MCP registration only |
+| `install-skill` | Skill files only |
+| `uninstall` | Removes the `deployik` MCP entry from every Claude config |
+
+### Manual install (if you prefer to edit JSON yourself)
 
 ```json
 {
@@ -21,9 +64,7 @@ Add to your MCP client config (Claude Desktop, Claude Code, etc.):
 }
 ```
 
-Get a token at **Account → Access tokens** in Deployik. The token is shown once on creation; copy it then.
-
-For a VPN-only deployment, point `DEPLOYIK_URL` at any reachable host (`http://10.x.x.x:8080`, `https://deployik.internal`, etc.).
+Get a token at **Account → Access tokens** in Deployik. The token is shown once on creation; copy it then. For a VPN-only deployment, point `DEPLOYIK_URL` at any reachable host (`http://10.x.x.x:8080`, `https://deployik.internal`, etc.).
 
 ## What it does
 
@@ -34,15 +75,6 @@ For a VPN-only deployment, point `DEPLOYIK_URL` at any reachable host (`http://1
 - **Tiered safety** — destructive operations require `confirm: true`; production-touching operations also require `confirm_name: <project>`. Every destructive call is logged to `.deployik/audit.log`.
 - **Loose English** — `prod` / `live` / `staging` / `dev` / `both` / `everywhere` all normalize to the right scope automatically.
 
-## Also: install the Deployik skill into Claude Code
-
-For Claude Code users who want the recipes available via `/skills` (independent of any MCP tool call):
-
-```bash
-npx -y @lovinka/deployik-mcp install-skill
-```
-
-This copies `SKILL.md` + `click-paths.md` + `api-actions.md` into `~/.claude/skills/deployik-howto/`. Add `--yes` to skip the confirmation prompt. Run it any time you upgrade the package to refresh the recipes.
 
 ## Local development
 
