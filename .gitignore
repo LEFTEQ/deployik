@@ -51,9 +51,10 @@ Thumbs.db
 server
 .playwright-mcp/
 
-# Root MCP/tooling (shadcn MCP server)
+# Root MCP/tooling (shadcn MCP server) — ignore only the ROOT package files,
+# not the ones inside mcp/, web/, etc. The leading `/` anchors to repo root.
 .mcp.json
-node_modules/
-package.json
-package-lock.json
+/node_modules/
+/package.json
+/package-lock.json
 .ai-testing/

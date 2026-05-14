@@ -1,5 +1,6 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
+import { ensureGitignore } from "./binding.js";
 
 export interface CachedProject {
   id: string;
@@ -46,6 +47,12 @@ export function readCache(stateDir: string): CacheData | undefined {
 
 export function writeCache(stateDir: string, data: Omit<CacheData, "version" | "fetchedAt" | "ttlSeconds"> & { ttlSeconds?: number }): CacheData {
   mkdirSync(stateDir, { recursive: true });
+  // Self-heal .gitignore on every cache write — cheap, defensive.
+  try {
+    ensureGitignore(dirname(stateDir));
+  } catch {
+    // best-effort
+  }
   const full: CacheData = {
     version: 1,
     fetchedAt: new Date().toISOString(),

@@ -46,14 +46,28 @@ Test against a local Deployik dev server with `DEPLOYIK_URL=http://127.0.0.1:808
 
 ## Files written on the host
 
-When the AI calls `init_in_repo` from inside a repo:
+Project ↔ repo state is split into two layers — **public** (commit it) and
+**private** (gitignored, per developer):
 
 ```
-.deployik/
-├── binding.json     project + workspace mapping for this repo
-├── cache.json       cached project/workspace list (1h TTL)
-├── token            optional token fallback (mode 0600)
-└── audit.log        destructive-call ledger
+<repo-root>/
+├── .deployik.json    PUBLIC, commit this. Just { project, workspace, $schema }.
+│                     Teammates pulling your repo immediately know which
+│                     Deployik project this folder deploys to.
+└── .deployik/        PRIVATE. Auto-added to .gitignore (and re-added on every
+                      MCP call if a teammate clobbers the .gitignore line).
+    ├── cache.json    Project + workspace list (1h TTL).
+    ├── token         Optional token fallback (mode 0600) — only used if
+                      DEPLOYIK_TOKEN env var is unset.
+    └── audit.log     Append-only ledger of destructive calls (secret values
+                      redacted automatically).
 ```
 
-`.gitignore` is auto-appended with `.deployik/` if missing.
+**Automatic binding**: the first time you run any tool inside a git repo whose
+`origin` remote uniquely matches one Deployik project, the MCP writes
+`.deployik.json` silently — no explicit setup needed. If multiple projects
+deploy the same repo (monorepos with several Deployik apps), the MCP returns a
+friendly "which one?" with the candidate slugs.
+
+**Manual binding** (also fine): "deployik bind this repo to acme-app" → the
+AI calls `init_in_repo({ project: "acme-app" })` and writes `.deployik.json`.

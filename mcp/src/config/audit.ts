@@ -1,5 +1,15 @@
 import { appendFileSync, mkdirSync } from "node:fs";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
+import { ensureGitignore } from "./binding.js";
+
+function reaffirmGitignore(stateDir: string): void {
+  // The state dir lives at <cwd>/.deployik — the cwd is its parent.
+  try {
+    ensureGitignore(dirname(stateDir));
+  } catch {
+    // best-effort; never block the write
+  }
+}
 
 export interface AuditEntry {
   ts: string;
@@ -46,6 +56,7 @@ export function redact(args: Record<string, unknown>): Record<string, unknown> {
 export function appendAudit(stateDir: string, entry: AuditEntry): void {
   try {
     mkdirSync(stateDir, { recursive: true });
+    reaffirmGitignore(stateDir);
     appendFileSync(join(stateDir, AUDIT_FILE), `${JSON.stringify(entry)}\n`, "utf8");
   } catch {
     // audit is best-effort; never throw out of a tool call

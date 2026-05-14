@@ -1,6 +1,6 @@
 import { execSync } from "node:child_process";
 import { DeployikClient } from "../client/http.js";
-import { readBinding } from "../config/binding.js";
+import { readBinding, writeBinding } from "../config/binding.js";
 import { readCache, writeCache, isCacheFresh, type CachedProject } from "../config/cache.js";
 import type { Project, Organization } from "../client/types.js";
 
@@ -51,20 +51,43 @@ export async function resolveProject(ctx: ResolveContext, input: ResolveInput = 
     );
   }
 
-  // 3. binding file
-  const binding = readBinding(ctx.stateDir);
+  // 3. binding file (public .deployik.json or legacy .deployik/binding.json)
+  const binding = readBinding(ctx.stateDir, ctx.cwd);
   if (binding?.project) {
     const match = matchProjectByName(projects, binding.project, binding.workspace);
     if (match) return { project: match, source: "binding" };
   }
 
-  // 4. git remote → cached project lookup
+  // 4. git remote → cached project lookup, AUTO-BIND if a single unambiguous match
   const remote = readGitRemote(ctx.cwd);
   if (remote) {
-    const match = projects.find(
+    const matches = projects.filter(
       (p) => p.github_owner.toLowerCase() === remote.owner.toLowerCase() && p.github_repo.toLowerCase() === remote.repo.toLowerCase(),
     );
-    if (match) return { project: match, source: "git_remote" };
+    if (matches.length === 1) {
+      const match = matches[0]!;
+      // Self-bind: write .deployik.json so the next call resolves via the
+      // binding (cheaper) and so teammates pulling this repo inherit the
+      // mapping. Best-effort — never block resolution.
+      try {
+        writeBinding(ctx.stateDir, ctx.cwd, {
+          project: match.name,
+          workspace: match.organization_name ?? match.organization_id,
+        });
+      } catch {
+        // ignore — fall through to returning the match anyway
+      }
+      return { project: match, source: "git_remote" };
+    }
+    // Multiple repos share the same github_owner/github_repo (e.g. several
+    // projects deploying different apps from one monorepo) — too ambiguous to
+    // auto-bind, but still surface the candidates to help the AI/user.
+    if (matches.length > 1) {
+      throw new ResolveError(
+        `This repo (${remote.owner}/${remote.repo}) maps to ${matches.length} Deployik projects: ${matches.map((m) => m.name).join(", ")}.`,
+        "Pass `project: <slug>` to disambiguate, or run `init_in_repo` with the slug you want bound.",
+      );
+    }
   }
 
   // 5. single project visible

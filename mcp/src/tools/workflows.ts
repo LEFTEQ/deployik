@@ -46,14 +46,15 @@ export function registerWorkflowTools(server: McpServer, ctx: ToolContext): void
         workspace: project.organization_name ?? project.organization_id,
         defaultEnvironment,
       } as const;
-      writeBinding(ctx.stateDir, binding);
+      writeBinding(ctx.stateDir, ctx.cwd, binding);
       const gitignoreUpdated = ensureGitignore(ctx.cwd);
       const lines = [
         `Bound this repo to Deployik project '${project.name}' (workspace: ${binding.workspace}).`,
         `Authenticated as ${user.username} (${user.role}).`,
         `Resolution source: ${source}.`,
+        `Wrote .deployik.json (commit this — it tells teammates which project deploys here).`,
         gitignoreUpdated ? "Added `.deployik/` to .gitignore." : "`.deployik/` already in .gitignore (or no .gitignore at repo root).",
-        `State dir: ${ctx.stateDir}`,
+        `Private state dir: ${ctx.stateDir} (cache, token, audit — never commit).`,
       ];
       return { text: lines.join("\n"), data: { project, binding, gitignoreUpdated } };
     },
