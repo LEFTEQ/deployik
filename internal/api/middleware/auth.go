@@ -100,3 +100,26 @@ func ExtractAccessToken(r *http.Request) string {
 
 	return ""
 }
+
+// AuthenticateToken applies the same JWT-or-PAT decision used by the HTTP
+// Authenticate middleware. WebSocket handlers call it directly because they
+// can't sit behind chi middleware (the upgrade response is written by the
+// handler itself).
+//
+// PATs are still gated to Bearer headers (no cookies / no query) for the same
+// CSRF reason — the caller must pass the `bearer` flag derived from isBearer.
+func AuthenticateToken(database *db.DB, jwtSecret, tokenStr string, bearer bool) (*auth.Claims, error) {
+	if tokenStr == "" {
+		return nil, errors.New("empty token")
+	}
+	if strings.HasPrefix(tokenStr, auth.APITokenPrefix) && bearer {
+		return authenticateAPIToken(database, tokenStr)
+	}
+	return auth.ValidateAccessToken(jwtSecret, tokenStr)
+}
+
+// IsBearer is the exported variant of isBearer used by callers outside this
+// package (WS handlers).
+func IsBearer(r *http.Request) bool {
+	return isBearer(r)
+}

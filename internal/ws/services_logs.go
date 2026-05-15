@@ -10,7 +10,6 @@ import (
 	"github.com/gorilla/websocket"
 
 	"github.com/LEFTEQ/lovinka-deployik/internal/api/middleware"
-	"github.com/LEFTEQ/lovinka-deployik/internal/auth"
 	"github.com/LEFTEQ/lovinka-deployik/internal/authz"
 	"github.com/LEFTEQ/lovinka-deployik/internal/db"
 )
@@ -55,8 +54,8 @@ func ServiceLogsHandler(
 			http.Error(w, "missing token", http.StatusUnauthorized)
 			return
 		}
-		claims, err := auth.ValidateAccessToken(jwtSecret, tokenStr)
-		if err != nil {
+		claims, err := middleware.AuthenticateToken(database, jwtSecret, tokenStr, middleware.IsBearer(r))
+		if err != nil || claims == nil {
 			http.Error(w, "invalid token", http.StatusUnauthorized)
 			return
 		}
