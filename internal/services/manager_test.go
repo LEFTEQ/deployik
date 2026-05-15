@@ -84,14 +84,24 @@ func TestManagerGetSpecLoadsAndDecrypts(t *testing.T) {
 	t.Parallel()
 
 	database := newTestDB(t)
-	encryptor, _ := crypto.NewEncryptor("dev-encryption-key-32chars-yesssss")
+	encryptor, err := crypto.NewEncryptor("dev-encryption-key-32chars-yesssss")
+	if err != nil {
+		t.Fatalf("NewEncryptor: %v", err)
+	}
 
 	user := &db.User{ID: db.NewID(), GithubID: 2, Username: "u2", Role: "user"}
-	_ = database.UpsertUser(user)
+	if err := database.UpsertUser(user); err != nil {
+		t.Fatalf("UpsertUser: %v", err)
+	}
 	project := &db.Project{Name: "getspec", GithubRepo: "x", GithubOwner: "y", Branch: "main", UserID: user.ID, Framework: "node-api", Port: 3000, Status: "active"}
-	_ = database.CreateProject(project)
+	if err := database.CreateProject(project); err != nil {
+		t.Fatalf("CreateProject: %v", err)
+	}
 	mgr := &Manager{DB: database, Encryptor: encryptor, RandReader: rand.Reader}
-	provisioned, _ := mgr.Provision(context.Background(), project, "production", db.ServiceTypePostgres)
+	provisioned, err := mgr.Provision(context.Background(), project, "production", db.ServiceTypePostgres)
+	if err != nil {
+		t.Fatalf("Provision: %v", err)
+	}
 
 	loaded, err := mgr.GetSpec(project, "production", db.ServiceTypePostgres)
 	if err != nil {
@@ -123,7 +133,10 @@ func TestManagerEnsureForDeploymentNoServiceReturnsNilNil(t *testing.T) {
 	t.Parallel()
 
 	database := newTestDB(t)
-	encryptor, _ := crypto.NewEncryptor("dev-encryption-key-32chars-yesssss")
+	encryptor, err := crypto.NewEncryptor("dev-encryption-key-32chars-yesssss")
+	if err != nil {
+		t.Fatalf("NewEncryptor: %v", err)
+	}
 
 	user := &db.User{ID: db.NewID(), GithubID: 3, Username: "u3", Role: "user"}
 	if err := database.UpsertUser(user); err != nil {

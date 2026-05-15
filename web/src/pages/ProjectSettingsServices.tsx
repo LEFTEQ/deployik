@@ -7,13 +7,20 @@ import { ServicesPanel } from "@/components/projects/services/ServicesPanel";
 import { LoadingState } from "@/components/ui/spinner";
 
 export function ProjectSettingsServices() {
-  const { id } = useParams({ strict: false }) as { id: string };
+  const { id } = useParams({ strict: false });
+  const projectId = typeof id === "string" ? id : "";
 
-  const { data: project, isLoading } = useQuery({
-    queryKey: queryKeys.project(id),
-    queryFn: () => api.getProject(id),
+  const { data: project, isLoading, isError } = useQuery({
+    queryKey: queryKeys.project(projectId),
+    queryFn: () => api.getProject(projectId),
+    enabled: !!projectId,
   });
 
+  if (!projectId) {
+    return (
+      <div className="text-sm text-muted-foreground">Invalid project URL.</div>
+    );
+  }
   if (isLoading) {
     return (
       <LoadingState
@@ -21,6 +28,13 @@ export function ProjectSettingsServices() {
         description="Fetching project metadata."
         className="min-h-[200px]"
       />
+    );
+  }
+  if (isError) {
+    return (
+      <div className="text-sm text-muted-foreground">
+        Unable to load project right now. Please try again.
+      </div>
     );
   }
   if (!project) {
@@ -39,7 +53,7 @@ export function ProjectSettingsServices() {
           external access is via SSH tunnel only.
         </p>
       </div>
-      <ServicesPanel projectId={id} projectName={project.name} />
+      <ServicesPanel projectId={projectId} projectName={project.name} />
     </div>
   );
 }

@@ -227,24 +227,28 @@ func NewRouter(cfg *RouterConfig) *chi.Mux {
 			r.With(mutationLimiter.Middleware("volume_delete")).Delete("/projects/{id}/volumes/{env}", volumeHandler.Delete)
 			r.With(mutationLimiter.Middleware("volume_recreate")).Post("/projects/{id}/volumes/{env}/recreate", volumeHandler.Recreate)
 
-			// Services (sidecar databases — Postgres in v1)
-			serviceHandler := &handlers.ServiceHandler{
-				DB:        cfg.DB,
-				Manager:   cfg.Services,
-				Encryptor: cfg.Encryptor,
-				Audit:     auditRecorder,
-			}
-			r.Route("/projects/{id}/services", func(r chi.Router) {
-				r.Get("/", serviceHandler.List)
-				r.With(mutationLimiter.Middleware("service_attach")).Post("/", serviceHandler.Attach)
-				r.Route("/{env}", func(r chi.Router) {
-					r.With(mutationLimiter.Middleware("service_detach")).Delete("/", serviceHandler.Detach)
-					r.Get("/credentials", serviceHandler.Credentials)
-					r.With(mutationLimiter.Middleware("service_regenerate_password")).Post("/regenerate-password", serviceHandler.RegeneratePassword)
-					r.With(mutationLimiter.Middleware("service_restart")).Post("/restart", serviceHandler.Restart)
-					r.With(mutationLimiter.Middleware("service_reset")).Post("/reset", serviceHandler.Reset)
+			// Services (sidecar databases — Postgres in v1). Skip mounting entirely
+			// when cfg.Services is nil (e.g. test wiring without a Manager) —
+			// every handler dereferences h.Manager and would panic otherwise.
+			if cfg.Services != nil {
+				serviceHandler := &handlers.ServiceHandler{
+					DB:        cfg.DB,
+					Manager:   cfg.Services,
+					Encryptor: cfg.Encryptor,
+					Audit:     auditRecorder,
+				}
+				r.Route("/projects/{id}/services", func(r chi.Router) {
+					r.Get("/", serviceHandler.List)
+					r.With(mutationLimiter.Middleware("service_attach")).Post("/", serviceHandler.Attach)
+					r.Route("/{env}", func(r chi.Router) {
+						r.With(mutationLimiter.Middleware("service_detach")).Delete("/", serviceHandler.Detach)
+						r.Get("/credentials", serviceHandler.Credentials)
+						r.With(mutationLimiter.Middleware("service_regenerate_password")).Post("/regenerate-password", serviceHandler.RegeneratePassword)
+						r.With(mutationLimiter.Middleware("service_restart")).Post("/restart", serviceHandler.Restart)
+						r.With(mutationLimiter.Middleware("service_reset")).Post("/reset", serviceHandler.Reset)
+					})
 				})
-			})
+			}
 
 			// Domains
 			domainHandler := &handlers.DomainHandler{DB: cfg.DB, Manager: cfg.DomainManager, Hub: cfg.WSHub, Audit: auditRecorder}

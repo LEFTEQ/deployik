@@ -253,7 +253,11 @@ func (h *ServiceHandler) RegeneratePassword(w http.ResponseWriter, r *http.Reque
 	}
 
 	spec, err := h.Manager.GetSpec(project, environment, db.ServiceTypePostgres)
-	if err != nil || spec == nil {
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+	if spec == nil {
 		writeJSON(w, http.StatusNotFound, map[string]string{"error": "service not found"})
 		return
 	}
@@ -312,7 +316,11 @@ func (h *ServiceHandler) Restart(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	spec, err := h.Manager.GetSpec(project, environment, db.ServiceTypePostgres)
-	if err != nil || spec == nil {
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+	if spec == nil {
 		writeJSON(w, http.StatusNotFound, map[string]string{"error": "service not found"})
 		return
 	}
@@ -324,8 +332,14 @@ func (h *ServiceHandler) Restart(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		return
 	}
-	_ = h.DB.UpdateServiceHostPort(spec.ServiceID, spec.HostPort)
-	_ = h.DB.UpdateServiceStatus(spec.ServiceID, db.ServiceStatusRunning)
+	if err := h.DB.UpdateServiceHostPort(spec.ServiceID, spec.HostPort); err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "container restarted but failed to persist host port: " + err.Error()})
+		return
+	}
+	if err := h.DB.UpdateServiceStatus(spec.ServiceID, db.ServiceStatusRunning); err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "container restarted but failed to persist status: " + err.Error()})
+		return
+	}
 	writeJSON(w, http.StatusOK, map[string]any{"status": "running", "host_port": spec.HostPort})
 
 	claims := auth.GetClaims(r.Context())
@@ -368,7 +382,11 @@ func (h *ServiceHandler) Reset(w http.ResponseWriter, r *http.Request) {
 	}
 
 	spec, err := h.Manager.GetSpec(project, environment, db.ServiceTypePostgres)
-	if err != nil || spec == nil {
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+	if spec == nil {
 		writeJSON(w, http.StatusNotFound, map[string]string{"error": "service not found"})
 		return
 	}
@@ -380,8 +398,14 @@ func (h *ServiceHandler) Reset(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		return
 	}
-	_ = h.DB.UpdateServiceHostPort(spec.ServiceID, spec.HostPort)
-	_ = h.DB.UpdateServiceStatus(spec.ServiceID, db.ServiceStatusRunning)
+	if err := h.DB.UpdateServiceHostPort(spec.ServiceID, spec.HostPort); err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "data reset but failed to persist host port: " + err.Error()})
+		return
+	}
+	if err := h.DB.UpdateServiceStatus(spec.ServiceID, db.ServiceStatusRunning); err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "data reset but failed to persist status: " + err.Error()})
+		return
+	}
 	writeJSON(w, http.StatusOK, map[string]any{"status": "reset", "host_port": spec.HostPort})
 
 	claims := auth.GetClaims(r.Context())
