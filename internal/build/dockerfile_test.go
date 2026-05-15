@@ -63,6 +63,16 @@ func TestGenerateDockerfileSupportsRootDirectoryAndNextOutput(t *testing.T) {
 	if !strings.Contains(got, "if [ -f /run/secrets/deployik-secrets ]") {
 		t.Fatalf("expected build command to source secrets file when present, got:\n%s", got)
 	}
+	// pnpm 10+ blocks install scripts (sharp, node-gyp, esbuild prebuild …)
+	// by default; pnpm 11+ re-verifies deps on every `pnpm run`. Both make
+	// generated Next.js + sharp projects fail. Builds run inside our
+	// controlled image, so opt out.
+	if !strings.Contains(got, "ENV npm_config_strict_dep_builds=false") {
+		t.Fatalf("expected pnpm build to opt out of strict-dep-builds (sharp + node-gyp deps need install scripts), got:\n%s", got)
+	}
+	if !strings.Contains(got, "ENV npm_config_verify_deps_before_run=false") {
+		t.Fatalf("expected pnpm build to skip verify-deps-before-run mid-build, got:\n%s", got)
+	}
 }
 
 func TestGenerateDockerfileSupportsStaticRuntime(t *testing.T) {

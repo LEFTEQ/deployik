@@ -167,6 +167,7 @@ func generateNextJSDockerfile(data DockerfileData) string {
 		b.WriteString("RUN npm i -g bun\n")
 	} else if data.UsePnpm {
 		b.WriteString("RUN corepack enable\n")
+		b.WriteString(pnpmBuildEnvBlock())
 	} else if data.UseYarn {
 		b.WriteString("RUN corepack enable\n")
 	}
@@ -230,6 +231,7 @@ func generateStaticDockerfile(data DockerfileData) string {
 		b.WriteString("RUN npm i -g bun\n")
 	} else if data.UsePnpm {
 		b.WriteString("RUN corepack enable\n")
+		b.WriteString(pnpmBuildEnvBlock())
 	} else if data.UseYarn {
 		b.WriteString("RUN corepack enable\n")
 	}
@@ -374,6 +376,33 @@ func buildRunLine(command string, mountFlags []string) string {
 		return fmt.Sprintf("RUN %s\n", body)
 	}
 	return fmt.Sprintf("RUN %s \\\n    %s\n", strings.Join(mountFlags, " "), body)
+}
+
+// pnpmBuildEnvBlock returns the ENV lines we inject into pnpm builds so that
+// install scripts of native deps (sharp, esbuild prebuild, node-gyp wrappers,
+// etc.) actually run, and so `pnpm run build` doesn't re-verify the dep tree
+// mid-build.
+//
+// Background: pnpm 10 made `strict-dep-builds=true` the default — install
+// scripts of any dep are blocked unless the project lists them in
+// `pnpm.onlyBuiltDependencies`. This is great for interactive dev (supply
+// chain protection) but a footgun in a controlled CI image where the user
+// just wants their `next build` to find a compiled `sharp`. pnpm 11 also
+// added `verify-deps-before-run`, which re-runs an install check before
+// every `pnpm run` — same defensive posture, same friction here.
+//
+// Both settings are *configurations*, not version-gated behaviors, so
+// turning them off in our build env doesn't lock us to any pnpm version
+// and doesn't bypass anything that container isolation isn't already
+// covering. Side effect: pnpm builds Just Work for repos with sharp /
+// node-canvas / similar.
+//
+// Lower-cased underscore form is what pnpm reads for `npm_config_*` env
+// vars; uppercase variants would also work but pnpm's docs use this form.
+func pnpmBuildEnvBlock() string {
+	return "" +
+		"ENV npm_config_strict_dep_builds=false\n" +
+		"ENV npm_config_verify_deps_before_run=false\n"
 }
 
 // packageManagerCacheMount returns the BuildKit cache-mount flag for the
