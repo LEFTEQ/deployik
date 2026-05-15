@@ -58,3 +58,4 @@ server
 /package.json
 /package-lock.json
 .ai-testing/
+.deployik/
