@@ -23,6 +23,7 @@ import (
 	"github.com/LEFTEQ/lovinka-deployik/internal/domain"
 	projectemail "github.com/LEFTEQ/lovinka-deployik/internal/email"
 	"github.com/LEFTEQ/lovinka-deployik/internal/github"
+	"github.com/LEFTEQ/lovinka-deployik/internal/services"
 	"github.com/LEFTEQ/lovinka-deployik/internal/version"
 	"github.com/LEFTEQ/lovinka-deployik/internal/ws"
 )
@@ -143,6 +144,18 @@ func main() {
 		log.Printf("Screenshot bind source resolved: %s -> %s", cfg.ScreenshotDir, screenshotHostDir)
 	}
 
+	// Services manager: owns sidecar (Postgres in v1) lifecycle. Constructed
+	// before the pipeline so we can wire it into EnsureServices below; also
+	// handed to the router so per-project /services routes + the WS logs
+	// endpoint can resolve specs without crossing the build → services →
+	// build import boundary.
+	servicesMgr := &services.Manager{
+		DB:           database,
+		Encryptor:    encryptor,
+		Docker:       dockerClient,
+		ProxyNetwork: "proxy",
+	}
+
 	maxBuilds := 1
 	pipeline := &build.Pipeline{
 		DB:                database,
@@ -160,6 +173,19 @@ func main() {
 		Ctx:               pipelineCtx,
 		Wg:                &pipelineWg,
 		MaxBuildDuration:  15 * time.Minute,
+	}
+
+	// Bridge the pipeline's function-pointer hook to the typed services.Manager
+	// without creating a build → services import cycle.
+	pipeline.EnsureServices = func(ctx context.Context, project *db.Project, environment string, userVars []string) ([]string, error) {
+		inj, err := servicesMgr.EnsureForDeployment(ctx, project, environment)
+		if err != nil {
+			return nil, err
+		}
+		if inj == nil {
+			return userVars, nil
+		}
+		return services.MergeWithUserOverride(userVars, *inj), nil
 	}
 
 	// Write the auth page HTML for password-protected sites
@@ -195,6 +221,7 @@ func main() {
 		CookieSecure:   cfg.FrontendCookieSecure(),
 		AllowedOrigins: cfg.AllowedOrigins,
 		Pipeline:       pipeline,
+		Services:       servicesMgr,
 		DomainManager:  domainManager,
 		WSHub:          wsHub,
 		Analytics:      analyticsService,

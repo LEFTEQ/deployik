@@ -1,6 +1,8 @@
 package api
 
 import (
+	"context"
+	"io"
 	"sync"
 	"time"
 
@@ -17,6 +19,7 @@ import (
 	"github.com/LEFTEQ/lovinka-deployik/internal/domain"
 	projectemail "github.com/LEFTEQ/lovinka-deployik/internal/email"
 	"github.com/LEFTEQ/lovinka-deployik/internal/github"
+	"github.com/LEFTEQ/lovinka-deployik/internal/services"
 	"github.com/LEFTEQ/lovinka-deployik/internal/version"
 	"github.com/LEFTEQ/lovinka-deployik/internal/ws"
 )
@@ -33,6 +36,7 @@ type RouterConfig struct {
 	CookieSecure   bool
 	AllowedOrigins []string
 	Pipeline       *build.Pipeline
+	Services       *services.Manager
 	DomainManager  *domain.Manager
 	WSHub          *ws.Hub
 	Analytics      *analytics.Service
@@ -222,6 +226,25 @@ func NewRouter(cfg *RouterConfig) *chi.Mux {
 			r.With(mutationLimiter.Middleware("volume_delete")).Delete("/projects/{id}/volumes/{env}", volumeHandler.Delete)
 			r.With(mutationLimiter.Middleware("volume_recreate")).Post("/projects/{id}/volumes/{env}/recreate", volumeHandler.Recreate)
 
+			// Services (sidecar databases — Postgres in v1)
+			serviceHandler := &handlers.ServiceHandler{
+				DB:        cfg.DB,
+				Manager:   cfg.Services,
+				Encryptor: cfg.Encryptor,
+				Audit:     auditRecorder,
+			}
+			r.Route("/projects/{id}/services", func(r chi.Router) {
+				r.Get("/", serviceHandler.List)
+				r.With(mutationLimiter.Middleware("service_attach")).Post("/", serviceHandler.Attach)
+				r.Route("/{env}", func(r chi.Router) {
+					r.With(mutationLimiter.Middleware("service_detach")).Delete("/", serviceHandler.Detach)
+					r.Get("/credentials", serviceHandler.Credentials)
+					r.With(mutationLimiter.Middleware("service_regenerate_password")).Post("/regenerate-password", serviceHandler.RegeneratePassword)
+					r.With(mutationLimiter.Middleware("service_restart")).Post("/restart", serviceHandler.Restart)
+					r.With(mutationLimiter.Middleware("service_reset")).Post("/reset", serviceHandler.Reset)
+				})
+			})
+
 			// Domains
 			domainHandler := &handlers.DomainHandler{DB: cfg.DB, Manager: cfg.DomainManager, Hub: cfg.WSHub, Audit: auditRecorder}
 			r.Get("/projects/{id}/domains", domainHandler.List)
@@ -258,6 +281,25 @@ func NewRouter(cfg *RouterConfig) *chi.Mux {
 	// WebSocket routes
 	r.With(wsLimiter.Middleware("ws_logs")).Get("/ws/deployments/{did}/logs", ws.LogsHandler(cfg.WSHub, cfg.DB, cfg.JWTSecret, cfg.AllowedOrigins))
 	r.With(wsLimiter.Middleware("ws_domain_logs")).Get("/ws/domains/{did}/logs", ws.DomainLogsHandler(cfg.WSHub, cfg.DB, cfg.JWTSecret, cfg.AllowedOrigins))
+
+	// WS service logs — uses closures to avoid the ws → services → build → ws import cycle.
+	if cfg.Services != nil {
+		lookupSpec := func(project *db.Project, environment string, svcType db.ServiceType) (string, bool, error) {
+			spec, err := cfg.Services.GetSpec(project, environment, svcType)
+			if err != nil {
+				return "", false, err
+			}
+			if spec == nil {
+				return "", false, nil
+			}
+			return spec.ContainerName, true, nil
+		}
+		streamLogs := func(ctx context.Context, containerName string, out io.Writer) error {
+			return services.Logs(ctx, &services.ServiceSpec{ContainerName: containerName}, out)
+		}
+		r.With(wsLimiter.Middleware("ws_service_logs")).Get("/ws/projects/{id}/services/{env}/logs",
+			ws.ServiceLogsHandler(cfg.DB, lookupSpec, streamLogs, cfg.JWTSecret, cfg.AllowedOrigins))
+	}
 
 	// Serve embedded SPA for all non-API routes
 	r.NotFound(SPAHandler())
