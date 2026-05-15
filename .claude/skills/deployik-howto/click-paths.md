@@ -1,6 +1,6 @@
 # Deployik — Where to click
 
-Seven recipes for the most common things a user wants to do in the Deployik dashboard. If the user's goal isn't in the table, ask them warmly to rephrase, or check whether their goal is actually outside Deployik's scope.
+Eight recipes for the most common things a user wants to do in the Deployik dashboard. If the user's goal isn't in the table, ask them warmly to rephrase, or check whether their goal is actually outside Deployik's scope.
 
 Every recipe ends with a friendly "stuck on a step?" line. If the user uses it, ask which step and walk through that single step in fine detail (one click, one screenshot description, or one clarifying question at a time) before continuing.
 
@@ -14,6 +14,7 @@ Every recipe ends with a friendly "stuck on a step?" line. If the user uses it, 
 | I want it to redeploy when I push to GitHub | [#auto-deploy](#auto-deploy) |
 | I want a password before people see the site | [#password-protection](#password-protection) |
 | I want my contact form to actually send emails (with spam protection) | [#contact-form-email](#contact-form-email) |
+| I want a Postgres database for my app | [#attach-postgres](#attach-postgres) |
 | I want to roll back to a previous version | [#rollback](#rollback) |
 
 ---
@@ -223,6 +224,41 @@ The Email page has an **AI install prompt** section. It generates a copy-pasteab
 **Stuck on any of these steps? Tell me which one and I'll walk through it with you.** I can also do Part 3 for you via the API once you have the values from Parts 1 and 2 — just ask.
 
 **API equivalent:** [api-actions.md#contact-form-email](api-actions.md#contact-form-email)
+
+---
+
+## attach-postgres
+
+**Goal:** Get a real Postgres database for your app, per environment (preview / production), with credentials wired into the runtime automatically.
+
+**Route:** `/projects/$id/services`
+**Sidebar:** Project → **Services**
+
+**What this gives you:**
+- A dedicated Postgres container (a "sidecar") that runs next to your app, one per environment.
+- Standard environment variables (`DATABASE_URL` + discrete `PGHOST` / `PGPORT` / `PGDATABASE` / `PGUSER` / `PGPASSWORD`) injected into the deployed app automatically — your code just reads them.
+- A 16xxx loopback port on the VPS so you can connect from your laptop via an SSH tunnel for migrations / inspection.
+- The database **persists across deploys** — the volume isn't touched by a new deployment.
+
+**Steps:**
+
+1. *(Optional, brand-new project only)* On the **New project** page, scroll to **Attach Postgres database**. Toggle it on for preview / production. Skip the rest of this recipe — it's done.
+2. *(Existing project)* Click **Services** in the project sidebar.
+3. Two cards: **Preview** and **Production**. Each starts as **Not attached** with an **Attach Postgres** button.
+4. Click **Attach Postgres** on the environment you want. Deployik records the row, generates a strong random password, and assigns a unique 16xxx host port. The card flips to **Attached · pending** — the container itself isn't running yet.
+5. Trigger any deploy for that environment (push a commit, or click **Redeploy** on Overview). The build pipeline's `EnsureServices` hook starts the postgres container, waits for it to be healthy, then starts your app with the env vars injected. The card shows **running** once it's up.
+6. On the Services card, click **Show credentials** to reveal the password and the **SSH tunnel command**. Copy the SSH command, run it on your laptop — it forwards `127.0.0.1:15432` on your machine to the postgres in the VPS. Connect with `psql postgres://...@127.0.0.1:15432/...` or any client.
+7. To restart the container without touching data, click **Restart**. To rotate the password, click **Regenerate password** — the new password is shown once; the running container keeps the old password until the next deploy/restart, so trigger a redeploy right after.
+
+**Gotcha — Reset wipes everything:** the **Reset** button drops the volume and starts an empty database. Use it only for preview when you want a clean slate. On production it requires you to type `<project>-production` to confirm. There is no undo.
+
+**Gotcha — project rename is blocked:** while a service is attached, the project name is frozen (renaming would orphan the volume). Detach first, rename, re-attach (and re-import data) if you really need a new name.
+
+**Gotcha — detach deletes data:** clicking **Detach** stops the container AND removes the named volume. There is no undo. Take a `pg_dump` first if you want to keep the data.
+
+**Stuck on any of these steps? Tell me which one and I'll walk through it with you.** I can also attach Postgres for you via the API and tail the container logs to confirm it came up clean — just ask.
+
+**API equivalent:** [api-actions.md#attach-postgres](api-actions.md#attach-postgres)
 
 ---
 

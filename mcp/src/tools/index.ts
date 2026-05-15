@@ -7,6 +7,7 @@ import { registerDomainTools } from "./domains.js";
 import { registerAutoBuildTools } from "./auto_build.js";
 import { registerProtectionTools } from "./protection.js";
 import { registerVolumeTools } from "./volumes.js";
+import { registerServiceTools } from "./services.js";
 import { registerGithubTools } from "./github.js";
 import { registerWorkspaceTools } from "./workspaces.js";
 import { registerAnalyticsTools } from "./analytics.js";
@@ -25,6 +26,7 @@ export function registerAllTools(server: McpServer, ctx: ToolContext): void {
   registerAutoBuildTools(server, ctx);
   registerProtectionTools(server, ctx);
   registerVolumeTools(server, ctx);
+  registerServiceTools(server, ctx);
   registerGithubTools(server, ctx);
   registerWorkspaceTools(server, ctx);
   registerAnalyticsTools(server, ctx);

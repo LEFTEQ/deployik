@@ -150,6 +150,17 @@ export class DeployikClient {
   screenshotUrl(deploymentId: string): string {
     return `${this.baseUrl}/api/deployments/${encodeURIComponent(deploymentId)}/screenshot`;
   }
+
+  /** Build a ws://… / wss://… URL for a `/ws/...` path. */
+  wsUrl(path: string): string {
+    const normalized = path.startsWith("/") ? path : `/${path}`;
+    return `${this.baseUrl.replace(/^http/, "ws")}${normalized}`;
+  }
+
+  /** Authorization header value for WS handshakes — PATs are gated to Bearer. */
+  bearerHeader(): string {
+    return `Bearer ${this.token}`;
+  }
 }
 
 function retryableMethod(method: string, path: string): boolean {

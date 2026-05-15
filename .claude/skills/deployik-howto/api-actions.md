@@ -253,6 +253,53 @@ deployik api POST /api/projects/{id}/email/test-smtp
 
 ---
 
+## attach-postgres
+
+**Goal:** [click-paths.md#attach-postgres](click-paths.md#attach-postgres)
+
+**Endpoints:**
+- `GET /api/projects/{id}/services` — list services attached to the project
+- `POST /api/projects/{id}/services` — attach a service (v1: postgres)
+- `DELETE /api/projects/{id}/services/{env}` — **destructive** — detach + drop volume
+- `GET /api/projects/{id}/services/{env}/credentials` — reveal password + DSN + SSH tunnel command (audited)
+- `POST /api/projects/{id}/services/{env}/regenerate-password` — rotate password (container keeps old password until next deploy/restart)
+- `POST /api/projects/{id}/services/{env}/restart` — recreate container, preserve data
+- `POST /api/projects/{id}/services/{env}/reset` — **destructive** — wipe volume, requires `{"confirm":"<project>-<env>"}` body
+
+**Tier:**
+- `GET` list — silent.
+- `POST` attach — mutation, confirm.
+- `POST` restart, regenerate-password — mutation, confirm. **Production gets the production flag.**
+- `DELETE` detach and `POST` reset — typed-string confirm matching `<project>-<env>` even in preview. Do **not** run these as a shortcut for "start fresh" — there is no undo.
+
+**Body shapes:**
+
+```json
+// Attach
+{ "environment": "preview", "type": "postgres" }
+
+// Reset (server requires the typed string)
+{ "confirm": "<project_name>-<environment>" }
+```
+
+**Invocations:**
+
+```
+deployik api GET  /api/projects/{id}/services
+deployik api POST /api/projects/{id}/services '{"environment":"preview","type":"postgres"}'
+deployik api GET  /api/projects/{id}/services/preview/credentials
+deployik api POST /api/projects/{id}/services/preview/restart
+deployik api POST /api/projects/{id}/services/preview/regenerate-password
+deployik api POST /api/projects/{id}/services/production/reset '{"confirm":"my-app-production"}'
+deployik api DELETE /api/projects/{id}/services/preview
+```
+
+**After attach — don't forget the deploy:** attach is just a row in the database. The container only starts on the next deployment for that environment (the pipeline's `EnsureServices` hook). Tell the user to trigger one: `deployik api POST /api/projects/{id}/deployments '{"environment":"preview"}'`.
+
+**Project rename is blocked while attached.** `PATCH /api/projects/{id}` with a new `name` will 409 if any service row exists for the project. Detach first.
+
+---
+
 ## rollback
 
 **Goal:** [click-paths.md#rollback](click-paths.md#rollback)

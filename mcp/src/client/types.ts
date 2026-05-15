@@ -233,6 +233,41 @@ export interface VolumeInfo {
   in_use: boolean;
 }
 
+// ----- Services (postgres sidecar in v1) -----
+
+export type ServiceType = "postgres";
+export type ServiceStatus = "pending" | "running" | "stopped" | "failed";
+
+export interface ProjectService {
+  id: string;
+  project_id: string;
+  environment: Environment;
+  type: ServiceType;
+  image: string;
+  db_name: string;
+  db_user: string;
+  host_port: number;
+  status: ServiceStatus;
+  last_started_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ServiceCredentials {
+  db_name: string;
+  db_user: string;
+  password: string;
+  internal_host: string;
+  internal_port: number;
+  vps_loopback_port: number;
+  ssh_tunnel_cmd: string;
+}
+
+export interface AttachServiceRequest {
+  environment: Environment;
+  type: ServiceType;
+}
+
 export interface GitHubRepo {
   id: number;
   full_name: string;

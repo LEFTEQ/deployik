@@ -559,4 +559,242 @@ export function registerWorkflowTools(server: McpServer, ctx: ToolContext): void
       };
     },
   });
+
+  registerTool(server, ctx, {
+    name: "tail_service_logs",
+    description:
+      "Stream live logs from a project's postgres sidecar for a short window. Opens the /ws/projects/{id}/services/{env}/logs WebSocket, captures up to `max_lines` lines or until `duration_ms` elapses, whichever comes first. Use this to investigate connection errors, slow queries, or auth failures.",
+    inputSchema: {
+      project_id: z.string().optional(),
+      project: z.string().optional(),
+      environment: z.enum(["preview", "production"]),
+      duration_ms: z.number().int().positive().max(60_000).default(8_000),
+      max_lines: z.number().int().positive().max(2000).default(200),
+    },
+    annotations: { readOnlyHint: true },
+    handler: async (args) => {
+      const { project } = await resolveProject(ctx, args);
+      const result = await tailServiceLogs(ctx, project.id, args.environment, args.duration_ms, args.max_lines);
+      if (result.lines.length === 0) {
+        return {
+          text: result.error
+            ? `(no logs captured — ${result.error})`
+            : `(no logs in the last ${args.duration_ms}ms — the postgres container may be idle)`,
+        };
+      }
+      const ERR_RE = /\b(error|fatal|panic|cannot|failed)\b/i;
+      const rendered = result.lines.map((l) => (ERR_RE.test(l) ? `↑ ${l}` : `  ${l}`)).join("\n");
+      const header = `Postgres logs · ${project.name} · ${args.environment} (${result.lines.length} lines, captured ${result.elapsedMs}ms${result.truncated ? `, capped at max_lines=${args.max_lines}` : ""})`;
+      const footer = result.error ? `\n\n(stream ended: ${result.error})` : "";
+      return {
+        text: `${header}\n\n${rendered}${footer}`,
+        data: { lines: result.lines, elapsedMs: result.elapsedMs, truncated: result.truncated, error: result.error ?? null },
+      };
+    },
+  });
+
+  registerTool(server, ctx, {
+    name: "tail_deployment_logs",
+    description:
+      "Live-tail a deployment's build log via WebSocket. Returns existing history plus any new lines emitted during the window, formatted with stderr/error highlights. The stream exits early when the deployment reaches a terminal status (live / failed / replaced / rolled_back). Pair with `trigger_deployment` for a watch-the-build flow, or use `tail_latest_logs` if you don't have a deployment_id.",
+    inputSchema: {
+      project_id: z.string().optional(),
+      project: z.string().optional(),
+      deployment_id: z.string(),
+      duration_ms: z.number().int().positive().max(600_000).default(20_000),
+      max_lines: z.number().int().positive().max(2000).default(300),
+      include_history: z.boolean().default(true),
+    },
+    annotations: { readOnlyHint: true },
+    handler: async (args) => {
+      const { project } = await resolveProject(ctx, args);
+      const deployment = await ctx.client.request<Deployment>(`/projects/${project.id}/deployments/${args.deployment_id}`);
+
+      const history = args.include_history
+        ? await ctx.client.request<BuildLog[]>(`/deployments/${deployment.id}/logs`).catch(() => [] as BuildLog[])
+        : [];
+
+      // Skip the WS hop if the build already terminated — history is final.
+      const live = TERMINAL_STATUSES.has(deployment.status)
+        ? { lines: [] as BuildLog[], elapsedMs: 0, truncated: false, finalStatus: deployment.status }
+        : await tailDeploymentLogs(ctx, project.id, deployment.id, args.duration_ms, args.max_lines, history.length > 0 ? history[history.length - 1].line_number : 0);
+
+      // Merge: history first, then anything new from the WS that we hadn't already seen.
+      const seen = new Set(history.map((h) => h.line_number));
+      const merged = [...history];
+      for (const l of live.lines) {
+        if (!seen.has(l.line_number)) {
+          merged.push(l);
+          seen.add(l.line_number);
+        }
+      }
+      const trimmed = merged.length > args.max_lines ? merged.slice(-args.max_lines) : merged;
+      const formatted = formatLogs(trimmed, { maxLines: args.max_lines, tail: true });
+
+      const finalStatus = live.finalStatus ?? deployment.status;
+      const header = [
+        `Deployment ${deployment.id} · ${finalStatus}${TERMINAL_STATUSES.has(finalStatus) ? " (terminal)" : " (in progress)"}`,
+        `${deployment.environment} · ${deployment.branch} · commit ${deployment.commit_sha.slice(0, 8)}`,
+      ].join("\n");
+      const errorSection = formatted.errorAnchors.length > 0 ? `\nError anchors: lines ${formatted.errorAnchors.join(", ")}` : "";
+      const footer = "error" in live && live.error ? `\n\n(stream ended: ${live.error})` : formatted.hint ? `\n\n${formatted.hint}` : "";
+      return {
+        text: `${header}\n\n${formatted.text}${errorSection}${footer}`,
+        data: {
+          deployment_id: deployment.id,
+          finalStatus,
+          historyLines: history.length,
+          liveLines: live.lines.length,
+          elapsedMs: live.elapsedMs,
+          truncated: live.truncated || formatted.truncated,
+          errorAnchors: formatted.errorAnchors,
+        },
+      };
+    },
+  });
+}
+
+async function tailDeploymentLogs(
+  ctx: ToolContext,
+  projectId: string,
+  deploymentId: string,
+  durationMs: number,
+  maxLines: number,
+  highestSeenLine: number,
+): Promise<{ lines: BuildLog[]; elapsedMs: number; truncated: boolean; finalStatus?: string; error?: string }> {
+  const { WebSocket } = await import("ws");
+  const url = ctx.client.wsUrl(`/ws/deployments/${deploymentId}/logs`);
+  const lines: BuildLog[] = [];
+  const start = Date.now();
+
+  return new Promise((resolve) => {
+    const ws = new WebSocket(url, {
+      headers: { Authorization: ctx.client.bearerHeader() },
+      handshakeTimeout: 10_000,
+    });
+
+    let truncated = false;
+    let settled = false;
+    let finalStatus: string | undefined;
+    const finish = (error?: string) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      clearInterval(statusPoll);
+      try { ws.close(); } catch { /* ignore */ }
+      resolve({ lines, elapsedMs: Date.now() - start, truncated, finalStatus, error });
+    };
+
+    const timer = setTimeout(() => finish(), durationMs);
+
+    // Poll the deployment status every 2s — exit early when the build terminates.
+    const statusPoll = setInterval(async () => {
+      try {
+        const dep = await ctx.client.request<Deployment>(`/projects/${projectId}/deployments/${deploymentId}`);
+        if (TERMINAL_STATUSES.has(dep.status)) {
+          finalStatus = dep.status;
+          // Give the WS one tick to flush any final lines before closing.
+          setTimeout(() => finish(), 250);
+        }
+      } catch {
+        // status fetch failures shouldn't kill the stream — just keep going.
+      }
+    }, 2000);
+
+    ws.on("message", (data: Buffer | ArrayBuffer | Buffer[]) => {
+      const text = Buffer.isBuffer(data)
+        ? data.toString("utf8")
+        : Array.isArray(data)
+          ? Buffer.concat(data).toString("utf8")
+          : Buffer.from(data as ArrayBuffer).toString("utf8");
+      let parsed: unknown;
+      try {
+        parsed = JSON.parse(text);
+      } catch {
+        return; // server only sends JSON frames; ignore anything else
+      }
+      if (!parsed || typeof parsed !== "object") return;
+      const raw = parsed as Record<string, unknown>;
+      const lineNumber = typeof raw.line_number === "number" ? raw.line_number : 0;
+      if (lineNumber > 0 && lineNumber <= highestSeenLine) return; // dedupe replay
+      const log: BuildLog = {
+        id: 0,
+        deployment_id: typeof raw.deployment_id === "string" ? raw.deployment_id : deploymentId,
+        line_number: lineNumber,
+        content: typeof raw.content === "string" ? raw.content : "",
+        stream: raw.stream === "stderr" ? "stderr" : "stdout",
+        timestamp: "",
+      };
+      if (lines.length >= maxLines) {
+        truncated = true;
+        finish();
+        return;
+      }
+      lines.push(log);
+    });
+
+    ws.on("error", (err: Error) => finish(err.message));
+    ws.on("close", (code: number, reason: Buffer) => {
+      const reasonText = reason?.toString("utf8");
+      finish(code !== 1000 && code !== 1005 ? `closed (code ${code}${reasonText ? `: ${reasonText}` : ""})` : undefined);
+    });
+  });
+}
+
+async function tailServiceLogs(
+  ctx: ToolContext,
+  projectId: string,
+  environment: string,
+  durationMs: number,
+  maxLines: number,
+): Promise<{ lines: string[]; elapsedMs: number; truncated: boolean; error?: string }> {
+  // Lazy import — keeps `ws` out of the import graph for the rest of the
+  // toolset (which is fetch-only) so a packaging issue can't break unrelated tools.
+  const { WebSocket } = await import("ws");
+  const url = ctx.client.wsUrl(`/ws/projects/${projectId}/services/${environment}/logs`);
+  const lines: string[] = [];
+  const start = Date.now();
+
+  return new Promise((resolve) => {
+    const ws = new WebSocket(url, {
+      headers: { Authorization: ctx.client.bearerHeader() },
+      handshakeTimeout: 10_000,
+    });
+
+    let truncated = false;
+    let settled = false;
+    const finish = (error?: string) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      try { ws.close(); } catch { /* ignore */ }
+      resolve({ lines, elapsedMs: Date.now() - start, truncated, error });
+    };
+
+    const timer = setTimeout(() => finish(), durationMs);
+
+    ws.on("message", (data: Buffer | ArrayBuffer | Buffer[]) => {
+      const text = Buffer.isBuffer(data)
+        ? data.toString("utf8")
+        : Array.isArray(data)
+          ? Buffer.concat(data).toString("utf8")
+          : Buffer.from(data as ArrayBuffer).toString("utf8");
+      // Server emits one line per frame, but tolerate joined lines defensively.
+      for (const line of text.split(/\r?\n/)) {
+        if (!line) continue;
+        if (lines.length >= maxLines) {
+          truncated = true;
+          finish();
+          return;
+        }
+        lines.push(line);
+      }
+    });
+
+    ws.on("error", (err: Error) => finish(err.message));
+    ws.on("close", (code: number, reason: Buffer) => {
+      const reasonText = reason?.toString("utf8");
+      finish(code !== 1000 && code !== 1005 ? `closed (code ${code}${reasonText ? `: ${reasonText}` : ""})` : undefined);
+    });
+  });
 }
