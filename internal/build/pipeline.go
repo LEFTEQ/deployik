@@ -31,7 +31,18 @@ type Pipeline struct {
 	ProxyNetwork  string // Docker network name (e.g., "proxy")
 	ProxyType     string // "docker" | "host-port"
 	Hub           *ws.Hub
-	ScreenshotDir string // Directory to store deployment screenshots (in-container path)
+	// EnsureServices is an optional hook that ensures attached sidecar services
+	// (postgres in v1) are running before the image build, then returns the
+	// runtime env-var slice with the service's DATABASE_URL/POSTGRES_* injection
+	// already merged on top of the user's vars. Returns (userVars, nil) when no
+	// service is attached. nil = skip the hook entirely.
+	//
+	// Wired in cmd/server/main.go to internal/services.Manager — kept as a
+	// function pointer here so internal/build doesn't import internal/services
+	// (services already imports internal/build for DockerClient — typed field
+	// would create an import cycle).
+	EnsureServices func(ctx context.Context, project *db.Project, environment string, userVars []string) ([]string, error)
+	ScreenshotDir  string // Directory to store deployment screenshots (in-container path)
 	// ScreenshotHostDir is the host-filesystem path that backs ScreenshotDir
 	// when deployik runs inside a container. The Docker daemon resolves
 	// nested-container bind sources on the host, not inside the caller, so we
@@ -231,6 +242,23 @@ func (p *Pipeline) Deploy(ctx context.Context, project *db.Project, deployment *
 
 	buildEnvVars, runtimeEnvVars := resolveDeploymentVariables(decryptedEnvVars, decryptedSecrets)
 	buildSecrets := resolveBuildSecrets(decryptedEnvVars, decryptedSecrets)
+
+	// Step 4b: Ensure sidecar services (postgres) before building the image.
+	// If a service is attached and pg fails to come up we want to abort BEFORE
+	// the docker build wastes compute. The hook merges its injection into
+	// runtimeEnvVars with user-set keys taking precedence (the hook delegates
+	// to services.MergeWithUserOverride internally).
+	if p.EnsureServices != nil {
+		emit("Checking for attached services...")
+		merged, err := p.EnsureServices(ctx, project, deployment.Environment, runtimeEnvVars)
+		if err != nil {
+			fail(err, "Service dependency failed")
+			return
+		}
+		if merged != nil {
+			runtimeEnvVars = merged
+		}
+	}
 
 	// Step 5: Generate Dockerfile
 	emit("Generating Dockerfile...")
