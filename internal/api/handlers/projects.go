@@ -284,19 +284,27 @@ func (h *ProjectHandler) Update(w http.ResponseWriter, r *http.Request) {
 			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid name"})
 			return
 		}
-		// Volume and container names are derived from project.Name; renaming
-		// would silently orphan any existing data volume and leave the running
-		// container on the old name. Block renames when a volume is attached;
-		// the user can disable the volume (and accept data loss) first, or we
-		// can revisit this once volumes are keyed by project.ID.
-		// TODO(pr1-followup): re-key volume naming by project.ID so renames are safe.
-		if name != project.Name && project.DataVolumeEnabled {
-			writeJSON(w, http.StatusConflict, map[string]string{
-				"error": "cannot rename project while a persistent data volume is attached — disable the volume first (this will abandon its data)",
-			})
-			return
+		// Volume, container, and service-resource names are derived from
+		// project.Name; renaming would silently orphan any existing data volume
+		// or attached service (e.g. postgres container/volume) and leave the
+		// running container on the old name. Block renames when a volume or
+		// service is attached; the user can detach them first, or we can revisit
+		// this once these resources are keyed by project.ID.
+		// TODO(pr1-followup): re-key volume + service naming by project.ID so renames are safe.
+		if name != project.Name {
+			servicesAttached, err := h.DB.ServicesExist(project.ID)
+			if err != nil {
+				writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to check attached services"})
+				return
+			}
+			if project.DataVolumeEnabled || servicesAttached {
+				writeJSON(w, http.StatusConflict, map[string]string{
+					"error": "cannot rename project while a persistent data volume or service is attached — detach them first",
+				})
+				return
+			}
+			project.Name = name
 		}
-		project.Name = name
 	}
 	if req.Branch != nil {
 		project.Branch = strings.TrimSpace(*req.Branch)

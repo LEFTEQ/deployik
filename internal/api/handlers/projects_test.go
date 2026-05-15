@@ -672,3 +672,83 @@ func TestUpdateProjectAcceptsNodeAPIFields(t *testing.T) {
 		t.Errorf("persisted health_path = %q, want %q", stored.HealthPath, "/healthz")
 	}
 }
+
+// TestUpdateProjectBlocksRenameWhenServicesExist ensures that PATCH /api/projects/{id}
+// rejects a rename when one or more attached services exist for the project.
+// Renaming would silently orphan the service container/volume, which is keyed on
+// project.Name today.
+func TestUpdateProjectBlocksRenameWhenServicesExist(t *testing.T) {
+	database, _, user := setupProjectTestDB(t)
+
+	org, err := database.EnsurePersonalOrganization(user)
+	if err != nil {
+		t.Fatalf("ensure personal org: %v", err)
+	}
+	project := &db.Project{
+		OrganizationID: org.ID,
+		Name:           "renamable",
+		GithubRepo:     "sample",
+		GithubOwner:    "testuser",
+		Branch:         "main",
+		UserID:         user.ID,
+		Framework:      projectconfig.FrameworkNodeAPI,
+		Status:         "active",
+	}
+	if err := projectconfig.ApplyProjectDefaults(project); err != nil {
+		t.Fatalf("apply defaults: %v", err)
+	}
+	if err := database.CreateProject(project); err != nil {
+		t.Fatalf("create project: %v", err)
+	}
+
+	// Manually insert a service row so ServicesExist returns true.
+	svc := &db.ProjectService{
+		ProjectID:           project.ID,
+		Environment:         "preview",
+		ServiceType:         db.ServiceTypePostgres,
+		Image:               "postgres:16",
+		DBName:              "app",
+		DBUser:              "app",
+		DBPasswordEncrypted: "ciphertext",
+		HostPort:            0,
+		ConfigJSON:          "{}",
+		Status:              db.ServiceStatusPending,
+	}
+	if err := database.CreateService(svc); err != nil {
+		t.Fatalf("CreateService: %v", err)
+	}
+
+	h := &ProjectHandler{
+		DB:    database,
+		Audit: &audit.Recorder{DB: database},
+	}
+
+	body, err := json.Marshal(map[string]any{"name": "renamed"})
+	if err != nil {
+		t.Fatalf("marshal body: %v", err)
+	}
+	req := httptest.NewRequest(http.MethodPatch, "/api/projects/"+project.ID, bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	ctx := auth.WithClaims(req.Context(), &auth.Claims{UserID: user.ID})
+	ctx = withChiID(ctx, "id", project.ID)
+	req = req.WithContext(ctx)
+
+	w := httptest.NewRecorder()
+	h.Update(w, req)
+
+	if w.Code != http.StatusConflict {
+		t.Fatalf("expected 409 Conflict, got %d body=%s", w.Code, w.Body.String())
+	}
+
+	// And the project name must not have been mutated.
+	stored, err := database.GetProject(project.ID)
+	if err != nil {
+		t.Fatalf("load persisted project: %v", err)
+	}
+	if stored == nil {
+		t.Fatal("expected persisted project, got nil")
+	}
+	if stored.Name != "renamable" {
+		t.Errorf("project name mutated: got %q, want %q", stored.Name, "renamable")
+	}
+}
