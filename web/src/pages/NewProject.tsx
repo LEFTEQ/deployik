@@ -75,6 +75,7 @@ export function NewProject() {
   );
   const [autoBuildEnabled, setAutoBuildEnabled] = useState(true);
   const [autoProductionEnabled, setAutoProductionEnabled] = useState(false);
+  const [attachPostgres, setAttachPostgres] = useState(false);
 
   const { data: repos, isLoading: reposLoading } = useQuery({
     queryKey: queryKeys.githubRepos(),
@@ -149,9 +150,34 @@ export function NewProject() {
           autoProductionEnabled,
         ),
       }),
-    onSuccess: (project) => {
+    onSuccess: async (project) => {
       queryClient.invalidateQueries({ queryKey: ["projects"] });
-      toast.success("Project created");
+
+      if (attachPostgres) {
+        try {
+          await api.attachService(project.id, {
+            environment: "preview",
+            type: "postgres",
+          });
+          await api.attachService(project.id, {
+            environment: "production",
+            type: "postgres",
+          });
+          toast.success(
+            "Project created with Postgres attached for both environments.",
+          );
+        } catch (err) {
+          // Best-effort: the project is created, so the user can attach
+          // manually from Services if this failed. Surface a toast.
+          toast.error(
+            "Project created, but Postgres attach failed: " +
+              (err as Error).message,
+          );
+        }
+      } else {
+        toast.success("Project created");
+      }
+
       navigate({
         to: "/projects/$id",
         params: { id: project.id },
@@ -224,6 +250,7 @@ export function NewProject() {
                     setBuildSettings(getFrameworkDefaults("nextjs", "auto"));
                     setAutoBuildEnabled(true);
                     setAutoProductionEnabled(false);
+                    setAttachPostgres(false);
                   }}
                 >
                   {repo.private ? (
@@ -453,6 +480,27 @@ export function NewProject() {
           value={buildSettings}
           onChange={setBuildSettings}
         />
+
+        <div className="flex items-start justify-between gap-3 rounded-2xl border border-white/10 bg-black/10 p-4">
+          <div className="space-y-1">
+            <Label htmlFor="attach-postgres" className="text-sm">
+              Attach Postgres database
+            </Label>
+            <p className="text-xs text-muted-foreground">
+              Each environment (preview + production) gets its own postgres:16
+              container with a persistent volume.{" "}
+              <code className="rounded bg-white/10 px-1 py-0.5">
+                DATABASE_URL
+              </code>{" "}
+              is auto-injected.
+            </p>
+          </div>
+          <Switch
+            id="attach-postgres"
+            checked={attachPostgres}
+            onCheckedChange={setAttachPostgres}
+          />
+        </div>
 
         <div className="flex justify-end gap-3 border-t border-white/5 pt-6">
           <Button variant="outline" onClick={() => setSelectedRepo(null)}>
