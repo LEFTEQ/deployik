@@ -7,10 +7,12 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 
 	"github.com/LEFTEQ/lovinka-deployik/internal/build"
 	"github.com/LEFTEQ/lovinka-deployik/internal/crypto"
 	"github.com/LEFTEQ/lovinka-deployik/internal/db"
+	"github.com/docker/docker/errdefs"
 )
 
 // ErrAlreadyProvisioned is returned by Provision when the (project, env,
@@ -93,7 +95,7 @@ func (m *Manager) Provision(ctx context.Context, project *db.Project, environmen
 		Status:              db.ServiceStatusPending,
 	}
 	if err := m.DB.CreateService(row); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("persist pg service: %w", err)
 	}
 
 	return m.specFromRow(project, row, password), nil
@@ -137,10 +139,10 @@ func (m *Manager) EnsureForDeployment(ctx context.Context, project *db.Project, 
 		return nil, err
 	}
 	if err := m.DB.UpdateServiceHostPort(spec.ServiceID, spec.HostPort); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("persist pg host_port: %w", err)
 	}
 	if err := m.DB.UpdateServiceStatus(spec.ServiceID, db.ServiceStatusRunning); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("persist pg status: %w", err)
 	}
 	inj := BuildPostgresEnvInjection(*spec)
 	return &inj, nil
@@ -164,10 +166,13 @@ func (m *Manager) Delete(ctx context.Context, project *db.Project, environment s
 		if err := m.Docker.RemoveVolume(ctx, spec.VolumeName); err != nil {
 			// errdefs.IsNotFound is OK — volume already gone or never created.
 			// All other errors (in-use conflict, etc.) should propagate.
-			if !isNotFound(err) {
+			if !errdefs.IsNotFound(err) {
 				return fmt.Errorf("remove volume: %w", err)
 			}
 		}
+	} else {
+		log.Printf("services.Manager.Delete: Docker is nil — DB row %s deleted, container %s and volume %s NOT cleaned up. This is a wiring bug if seen in production.",
+			spec.ServiceID, spec.ContainerName, spec.VolumeName)
 	}
 	return m.DB.DeleteService(spec.ServiceID)
 }
@@ -188,12 +193,4 @@ func (m *Manager) specFromRow(project *db.Project, row *db.ProjectService, passw
 		ContainerName:   PostgresContainerName(project.Name, row.Environment),
 		VolumeName:      PostgresVolumeName(project.Name, row.Environment),
 	}
-}
-
-// isNotFound bridges to errdefs without importing it into manager.go's
-// imports. Kept tiny so future callers don't have to know the docker types.
-func isNotFound(err error) bool {
-	type notFounder interface{ NotFound() bool }
-	var nf notFounder
-	return errors.As(err, &nf) && nf.NotFound()
 }

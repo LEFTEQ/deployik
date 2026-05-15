@@ -118,3 +118,34 @@ func TestManagerGetSpecLoadsAndDecrypts(t *testing.T) {
 
 	_ = time.Now()
 }
+
+func TestManagerEnsureForDeploymentNoServiceReturnsNilNil(t *testing.T) {
+	t.Parallel()
+
+	database := newTestDB(t)
+	encryptor, _ := crypto.NewEncryptor("dev-encryption-key-32chars-yesssss")
+
+	user := &db.User{ID: db.NewID(), GithubID: 3, Username: "u3", Role: "user"}
+	if err := database.UpsertUser(user); err != nil {
+		t.Fatalf("UpsertUser: %v", err)
+	}
+	project := &db.Project{
+		Name: "no-svc", GithubRepo: "x", GithubOwner: "y", Branch: "main",
+		UserID: user.ID, Framework: "node-api", Port: 3000, Status: "active",
+	}
+	if err := database.CreateProject(project); err != nil {
+		t.Fatalf("CreateProject: %v", err)
+	}
+
+	// No Provision call — no service attached. Manager has nil Docker
+	// (handler-test style) since this path returns before touching docker.
+	mgr := &Manager{DB: database, Encryptor: encryptor}
+
+	inj, err := mgr.EnsureForDeployment(context.Background(), project, "preview")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if inj != nil {
+		t.Errorf("expected nil EnvInjection when no service attached, got %+v", inj)
+	}
+}
