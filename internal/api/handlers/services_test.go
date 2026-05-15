@@ -320,10 +320,9 @@ func TestServicesResetRequiresTypedConfirm(t *testing.T) {
 	goodRec := httptest.NewRecorder()
 	h.Reset(goodRec, goodReq)
 	// Manager.Docker is nil in test harness → ResetData branch is skipped.
-	// Handler returns 200 with status:"ok" in that case. The key assertion
-	// is that the typed-confirm GATE passed (NOT 400).
-	if goodRec.Code == http.StatusBadRequest {
-		t.Errorf("correct confirm should pass the gate, got 400 body=%s", goodRec.Body.String())
+	// Handler returns 200 with status:"ok" in that case.
+	if goodRec.Code != http.StatusOK {
+		t.Errorf("correct confirm should return 200, got %d body=%s", goodRec.Code, goodRec.Body.String())
 	}
 }
 

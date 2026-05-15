@@ -83,8 +83,11 @@ func EnsureRunning(ctx context.Context, docker *build.DockerClient, proxyNetwork
 				return fmt.Errorf("inspect host port for running pg: %w", err)
 			}
 			hp, err := strconv.Atoi(port)
-			if err != nil || hp <= 0 {
+			if err != nil {
 				return fmt.Errorf("parse pg host port %q: %w", port, err)
+			}
+			if hp <= 0 {
+				return fmt.Errorf("invalid pg host port %q: must be > 0", port)
 			}
 			spec.HostPort = hp
 			return nil
@@ -130,8 +133,11 @@ func EnsureRunning(ctx context.Context, docker *build.DockerClient, proxyNetwork
 		return fmt.Errorf("inspect host port after start: %w", err)
 	}
 	hp, err := strconv.Atoi(port)
-	if err != nil || hp <= 0 {
+	if err != nil {
 		return fmt.Errorf("parse pg host port after start %q: %w", port, err)
+	}
+	if hp <= 0 {
+		return fmt.Errorf("invalid pg host port after start %q: must be > 0", port)
 	}
 	spec.HostPort = hp
 	return nil
