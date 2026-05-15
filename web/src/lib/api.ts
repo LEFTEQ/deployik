@@ -32,6 +32,9 @@ import type {
   CreateAPITokenResponse,
   CreateProjectPayload,
   UpdateAutoBuildConfigPayload,
+  ProjectService,
+  ServiceCredentials,
+  AttachServiceRequest,
 } from "@/types/api";
 
 const API_URL = import.meta.env.VITE_API_URL || "/api";
@@ -575,6 +578,72 @@ class ApiClient {
     return this.request(`/projects/${projectId}/volumes/${env}/recreate`, {
       method: "POST",
     });
+  }
+
+  // ----- Services (postgres sidecar) -----
+
+  async listServices(projectId: string): Promise<ProjectService[]> {
+    return this.request<ProjectService[]>(`/projects/${projectId}/services`);
+  }
+
+  async attachService(
+    projectId: string,
+    body: AttachServiceRequest,
+  ): Promise<ProjectService> {
+    return this.request<ProjectService>(`/projects/${projectId}/services`, {
+      method: "POST",
+      body: JSON.stringify(body),
+    });
+  }
+
+  async detachService(projectId: string, environment: string): Promise<void> {
+    await this.request<void>(
+      `/projects/${projectId}/services/${environment}`,
+      { method: "DELETE" },
+    );
+  }
+
+  async getServiceCredentials(
+    projectId: string,
+    environment: string,
+  ): Promise<ServiceCredentials> {
+    return this.request<ServiceCredentials>(
+      `/projects/${projectId}/services/${environment}/credentials`,
+    );
+  }
+
+  async regenerateServicePassword(
+    projectId: string,
+    environment: string,
+  ): Promise<ServiceCredentials> {
+    return this.request<ServiceCredentials>(
+      `/projects/${projectId}/services/${environment}/regenerate-password`,
+      { method: "POST" },
+    );
+  }
+
+  async restartService(
+    projectId: string,
+    environment: string,
+  ): Promise<{ status: string }> {
+    return this.request<{ status: string }>(
+      `/projects/${projectId}/services/${environment}/restart`,
+      { method: "POST" },
+    );
+  }
+
+  async resetService(
+    projectId: string,
+    environment: string,
+    confirm: string,
+  ): Promise<{ status: string }> {
+    return this.request<{ status: string }>(
+      `/projects/${projectId}/services/${environment}/reset`,
+      {
+        method: "POST",
+        body: JSON.stringify({ confirm }),
+      },
+    );
   }
 
   // WebSocket URL builder

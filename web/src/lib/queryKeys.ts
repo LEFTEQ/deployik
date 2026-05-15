@@ -39,6 +39,10 @@ export const queryKeys = {
   // Data volumes (preview + production rows for one project)
   volumes: (projectId: string) => ["volumes", projectId] as const,
 
+  // Services (postgres sidecar — preview + production rows for one project)
+  projectServices: (projectId: string) =>
+    ["projects", projectId, "services"] as const,
+
   // Variables (env + secrets). Kind is "env" | "secret"; scope is
   // "shared" | "preview" | "production" | undefined.
   projectVariables: (
