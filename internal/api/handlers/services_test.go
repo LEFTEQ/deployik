@@ -280,3 +280,78 @@ func TestServicesCredentialsRevealAndRegenerate(t *testing.T) {
 		t.Errorf("regenerate should change password; old=%q new=%q", pwd, newPwd)
 	}
 }
+
+func TestServicesResetRequiresTypedConfirm(t *testing.T) {
+	database, encryptor, user := setupProjectTestDB(t)
+	project := seedServicesProject(t, database, user, "svc-reset")
+	h := newServiceHandler(t, database, encryptor)
+
+	// Attach preview first.
+	attachBody, _ := json.Marshal(map[string]any{"environment": "preview", "type": "postgres"})
+	r := httptest.NewRequest(http.MethodPost, "/api/projects/"+project.ID+"/services", strings.NewReader(string(attachBody)))
+	r.Header.Set("Content-Type", "application/json")
+	r = r.WithContext(auth.WithClaims(r.Context(), &auth.Claims{UserID: user.ID, Role: "user"}))
+	r = r.WithContext(withChiID(r.Context(), "id", project.ID))
+	if rec := httptest.NewRecorder(); true {
+		h.Attach(rec, r)
+		if rec.Code != http.StatusCreated {
+			t.Fatalf("attach failed: %d %s", rec.Code, rec.Body.String())
+		}
+	}
+
+	// Wrong confirm string.
+	badBody, _ := json.Marshal(map[string]any{"confirm": "wrong"})
+	badReq := httptest.NewRequest(http.MethodPost, "/api/projects/"+project.ID+"/services/preview/reset", strings.NewReader(string(badBody)))
+	badReq.Header.Set("Content-Type", "application/json")
+	badReq = badReq.WithContext(auth.WithClaims(badReq.Context(), &auth.Claims{UserID: user.ID, Role: "user"}))
+	badReq = badReq.WithContext(withChiParams(badReq.Context(), map[string]string{"id": project.ID, "env": "preview"}))
+	badRec := httptest.NewRecorder()
+	h.Reset(badRec, badReq)
+	if badRec.Code != http.StatusBadRequest {
+		t.Errorf("wrong confirm should 400, got %d body=%s", badRec.Code, badRec.Body.String())
+	}
+
+	// Correct confirm string is "<project>-<env>".
+	goodBody, _ := json.Marshal(map[string]any{"confirm": project.Name + "-preview"})
+	goodReq := httptest.NewRequest(http.MethodPost, "/api/projects/"+project.ID+"/services/preview/reset", strings.NewReader(string(goodBody)))
+	goodReq.Header.Set("Content-Type", "application/json")
+	goodReq = goodReq.WithContext(auth.WithClaims(goodReq.Context(), &auth.Claims{UserID: user.ID, Role: "user"}))
+	goodReq = goodReq.WithContext(withChiParams(goodReq.Context(), map[string]string{"id": project.ID, "env": "preview"}))
+	goodRec := httptest.NewRecorder()
+	h.Reset(goodRec, goodReq)
+	// Manager.Docker is nil in test harness → ResetData branch is skipped.
+	// Handler returns 200 with status:"ok" in that case. The key assertion
+	// is that the typed-confirm GATE passed (NOT 400).
+	if goodRec.Code == http.StatusBadRequest {
+		t.Errorf("correct confirm should pass the gate, got 400 body=%s", goodRec.Body.String())
+	}
+}
+
+func TestServicesRestartReturns200WithoutDocker(t *testing.T) {
+	database, encryptor, user := setupProjectTestDB(t)
+	project := seedServicesProject(t, database, user, "svc-restart")
+	h := newServiceHandler(t, database, encryptor)
+
+	// Attach.
+	attachBody, _ := json.Marshal(map[string]any{"environment": "production", "type": "postgres"})
+	r := httptest.NewRequest(http.MethodPost, "/api/projects/"+project.ID+"/services", strings.NewReader(string(attachBody)))
+	r.Header.Set("Content-Type", "application/json")
+	r = r.WithContext(auth.WithClaims(r.Context(), &auth.Claims{UserID: user.ID, Role: "user"}))
+	r = r.WithContext(withChiID(r.Context(), "id", project.ID))
+	if rec := httptest.NewRecorder(); true {
+		h.Attach(rec, r)
+		if rec.Code != http.StatusCreated {
+			t.Fatalf("attach failed: %d %s", rec.Code, rec.Body.String())
+		}
+	}
+
+	// Restart with nil Docker → 200 with status:"ok".
+	restartReq := httptest.NewRequest(http.MethodPost, "/api/projects/"+project.ID+"/services/production/restart", nil)
+	restartReq = restartReq.WithContext(auth.WithClaims(restartReq.Context(), &auth.Claims{UserID: user.ID, Role: "user"}))
+	restartReq = restartReq.WithContext(withChiParams(restartReq.Context(), map[string]string{"id": project.ID, "env": "production"}))
+	restartRec := httptest.NewRecorder()
+	h.Restart(restartRec, restartReq)
+	if restartRec.Code != http.StatusOK {
+		t.Errorf("restart should pass the not-found gate, got %d body=%s", restartRec.Code, restartRec.Body.String())
+	}
+}

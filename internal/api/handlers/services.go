@@ -296,3 +296,104 @@ func (h *ServiceHandler) RegeneratePassword(w http.ResponseWriter, r *http.Reque
 		Metadata:     map[string]any{"environment": environment},
 	})
 }
+
+type resetServiceRequest struct {
+	Confirm string `json:"confirm"`
+}
+
+// Restart stops and re-creates the pg container, preserving the volume. Used by
+// the [Restart] button. When Manager.Docker is nil (handler tests) returns
+// 200 ok without touching docker — production wiring always sets Docker.
+func (h *ServiceHandler) Restart(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	environment := chi.URLParam(r, "env")
+	project, _, ok := loadAuthorizedProject(w, r, h.DB, id)
+	if !ok {
+		return
+	}
+	spec, err := h.Manager.GetSpec(project, environment, db.ServiceTypePostgres)
+	if err != nil || spec == nil {
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": "service not found"})
+		return
+	}
+	if h.Manager.Docker == nil {
+		writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+		return
+	}
+	if err := services.Restart(r.Context(), h.Manager.Docker, h.Manager.ProxyNetwork, spec); err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+	_ = h.DB.UpdateServiceHostPort(spec.ServiceID, spec.HostPort)
+	_ = h.DB.UpdateServiceStatus(spec.ServiceID, db.ServiceStatusRunning)
+	writeJSON(w, http.StatusOK, map[string]any{"status": "running", "host_port": spec.HostPort})
+
+	claims := auth.GetClaims(r.Context())
+	if claims == nil {
+		return
+	}
+	h.Audit.Record(audit.Entry{
+		UserID:       claims.UserID,
+		Action:       "service.restart",
+		ResourceType: "service",
+		ResourceID:   spec.ServiceID,
+		ProjectID:    project.ID,
+		Metadata:     map[string]any{"environment": environment},
+	})
+}
+
+// Reset wipes the volume and recreates an empty pg instance. Requires a
+// typed-confirm body matching "<project>-<env>" so the user can't fat-finger
+// production. When Manager.Docker is nil (handler tests) returns 200 ok
+// without touching docker — production wiring always sets Docker.
+func (h *ServiceHandler) Reset(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	environment := chi.URLParam(r, "env")
+	project, _, ok := loadAuthorizedProject(w, r, h.DB, id)
+	if !ok {
+		return
+	}
+
+	var req resetServiceRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request body"})
+		return
+	}
+	expectedConfirm := project.Name + "-" + environment
+	if req.Confirm != expectedConfirm {
+		writeJSON(w, http.StatusBadRequest, map[string]string{
+			"error": "confirm must be '" + expectedConfirm + "' to wipe this environment's database",
+		})
+		return
+	}
+
+	spec, err := h.Manager.GetSpec(project, environment, db.ServiceTypePostgres)
+	if err != nil || spec == nil {
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": "service not found"})
+		return
+	}
+	if h.Manager.Docker == nil {
+		writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+		return
+	}
+	if err := services.ResetData(r.Context(), h.Manager.Docker, h.Manager.ProxyNetwork, spec); err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+	_ = h.DB.UpdateServiceHostPort(spec.ServiceID, spec.HostPort)
+	_ = h.DB.UpdateServiceStatus(spec.ServiceID, db.ServiceStatusRunning)
+	writeJSON(w, http.StatusOK, map[string]any{"status": "reset", "host_port": spec.HostPort})
+
+	claims := auth.GetClaims(r.Context())
+	if claims == nil {
+		return
+	}
+	h.Audit.Record(audit.Entry{
+		UserID:       claims.UserID,
+		Action:       "service.reset",
+		ResourceType: "service",
+		ResourceID:   spec.ServiceID,
+		ProjectID:    project.ID,
+		Metadata:     map[string]any{"environment": environment},
+	})
+}
