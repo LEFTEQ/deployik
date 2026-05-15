@@ -63,24 +63,48 @@ func TestGenerateDockerfileSupportsRootDirectoryAndNextOutput(t *testing.T) {
 	if !strings.Contains(got, "if [ -f /run/secrets/deployik-secrets ]") {
 		t.Fatalf("expected build command to source secrets file when present, got:\n%s", got)
 	}
-	// pnpm 10+ blocks install scripts (sharp, node-gyp, esbuild prebuild …)
-	// by default; pnpm 11+ re-verifies deps on every `pnpm run`. Both make
-	// generated Next.js + sharp projects fail. Builds run inside our
-	// controlled image, so opt out via /root/.npmrc + matching env vars.
-	if !strings.Contains(got, "/root/.npmrc") {
-		t.Fatalf("expected pnpm build to write /root/.npmrc with permissive defaults, got:\n%s", got)
+	// pnpm 10/11 makes ERR_PNPM_IGNORED_BUILDS a HARD error in non-TTY
+	// contexts (docker buildx). The `.npmrc` / npm_config_* approaches are
+	// silently ignored — only `--config.<key>=<value>` CLI flags work. We
+	// append two of them to the install command for pnpm so:
+	//   • install scripts of native deps (sharp/node-gyp/esbuild prebuild)
+	//     actually run instead of being silently skipped, and
+	//   • the build step doesn't re-trigger pnpm 11's verify-deps-before-run
+	//     check that would otherwise re-fire the gate.
+	if !strings.Contains(got, "--config.dangerously-allow-all-builds=true") {
+		t.Fatalf("expected pnpm install to inject --config.dangerously-allow-all-builds=true (so sharp install scripts run), got:\n%s", got)
 	}
-	if !strings.Contains(got, "dangerously-allow-all-builds=true") {
-		t.Fatalf("expected pnpm build to enable dangerously-allow-all-builds (sharp's install script must run), got:\n%s", got)
+	if !strings.Contains(got, "--config.verify-deps-before-run=false") {
+		t.Fatalf("expected pnpm install to inject --config.verify-deps-before-run=false (so `next build` doesn't re-check), got:\n%s", got)
 	}
-	if !strings.Contains(got, "strict-dep-builds=false") {
-		t.Fatalf("expected pnpm build to opt out of strict-dep-builds, got:\n%s", got)
+	// Sanity: previous broken approach (npmrc/env) should NOT still be there.
+	if strings.Contains(got, "/root/.npmrc") {
+		t.Fatalf("legacy .npmrc-write approach should be gone (pnpm 11 ignored it), got:\n%s", got)
 	}
-	if !strings.Contains(got, "verify-deps-before-run=false") {
-		t.Fatalf("expected pnpm build to skip verify-deps-before-run mid-build, got:\n%s", got)
+}
+
+func TestPnpmFlagInjectionLeavesCustomInstallCommandsAlone(t *testing.T) {
+	t.Parallel()
+
+	// A user who set their own install command — like one piped through a
+	// wrapper shell script — shouldn't get our pnpm flags appended to a
+	// non-pnpm invocation. The injection is gated on the command starting
+	// with `pnpm`.
+	if got := augmentInstallCommandForPM("bash scripts/install.sh", projectconfig.PackageManagerPnpm); got != "bash scripts/install.sh" {
+		t.Fatalf("non-pnpm wrapper script should pass through unchanged, got: %q", got)
 	}
-	if !strings.Contains(got, "ENV npm_config_dangerously_allow_all_builds=true") {
-		t.Fatalf("expected matching env var (defense-in-depth) for dangerously-allow-all-builds, got:\n%s", got)
+	if got := augmentInstallCommandForPM("npm ci", projectconfig.PackageManagerNpm); got != "npm ci" {
+		t.Fatalf("npm command should pass through unchanged, got: %q", got)
+	}
+	// Idempotent: user already added the flag → don't double-append.
+	already := "pnpm install --frozen-lockfile --config.dangerously-allow-all-builds=true"
+	if got := augmentInstallCommandForPM(already, projectconfig.PackageManagerPnpm); got != already {
+		t.Fatalf("already-augmented command should be left alone, got: %q", got)
+	}
+	// Happy path.
+	got := augmentInstallCommandForPM("pnpm install --frozen-lockfile", projectconfig.PackageManagerPnpm)
+	if !strings.Contains(got, "--config.dangerously-allow-all-builds=true") || !strings.Contains(got, "--config.verify-deps-before-run=false") {
+		t.Fatalf("expected both pnpm flags appended, got: %q", got)
 	}
 }
 

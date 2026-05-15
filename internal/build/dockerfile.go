@@ -167,7 +167,6 @@ func generateNextJSDockerfile(data DockerfileData) string {
 		b.WriteString("RUN npm i -g bun\n")
 	} else if data.UsePnpm {
 		b.WriteString("RUN corepack enable\n")
-		b.WriteString(pnpmBuildEnvBlock())
 	} else if data.UseYarn {
 		b.WriteString("RUN corepack enable\n")
 	}
@@ -231,7 +230,6 @@ func generateStaticDockerfile(data DockerfileData) string {
 		b.WriteString("RUN npm i -g bun\n")
 	} else if data.UsePnpm {
 		b.WriteString("RUN corepack enable\n")
-		b.WriteString(pnpmBuildEnvBlock())
 	} else if data.UseYarn {
 		b.WriteString("RUN corepack enable\n")
 	}
@@ -337,15 +335,59 @@ func generateNodeAPIDockerfile(data DockerfileData) string {
 
 // installRunLine renders the install-command RUN step, prefixed with a
 // BuildKit cache mount for the effective package manager's on-disk cache.
+// For pnpm, also appends the CLI flags that let native-dep install scripts
+// actually run (see augmentInstallCommandForPM for the full reasoning).
 // Falls back to a plain `RUN <cmd>` when no cache target is known — keeps
 // behavior identical on classic-builder fallbacks (should never happen now
 // that Deployik always goes through buildx).
 func installRunLine(data DockerfileData) string {
-	cacheFlag := packageManagerCacheMount(resolvePackageManager(data))
+	pm := resolvePackageManager(data)
+	cmd := augmentInstallCommandForPM(data.InstallCommand, pm)
+	cacheFlag := packageManagerCacheMount(pm)
 	if cacheFlag == "" {
-		return fmt.Sprintf("RUN %s\n", data.InstallCommand)
+		return fmt.Sprintf("RUN %s\n", cmd)
 	}
-	return fmt.Sprintf("RUN %s \\\n    %s\n", cacheFlag, data.InstallCommand)
+	return fmt.Sprintf("RUN %s \\\n    %s\n", cacheFlag, cmd)
+}
+
+// augmentInstallCommandForPM appends package-manager-specific flags that have
+// to be CLI args (not .npmrc / not env vars) to make a vanilla create-next-app
+// + sharp / canvas / node-gyp build actually finish in a non-TTY environment.
+//
+// The only known case today is pnpm 10/11 inside docker buildx:
+//
+//   - pnpm 10 made `strict-dep-builds=true` the default. Install scripts of
+//     any dep are blocked unless listed in `pnpm.onlyBuiltDependencies`.
+//   - pnpm 11 made the gate **a hard error in non-TTY contexts** (verified
+//     empirically: same `pnpm install --frozen-lockfile` exits 0 in a TTY
+//     and 1 inside `docker buildx build`).
+//   - Setting `dangerously-allow-all-builds=true` or `strict-dep-builds=false`
+//     in `.npmrc` (project-level or `/root/.npmrc`) is **ignored** by pnpm 11
+//     in buildx; setting them via `npm_config_*` ENV is also ignored. Only
+//     `--config.dangerously-allow-all-builds=true` as a CLI flag actually
+//     unblocks the install.
+//   - `--config.verify-deps-before-run=false` similarly disables pnpm 11's
+//     pre-`pnpm run` reinstall check, so the build step doesn't re-fire the
+//     gate after our install bypassed it.
+//
+// We only inject when the install command actually invokes pnpm — keeping
+// user-customized commands (e.g. `bash scripts/install.sh`) untouched. pnpm
+// safely ignores unknown `--config.<key>=<value>` flags so older pnpm
+// versions (9.x and earlier) accept them as no-ops without complaint.
+func augmentInstallCommandForPM(cmd, pm string) string {
+	if pm != projectconfig.PackageManagerPnpm {
+		return cmd
+	}
+	trimmed := strings.TrimSpace(cmd)
+	if trimmed == "" || !strings.HasPrefix(trimmed, "pnpm") {
+		return cmd
+	}
+	const flags = "--config.dangerously-allow-all-builds=true --config.verify-deps-before-run=false"
+	// Idempotent: don't double-append if a user already added the flag.
+	if strings.Contains(cmd, "--config.dangerously-allow-all-builds") {
+		return cmd
+	}
+	return cmd + " " + flags
 }
 
 // buildRunLine renders the build-command RUN step with the given BuildKit
@@ -376,47 +418,6 @@ func buildRunLine(command string, mountFlags []string) string {
 		return fmt.Sprintf("RUN %s\n", body)
 	}
 	return fmt.Sprintf("RUN %s \\\n    %s\n", strings.Join(mountFlags, " "), body)
-}
-
-// pnpmBuildEnvBlock writes a user-level `~/.npmrc` (plus matching env vars
-// as a belt-and-suspenders) that lets a fresh `create-next-app + sharp`
-// project actually build under pnpm 10/11.
-//
-// Three settings are at play:
-//
-//   strict-dep-builds=true  (pnpm 10+ default)
-//     Install fails outright if any dep wanted to run an install script
-//     that wasn't listed in `pnpm.onlyBuiltDependencies`. Setting this to
-//     false demotes the error to a warning — the install succeeds, but
-//     scripts are STILL skipped, so `sharp` remains uncompiled and the
-//     runtime crashes anyway. Necessary but not sufficient.
-//
-//   dangerously-allow-all-builds=true  (pnpm 10+; off by default)
-//     The actual escape hatch — pnpm runs install scripts for every dep,
-//     same posture as npm/yarn/bun. The "dangerously" prefix is about
-//     supply-chain risk in interactive dev; inside our deterministic build
-//     image, container isolation already covers that, and the alternative
-//     is "every Next.js app with sharp fails out of the box".
-//
-//   verify-deps-before-run=true  (pnpm 11+ default)
-//     pnpm re-runs an install check before every `pnpm run` (including
-//     `pnpm run build`). Disabling avoids a redundant install pass during
-//     `next build` that ignored our flags on the first install pass.
-//
-// The .npmrc lives at /root/.npmrc (user-level for the build's root user).
-// Project-level .npmrc still wins for any setting the project defines, so
-// a teammate who deliberately sets `dangerously-allow-all-builds=false`
-// in their repo continues to get the strict behavior.
-//
-// The redundant ENV lines exist because pnpm honors `npm_config_*` env
-// vars too, and we want the new defaults to apply even if the .npmrc
-// write somehow failed (e.g., a future base-image change moves $HOME).
-func pnpmBuildEnvBlock() string {
-	return "" +
-		"RUN printf 'strict-dep-builds=false\\ndangerously-allow-all-builds=true\\nverify-deps-before-run=false\\n' > /root/.npmrc\n" +
-		"ENV npm_config_strict_dep_builds=false\n" +
-		"ENV npm_config_dangerously_allow_all_builds=true\n" +
-		"ENV npm_config_verify_deps_before_run=false\n"
 }
 
 // packageManagerCacheMount returns the BuildKit cache-mount flag for the
