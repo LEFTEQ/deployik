@@ -134,6 +134,7 @@ func NewRouter(cfg *RouterConfig) *chi.Mux {
 				DB:         cfg.DB,
 				Docker:     dockerClient,
 				Manager:    cfg.DomainManager,
+				Services:   cfg.Services,
 				Encryptor:  cfg.Encryptor,
 				Audit:      auditRecorder,
 				Analytics:  cfg.Analytics,

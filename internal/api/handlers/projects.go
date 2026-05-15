@@ -21,12 +21,14 @@ import (
 	"github.com/LEFTEQ/lovinka-deployik/internal/domain"
 	"github.com/LEFTEQ/lovinka-deployik/internal/github"
 	"github.com/LEFTEQ/lovinka-deployik/internal/projectconfig"
+	"github.com/LEFTEQ/lovinka-deployik/internal/services"
 )
 
 type ProjectHandler struct {
 	DB         *db.DB
 	Docker     *build.DockerClient
 	Manager    *domain.Manager
+	Services   *services.Manager
 	Encryptor  *crypto.Encryptor
 	Audit      *audit.Recorder
 	Analytics  *analytics.Service
@@ -445,6 +447,22 @@ func (h *ProjectHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	}
 
 	h.cleanupProjectRuntime(project, domains)
+
+	// Clean up attached services (stop container + remove volume + delete row)
+	// BEFORE the project is soft-deleted so the cleanup is idempotent on retry.
+	// Best-effort: errors are logged but don't block project delete — a failed
+	// container cleanup leaves orphaned docker state but the project is gone.
+	if h.Services != nil {
+		rows, err := h.DB.ListServicesByProject(project.ID)
+		if err != nil {
+			log.Printf("Warning: failed to list services for project %s during delete: %v", project.ID, err)
+		}
+		for _, row := range rows {
+			if err := h.Services.Delete(r.Context(), project, row.Environment, row.ServiceType); err != nil {
+				log.Printf("Warning: failed to delete service %s on project %s: %v", row.ID, project.ID, err)
+			}
+		}
+	}
 
 	if err := h.DB.DeleteAllDomainsForProject(id); err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to release project domains"})
