@@ -5,6 +5,7 @@ import {
   Building2,
   ChevronRight,
   Cpu,
+  Database,
   FolderKanban,
   Globe2,
   KeyRound,
@@ -174,6 +175,14 @@ function getProjectItems(projectId: string): NavItem[] {
           to: "/projects/$id/settings/env",
           params: { id: projectId },
           matchPath: (p) => p === `${base}/settings/env`,
+        },
+        {
+          label: "Services",
+          icon: Database,
+          to: "/projects/$id/settings/services",
+          params: { id: projectId },
+          testId: "sidebar-settings-services",
+          matchPath: (p) => p === `${base}/settings/services`,
         },
         {
           label: "Protection",

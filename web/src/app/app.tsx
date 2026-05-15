@@ -62,6 +62,11 @@ const ProjectSettingsResources = lazy(() =>
     default: m.ProjectSettingsResources,
   })),
 );
+const ProjectSettingsServices = lazy(() =>
+  import("@/pages/ProjectSettingsServices").then((m) => ({
+    default: m.ProjectSettingsServices,
+  })),
+);
 const DeploymentDetail = lazy(() =>
   import("@/pages/DeploymentDetail").then((m) => ({
     default: m.DeploymentDetail,
@@ -257,6 +262,12 @@ const projectSettingsResourcesRoute = createRoute({
   component: ProjectSettingsResources,
 });
 
+const projectSettingsServicesRoute = createRoute({
+  getParentRoute: () => projectLayoutRoute,
+  path: "/settings/services",
+  component: ProjectSettingsServices,
+});
+
 const routeTree = rootRoute.addChildren([
   loginRoute,
   authCallbackRoute,
@@ -275,6 +286,7 @@ const routeTree = rootRoute.addChildren([
       projectSettingsEnvRoute,
       projectSettingsProtectionRoute,
       projectSettingsResourcesRoute,
+      projectSettingsServicesRoute,
     ]),
   ]),
 ]);
