@@ -125,6 +125,43 @@ func (p *Project) IsEnvironmentProtected(environment string) bool {
 	return false
 }
 
+// ServiceType identifies a sidecar service kind. v1 ships postgres only;
+// "redis", "mysql" etc. are reserved for follow-up plans.
+type ServiceType string
+
+const (
+	ServiceTypePostgres ServiceType = "postgres"
+)
+
+// ServiceStatus mirrors the CHECK constraint in migration 023.
+type ServiceStatus string
+
+const (
+	ServiceStatusPending ServiceStatus = "pending"
+	ServiceStatusRunning ServiceStatus = "running"
+	ServiceStatusStopped ServiceStatus = "stopped"
+	ServiceStatusFailed  ServiceStatus = "failed"
+)
+
+// ProjectService is one row of project_services. db_password_encrypted is
+// AES-256-GCM ciphertext (decrypt via crypto.Encryptor); never expose in JSON.
+type ProjectService struct {
+	ID                  string        `json:"id"`
+	ProjectID           string        `json:"project_id"`
+	Environment         string        `json:"environment"`
+	ServiceType         ServiceType   `json:"service_type"`
+	Image               string        `json:"image"`
+	DBName              string        `json:"db_name"`
+	DBUser              string        `json:"db_user"`
+	DBPasswordEncrypted string        `json:"-"` // ciphertext, never in JSON
+	HostPort            int           `json:"host_port"`
+	ConfigJSON          string        `json:"config_json,omitempty"`
+	Status              ServiceStatus `json:"status"`
+	LastStartedAt       NullableTime  `json:"last_started_at"`
+	CreatedAt           time.Time     `json:"created_at"`
+	UpdatedAt           time.Time     `json:"updated_at"`
+}
+
 type AnalyticsTrackingMode string
 
 const (
