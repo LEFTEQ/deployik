@@ -18,6 +18,7 @@ import (
 	"github.com/docker/docker/api/types/network"
 	"github.com/docker/docker/api/types/volume"
 	"github.com/docker/docker/client"
+	"github.com/docker/docker/errdefs"
 	"github.com/docker/go-connections/nat"
 )
 
@@ -447,6 +448,24 @@ func (d *DockerClient) ContainerExists(ctx context.Context, name string) (string
 		return "", false
 	}
 	return inspect.ID, true
+}
+
+// IsContainerRunning returns true when the container with id is in the
+// "running" state. Distinct from ContainerExists (which returns true for any
+// state — including stopped/exited). Callers that need "running" should use
+// this; callers that just need "is the name taken" should use ContainerExists.
+func (d *DockerClient) IsContainerRunning(ctx context.Context, id string) (bool, error) {
+	inspect, err := d.cli.ContainerInspect(ctx, id)
+	if err != nil {
+		if errdefs.IsNotFound(err) {
+			return false, nil
+		}
+		return false, fmt.Errorf("inspect container: %w", err)
+	}
+	if inspect.State == nil {
+		return false, nil
+	}
+	return inspect.State.Running, nil
 }
 
 // GetHostPort returns the host-mapped port for the given container port/tcp.

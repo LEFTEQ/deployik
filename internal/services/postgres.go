@@ -67,14 +67,33 @@ func BuildPostgresEnvInjection(spec ServiceSpec) EnvInjection {
 // On success the live host_port (from docker inspect) is set on spec.HostPort.
 // Callers should persist it via db.UpdateServiceHostPort.
 func EnsureRunning(ctx context.Context, docker *build.DockerClient, proxyNetwork string, spec *ServiceSpec) error {
-	if id, running := docker.ContainerExists(ctx, spec.ContainerName); running {
-		port, err := docker.GetHostPort(ctx, id, PostgresPort)
+	id, exists := docker.ContainerExists(ctx, spec.ContainerName)
+	if exists {
+		// "exists" is broader than "running": ContainerExists returns true for
+		// created/paused/exited/dead containers too. Use IsContainerRunning to
+		// gate the early return — otherwise we'd call GetHostPort on a stopped
+		// container, get "" back, and silently persist HostPort=0.
+		running, err := docker.IsContainerRunning(ctx, id)
 		if err != nil {
-			return fmt.Errorf("inspect host port for running pg: %w", err)
+			return fmt.Errorf("inspect pg container state: %w", err)
 		}
-		hp, _ := strconv.Atoi(port)
-		spec.HostPort = hp
-		return nil
+		if running {
+			port, err := docker.GetHostPort(ctx, id, PostgresPort)
+			if err != nil {
+				return fmt.Errorf("inspect host port for running pg: %w", err)
+			}
+			hp, err := strconv.Atoi(port)
+			if err != nil || hp <= 0 {
+				return fmt.Errorf("parse pg host port %q: %w", port, err)
+			}
+			spec.HostPort = hp
+			return nil
+		}
+		// Container exists but is stopped — remove it so we get a clean
+		// recreate via the path below. StopContainer is force-remove.
+		if err := docker.StopContainer(ctx, id); err != nil {
+			return fmt.Errorf("clean up stopped pg container: %w", err)
+		}
 	}
 
 	if err := docker.EnsureVolume(ctx, spec.VolumeName); err != nil {
@@ -110,7 +129,10 @@ func EnsureRunning(ctx context.Context, docker *build.DockerClient, proxyNetwork
 	if err != nil {
 		return fmt.Errorf("inspect host port after start: %w", err)
 	}
-	hp, _ := strconv.Atoi(port)
+	hp, err := strconv.Atoi(port)
+	if err != nil || hp <= 0 {
+		return fmt.Errorf("parse pg host port after start %q: %w", port, err)
+	}
 	spec.HostPort = hp
 	return nil
 }
@@ -136,6 +158,8 @@ func ensurePostgresImage(ctx context.Context) error {
 // from the deployik process itself.
 func WaitReady(ctx context.Context, spec *ServiceSpec, timeout time.Duration) error {
 	deadline := time.Now().Add(timeout)
+	var lastErr error
+	var lastOut []byte
 	for time.Now().Before(deadline) {
 		probeCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 		cmd := exec.CommandContext(probeCtx, "docker", "exec", spec.ContainerName,
@@ -145,14 +169,18 @@ func WaitReady(ctx context.Context, spec *ServiceSpec, timeout time.Duration) er
 		if err == nil {
 			return nil
 		}
+		lastErr, lastOut = err, out
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
 		case <-time.After(2 * time.Second):
 		}
-		_ = out // discarded; tail is in the next iteration's error if it persists
 	}
-	return fmt.Errorf("pg_isready did not succeed within %s", timeout)
+	if lastErr == nil {
+		return fmt.Errorf("pg_isready did not succeed within %s", timeout)
+	}
+	return fmt.Errorf("pg_isready did not succeed within %s: %w (tail: %s)",
+		timeout, lastErr, strings.TrimSpace(string(lastOut)))
 }
 
 // Stop halts and removes the Postgres container. The named volume is NOT
