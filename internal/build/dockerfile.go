@@ -378,30 +378,44 @@ func buildRunLine(command string, mountFlags []string) string {
 	return fmt.Sprintf("RUN %s \\\n    %s\n", strings.Join(mountFlags, " "), body)
 }
 
-// pnpmBuildEnvBlock returns the ENV lines we inject into pnpm builds so that
-// install scripts of native deps (sharp, esbuild prebuild, node-gyp wrappers,
-// etc.) actually run, and so `pnpm run build` doesn't re-verify the dep tree
-// mid-build.
+// pnpmBuildEnvBlock writes a user-level `~/.npmrc` (plus matching env vars
+// as a belt-and-suspenders) that lets a fresh `create-next-app + sharp`
+// project actually build under pnpm 10/11.
 //
-// Background: pnpm 10 made `strict-dep-builds=true` the default — install
-// scripts of any dep are blocked unless the project lists them in
-// `pnpm.onlyBuiltDependencies`. This is great for interactive dev (supply
-// chain protection) but a footgun in a controlled CI image where the user
-// just wants their `next build` to find a compiled `sharp`. pnpm 11 also
-// added `verify-deps-before-run`, which re-runs an install check before
-// every `pnpm run` — same defensive posture, same friction here.
+// Three settings are at play:
 //
-// Both settings are *configurations*, not version-gated behaviors, so
-// turning them off in our build env doesn't lock us to any pnpm version
-// and doesn't bypass anything that container isolation isn't already
-// covering. Side effect: pnpm builds Just Work for repos with sharp /
-// node-canvas / similar.
+//   strict-dep-builds=true  (pnpm 10+ default)
+//     Install fails outright if any dep wanted to run an install script
+//     that wasn't listed in `pnpm.onlyBuiltDependencies`. Setting this to
+//     false demotes the error to a warning — the install succeeds, but
+//     scripts are STILL skipped, so `sharp` remains uncompiled and the
+//     runtime crashes anyway. Necessary but not sufficient.
 //
-// Lower-cased underscore form is what pnpm reads for `npm_config_*` env
-// vars; uppercase variants would also work but pnpm's docs use this form.
+//   dangerously-allow-all-builds=true  (pnpm 10+; off by default)
+//     The actual escape hatch — pnpm runs install scripts for every dep,
+//     same posture as npm/yarn/bun. The "dangerously" prefix is about
+//     supply-chain risk in interactive dev; inside our deterministic build
+//     image, container isolation already covers that, and the alternative
+//     is "every Next.js app with sharp fails out of the box".
+//
+//   verify-deps-before-run=true  (pnpm 11+ default)
+//     pnpm re-runs an install check before every `pnpm run` (including
+//     `pnpm run build`). Disabling avoids a redundant install pass during
+//     `next build` that ignored our flags on the first install pass.
+//
+// The .npmrc lives at /root/.npmrc (user-level for the build's root user).
+// Project-level .npmrc still wins for any setting the project defines, so
+// a teammate who deliberately sets `dangerously-allow-all-builds=false`
+// in their repo continues to get the strict behavior.
+//
+// The redundant ENV lines exist because pnpm honors `npm_config_*` env
+// vars too, and we want the new defaults to apply even if the .npmrc
+// write somehow failed (e.g., a future base-image change moves $HOME).
 func pnpmBuildEnvBlock() string {
 	return "" +
+		"RUN printf 'strict-dep-builds=false\\ndangerously-allow-all-builds=true\\nverify-deps-before-run=false\\n' > /root/.npmrc\n" +
 		"ENV npm_config_strict_dep_builds=false\n" +
+		"ENV npm_config_dangerously_allow_all_builds=true\n" +
 		"ENV npm_config_verify_deps_before_run=false\n"
 }
 

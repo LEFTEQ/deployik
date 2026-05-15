@@ -66,12 +66,21 @@ func TestGenerateDockerfileSupportsRootDirectoryAndNextOutput(t *testing.T) {
 	// pnpm 10+ blocks install scripts (sharp, node-gyp, esbuild prebuild …)
 	// by default; pnpm 11+ re-verifies deps on every `pnpm run`. Both make
 	// generated Next.js + sharp projects fail. Builds run inside our
-	// controlled image, so opt out.
-	if !strings.Contains(got, "ENV npm_config_strict_dep_builds=false") {
-		t.Fatalf("expected pnpm build to opt out of strict-dep-builds (sharp + node-gyp deps need install scripts), got:\n%s", got)
+	// controlled image, so opt out via /root/.npmrc + matching env vars.
+	if !strings.Contains(got, "/root/.npmrc") {
+		t.Fatalf("expected pnpm build to write /root/.npmrc with permissive defaults, got:\n%s", got)
 	}
-	if !strings.Contains(got, "ENV npm_config_verify_deps_before_run=false") {
+	if !strings.Contains(got, "dangerously-allow-all-builds=true") {
+		t.Fatalf("expected pnpm build to enable dangerously-allow-all-builds (sharp's install script must run), got:\n%s", got)
+	}
+	if !strings.Contains(got, "strict-dep-builds=false") {
+		t.Fatalf("expected pnpm build to opt out of strict-dep-builds, got:\n%s", got)
+	}
+	if !strings.Contains(got, "verify-deps-before-run=false") {
 		t.Fatalf("expected pnpm build to skip verify-deps-before-run mid-build, got:\n%s", got)
+	}
+	if !strings.Contains(got, "ENV npm_config_dangerously_allow_all_builds=true") {
+		t.Fatalf("expected matching env var (defense-in-depth) for dangerously-allow-all-builds, got:\n%s", got)
 	}
 }
 
