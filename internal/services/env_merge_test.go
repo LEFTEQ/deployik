@@ -69,3 +69,58 @@ func findVar(envVars []string, name string) string {
 	}
 	return ""
 }
+
+func TestBuildPostgresEnvInjection(t *testing.T) {
+	t.Parallel()
+
+	spec := ServiceSpec{
+		ContainerName:   "deployik-myapp-preview-pg",
+		DBName:          "app",
+		DBUser:          "app",
+		DBPasswordPlain: "s3cr3t",
+	}
+	inj := BuildPostgresEnvInjection(spec)
+
+	if got := inj.Env["DATABASE_URL"]; got != "postgresql://app:s3cr3t@deployik-myapp-preview-pg:5432/app" {
+		t.Errorf("DATABASE_URL = %q", got)
+	}
+	if got := inj.Env["POSTGRES_HOST"]; got != "deployik-myapp-preview-pg" {
+		t.Errorf("POSTGRES_HOST = %q", got)
+	}
+	if got := inj.Env["POSTGRES_PORT"]; got != "5432" {
+		t.Errorf("POSTGRES_PORT = %q", got)
+	}
+	if got := inj.Env["POSTGRES_DB"]; got != "app" {
+		t.Errorf("POSTGRES_DB = %q", got)
+	}
+	if got := inj.Env["POSTGRES_USER"]; got != "app" {
+		t.Errorf("POSTGRES_USER = %q", got)
+	}
+	if _, present := inj.Env["POSTGRES_PASSWORD"]; present {
+		t.Error("POSTGRES_PASSWORD should be in Secrets, not Env")
+	}
+	if got := inj.Secrets["POSTGRES_PASSWORD"]; got != "s3cr3t" {
+		t.Errorf("POSTGRES_PASSWORD secret = %q", got)
+	}
+}
+
+func TestBuildPostgresEnvInjectionEscapesPasswordInDSN(t *testing.T) {
+	t.Parallel()
+
+	spec := ServiceSpec{
+		ContainerName:   "deployik-myapp-preview-pg",
+		DBName:          "app",
+		DBUser:          "app",
+		DBPasswordPlain: "p@ss word/with:colon",
+	}
+	inj := BuildPostgresEnvInjection(spec)
+	got := inj.Env["DATABASE_URL"]
+	// The plaintext characters @, /, :, and space MUST be percent-encoded.
+	// If they appear unencoded, parsers like pgx or libpq will misread the DSN.
+	if strings.Contains(got, "@ss word/with:colon") {
+		t.Fatalf("DATABASE_URL leaks unencoded password chars: %q", got)
+	}
+	if !strings.Contains(got, "p%40ss%20word%2Fwith%3Acolon") {
+		t.Errorf("expected percent-encoded password in DSN, got %q", got)
+	}
+}
