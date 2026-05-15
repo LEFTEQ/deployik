@@ -2,11 +2,14 @@ package handlers
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"github.com/go-chi/chi/v5"
 
 	"github.com/LEFTEQ/lovinka-deployik/internal/audit"
 	"github.com/LEFTEQ/lovinka-deployik/internal/auth"
@@ -15,6 +18,24 @@ import (
 	"github.com/LEFTEQ/lovinka-deployik/internal/projectconfig"
 	"github.com/LEFTEQ/lovinka-deployik/internal/services"
 )
+
+// withChiParams adds (or replaces) URL params on the chi RouteContext stored in
+// ctx, preserving any params already present. The shared withChiID helper in
+// tokens_test.go creates a fresh RouteContext on each call, which overwrites
+// earlier params — Detach/Credentials/RegeneratePassword tests need BOTH "id"
+// and "env" on the same context, so they route through this helper instead.
+func withChiParams(ctx context.Context, params map[string]string) context.Context {
+	var rc *chi.Context
+	if existing, ok := ctx.Value(chi.RouteCtxKey).(*chi.Context); ok && existing != nil {
+		rc = existing
+	} else {
+		rc = chi.NewRouteContext()
+	}
+	for k, v := range params {
+		rc.URLParams.Add(k, v)
+	}
+	return context.WithValue(ctx, chi.RouteCtxKey, rc)
+}
 
 // seedServicesProject creates a project owned by user.ID inside their personal
 // org and returns it. Used by the ServiceHandler tests so each test gets a
@@ -148,5 +169,114 @@ func TestServicesAttachAndList(t *testing.T) {
 	}
 	if _, ok := list[0]["db_password_encrypted"]; ok {
 		t.Error("list response leaked db_password_encrypted field")
+	}
+}
+
+func TestServicesDetach(t *testing.T) {
+	database, encryptor, user := setupProjectTestDB(t)
+	project := seedServicesProject(t, database, user, "svc-detach")
+	h := newServiceHandler(t, database, encryptor)
+
+	// Attach first.
+	attach := func() *httptest.ResponseRecorder {
+		body, _ := json.Marshal(map[string]any{"environment": "preview", "type": "postgres"})
+		r := httptest.NewRequest(http.MethodPost, "/api/projects/"+project.ID+"/services", strings.NewReader(string(body)))
+		r.Header.Set("Content-Type", "application/json")
+		r = r.WithContext(auth.WithClaims(r.Context(), &auth.Claims{UserID: user.ID, Role: "user"}))
+		r = r.WithContext(withChiID(r.Context(), "id", project.ID))
+		rec := httptest.NewRecorder()
+		h.Attach(rec, r)
+		return rec
+	}
+	if rec := attach(); rec.Code != http.StatusCreated {
+		t.Fatalf("attach status %d body=%s", rec.Code, rec.Body.String())
+	}
+
+	// Detach preview.
+	detachReq := httptest.NewRequest(http.MethodDelete, "/api/projects/"+project.ID+"/services/preview", nil)
+	detachReq = detachReq.WithContext(auth.WithClaims(detachReq.Context(), &auth.Claims{UserID: user.ID, Role: "user"}))
+	detachReq = detachReq.WithContext(withChiParams(detachReq.Context(), map[string]string{
+		"id":  project.ID,
+		"env": "preview",
+	}))
+	detachRec := httptest.NewRecorder()
+	h.Detach(detachRec, detachReq)
+
+	if detachRec.Code != http.StatusNoContent {
+		t.Fatalf("detach status = %d body = %s", detachRec.Code, detachRec.Body.String())
+	}
+
+	// List should now be empty.
+	listReq := httptest.NewRequest(http.MethodGet, "/api/projects/"+project.ID+"/services", nil)
+	listReq = listReq.WithContext(auth.WithClaims(listReq.Context(), &auth.Claims{UserID: user.ID, Role: "user"}))
+	listReq = listReq.WithContext(withChiID(listReq.Context(), "id", project.ID))
+	listRec := httptest.NewRecorder()
+	h.List(listRec, listReq)
+	var list []serviceResponse
+	_ = json.Unmarshal(listRec.Body.Bytes(), &list)
+	if len(list) != 0 {
+		t.Errorf("expected empty after detach, got %d", len(list))
+	}
+}
+
+func TestServicesCredentialsRevealAndRegenerate(t *testing.T) {
+	database, encryptor, user := setupProjectTestDB(t)
+	project := seedServicesProject(t, database, user, "svc-creds")
+	h := newServiceHandler(t, database, encryptor)
+
+	// Attach production.
+	body, _ := json.Marshal(map[string]any{"environment": "production", "type": "postgres"})
+	r := httptest.NewRequest(http.MethodPost, "/api/projects/"+project.ID+"/services", strings.NewReader(string(body)))
+	r.Header.Set("Content-Type", "application/json")
+	r = r.WithContext(auth.WithClaims(r.Context(), &auth.Claims{UserID: user.ID, Role: "user"}))
+	r = r.WithContext(withChiID(r.Context(), "id", project.ID))
+	if rec := httptest.NewRecorder(); true {
+		h.Attach(rec, r)
+		if rec.Code != http.StatusCreated {
+			t.Fatalf("attach status %d body=%s", rec.Code, rec.Body.String())
+		}
+	}
+
+	// Read credentials.
+	credReq := httptest.NewRequest(http.MethodGet, "/api/projects/"+project.ID+"/services/production/credentials", nil)
+	credReq = credReq.WithContext(auth.WithClaims(credReq.Context(), &auth.Claims{UserID: user.ID, Role: "user"}))
+	credReq = credReq.WithContext(withChiParams(credReq.Context(), map[string]string{
+		"id":  project.ID,
+		"env": "production",
+	}))
+	credRec := httptest.NewRecorder()
+	h.Credentials(credRec, credReq)
+
+	if credRec.Code != http.StatusOK {
+		t.Fatalf("credentials status = %d body = %s", credRec.Code, credRec.Body.String())
+	}
+	var creds map[string]any
+	_ = json.Unmarshal(credRec.Body.Bytes(), &creds)
+	if creds["db_name"] != "app" || creds["db_user"] != "app" {
+		t.Errorf("missing db_name/db_user: %v", creds)
+	}
+	pwd, _ := creds["password"].(string)
+	if pwd == "" {
+		t.Error("credentials response missing plaintext password")
+	}
+
+	// Regenerate must change the password.
+	regenReq := httptest.NewRequest(http.MethodPost, "/api/projects/"+project.ID+"/services/production/regenerate-password", nil)
+	regenReq = regenReq.WithContext(auth.WithClaims(regenReq.Context(), &auth.Claims{UserID: user.ID, Role: "user"}))
+	regenReq = regenReq.WithContext(withChiParams(regenReq.Context(), map[string]string{
+		"id":  project.ID,
+		"env": "production",
+	}))
+	regenRec := httptest.NewRecorder()
+	h.RegeneratePassword(regenRec, regenReq)
+
+	if regenRec.Code != http.StatusOK {
+		t.Fatalf("regenerate status = %d body = %s", regenRec.Code, regenRec.Body.String())
+	}
+	var newCreds map[string]any
+	_ = json.Unmarshal(regenRec.Body.Bytes(), &newCreds)
+	newPwd, _ := newCreds["password"].(string)
+	if newPwd == "" || newPwd == pwd {
+		t.Errorf("regenerate should change password; old=%q new=%q", pwd, newPwd)
 	}
 }
