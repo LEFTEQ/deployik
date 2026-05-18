@@ -44,6 +44,42 @@ export interface Organization {
   updated_at: string;
 }
 
+export interface Group {
+  id: string;
+  name: string;
+  slug: string;
+  is_default: boolean;
+  personal_owner_user_id?: string;
+  membership_role: "owner" | "member";
+  project_count: number;
+  display_order: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface GroupMember {
+  group_id: string;
+  user_id: string;
+  username: string;
+  avatar_url: string;
+  role: "owner" | "member";
+  created_at: string;
+}
+
+export interface GroupInvite {
+  id: string;
+  group_id: string;
+  group_name?: string;
+  github_username: string;
+  role: "owner" | "member";
+  invited_by_user_id: string;
+  invited_by_username?: string;
+  status: "pending" | "accepted" | "declined" | "canceled";
+  responded_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface PlatformInfo {
   dns_target_ip: string;
 }

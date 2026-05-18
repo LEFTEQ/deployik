@@ -172,17 +172,29 @@ func (db *DB) CreateOrganization(organization *Organization) error {
 }
 
 func (db *DB) AddOrganizationMember(organizationID, userID, role string) error {
-	role = normalizeOrganizationRole(role)
-	_, err := db.Exec(
-		`INSERT INTO organization_memberships (organization_id, user_id, role)
-		 VALUES (?, ?, ?)
-		 ON CONFLICT(organization_id, user_id) DO UPDATE SET role = excluded.role`,
-		organizationID, userID, role,
-	)
-	if err != nil {
+	if err := upsertOrganizationMember(db.DB, organizationID, userID, role); err != nil {
 		return fmt.Errorf("add organization member: %w", err)
 	}
 	return nil
+}
+
+type membershipExecer interface {
+	Exec(query string, args ...any) (sql.Result, error)
+}
+
+func upsertOrganizationMember(q membershipExecer, organizationID, userID, role string) error {
+	role = normalizeOrganizationRole(role)
+	_, err := q.Exec(
+		`INSERT INTO organization_memberships (organization_id, user_id, role)
+		 VALUES (?, ?, ?)
+		 ON CONFLICT(organization_id, user_id) DO UPDATE SET
+		   role = CASE
+		     WHEN organization_memberships.role = 'owner' OR excluded.role = 'owner' THEN 'owner'
+		     ELSE 'member'
+		   END`,
+		organizationID, userID, role,
+	)
+	return err
 }
 
 func (db *DB) EnsurePersonalOrganization(user *User) (*Organization, error) {

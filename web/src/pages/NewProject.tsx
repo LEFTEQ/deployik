@@ -294,7 +294,7 @@ export function NewProject() {
       <div className="mx-auto max-w-2xl p-6">
         <LoadingState
           title="Inspecting repository…"
-          description="Detecting workspaces, frameworks, and build commands."
+          description="Detecting groups, frameworks, and build commands."
           className="min-h-[320px]"
         />
       </div>
@@ -359,7 +359,7 @@ export function NewProject() {
 
         <div className="space-y-4">
           <div className="space-y-2">
-            <Label htmlFor="organization">Workspace</Label>
+            <Label htmlFor="organization">Group</Label>
             <Select
               value={selectedOrganizationId ?? undefined}
               onValueChange={setSelectedOrganizationId}
@@ -368,8 +368,8 @@ export function NewProject() {
                 <SelectValue
                   placeholder={
                     organizationsLoading
-                      ? "Loading workspaces..."
-                      : "Select workspace"
+                      ? "Loading groups..."
+                      : "Select group"
                   }
                 />
               </SelectTrigger>
@@ -384,7 +384,7 @@ export function NewProject() {
             <p className="text-xs text-muted-foreground">
               {selectedOrganization
                 ? `This project will live in ${selectedOrganization.name}.`
-                : "Choose where this project should be visible."}
+                : "Choose which group this project should use."}
             </p>
           </div>
 

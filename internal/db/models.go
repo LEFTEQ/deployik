@@ -30,6 +30,7 @@ type Organization struct {
 	PersonalOwnerUserID string    `json:"personal_owner_user_id,omitempty"`
 	MembershipRole      string    `json:"membership_role"`
 	ProjectCount        int       `json:"project_count"`
+	DisplayOrder        int       `json:"display_order"`
 	CreatedAt           time.Time `json:"created_at"`
 	UpdatedAt           time.Time `json:"updated_at"`
 }
@@ -39,6 +40,55 @@ type OrganizationMembership struct {
 	UserID         string    `json:"user_id"`
 	Role           string    `json:"role"`
 	CreatedAt      time.Time `json:"created_at"`
+}
+
+type Group struct {
+	ID                  string    `json:"id"`
+	Name                string    `json:"name"`
+	Slug                string    `json:"slug"`
+	IsDefault           bool      `json:"is_default"`
+	PersonalOwnerUserID string    `json:"personal_owner_user_id,omitempty"`
+	MembershipRole      string    `json:"membership_role"`
+	ProjectCount        int       `json:"project_count"`
+	DisplayOrder        int       `json:"display_order"`
+	CreatedAt           time.Time `json:"created_at"`
+	UpdatedAt           time.Time `json:"updated_at"`
+}
+
+type GroupCreate struct {
+	Name       string
+	OwnerID    string
+	ProjectIDs []string
+}
+
+type GroupMember struct {
+	GroupID   string    `json:"group_id"`
+	UserID    string    `json:"user_id"`
+	Username  string    `json:"username"`
+	AvatarURL string    `json:"avatar_url"`
+	Role      string    `json:"role"`
+	CreatedAt time.Time `json:"created_at"`
+}
+
+type GroupInvite struct {
+	ID                string       `json:"id"`
+	GroupID           string       `json:"group_id"`
+	GroupName         string       `json:"group_name,omitempty"`
+	GithubUsername    string       `json:"github_username"`
+	Role              string       `json:"role"`
+	InvitedByUserID   string       `json:"invited_by_user_id"`
+	InvitedByUsername string       `json:"invited_by_username,omitempty"`
+	Status            string       `json:"status"`
+	RespondedAt       NullableTime `json:"responded_at"`
+	CreatedAt         time.Time    `json:"created_at"`
+	UpdatedAt         time.Time    `json:"updated_at"`
+}
+
+type GroupInviteCreate struct {
+	GroupID         string
+	GithubUsername  string
+	Role            string
+	InvitedByUserID string
 }
 
 type RefreshSession struct {
@@ -75,26 +125,26 @@ type APIToken struct {
 }
 
 type Project struct {
-	ID                 string    `json:"id"`
-	Name               string    `json:"name"`
-	GithubRepo         string    `json:"github_repo"`
-	GithubOwner        string    `json:"github_owner"`
-	Branch             string    `json:"branch"`
-	UserID             string    `json:"user_id"`
-	OrganizationID     string    `json:"organization_id"`
-	OrganizationName   string    `json:"organization_name,omitempty"`
-	Framework          string    `json:"framework"`
-	PackageManager     string    `json:"package_manager"`
-	RootDirectory      string    `json:"root_directory"`
-	OutputDirectory    string    `json:"output_directory"`
-	BuildCommand       string    `json:"build_command"`
-	InstallCommand     string    `json:"install_command"`
-	NodeVersion        string    `json:"node_version"`
-	Port               int       `json:"port"`
-	HostNetworkAccess  bool      `json:"host_network_access"`
-	DataVolumeEnabled  bool      `json:"data_volume_enabled"`
-	DataMountPath      string    `json:"data_mount_path"`
-	ResourceTier       string    `json:"resource_tier"`
+	ID                string `json:"id"`
+	Name              string `json:"name"`
+	GithubRepo        string `json:"github_repo"`
+	GithubOwner       string `json:"github_owner"`
+	Branch            string `json:"branch"`
+	UserID            string `json:"user_id"`
+	OrganizationID    string `json:"organization_id"`
+	OrganizationName  string `json:"organization_name,omitempty"`
+	Framework         string `json:"framework"`
+	PackageManager    string `json:"package_manager"`
+	RootDirectory     string `json:"root_directory"`
+	OutputDirectory   string `json:"output_directory"`
+	BuildCommand      string `json:"build_command"`
+	InstallCommand    string `json:"install_command"`
+	NodeVersion       string `json:"node_version"`
+	Port              int    `json:"port"`
+	HostNetworkAccess bool   `json:"host_network_access"`
+	DataVolumeEnabled bool   `json:"data_volume_enabled"`
+	DataMountPath     string `json:"data_mount_path"`
+	ResourceTier      string `json:"resource_tier"`
 	// StartCommand and HealthPath drive the generated node-api Dockerfile's
 	// CMD and HEALTHCHECK. Empty values mean "use the runtime default" — see
 	// projectconfig.DefaultStartCommand and DefaultHealthPath.

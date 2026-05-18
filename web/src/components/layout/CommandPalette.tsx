@@ -8,6 +8,7 @@ import { useOrganizations } from "@/hooks/use-organizations";
 import { api } from "@/lib/api";
 import { queryKeys } from "@/lib/queryKeys";
 import { useAuthStore } from "@/store/auth";
+import { useGroupStore } from "@/store/group";
 import { useOrganizationStore } from "@/store/organization";
 import { Button } from "@/components/ui/button";
 import {
@@ -55,6 +56,7 @@ export function CommandPalette({ compact = false }: { compact?: boolean }) {
     try {
       await api.logout();
     } finally {
+      useGroupStore.getState().clearSelection();
       useOrganizationStore.getState().clearSelection();
       clearAuth();
     }
@@ -82,14 +84,14 @@ export function CommandPalette({ compact = false }: { compact?: boolean }) {
         {compact ? (
           <>
             <Search className="size-4" />
-            <span className="sr-only">Search projects, workspaces, actions</span>
+            <span className="sr-only">Search projects, groups, actions</span>
           </>
         ) : (
           <>
             <span className="inline-flex min-w-0 items-center gap-2">
               <Search className="size-4" />
               <span className="truncate">
-                Search projects, workspaces, actions…
+                Search projects, groups, actions…
               </span>
             </span>
             <kbd className="hidden rounded-md border bg-muted px-1.5 py-0.5 font-mono text-[11px] text-muted-foreground sm:inline-flex">
@@ -103,7 +105,7 @@ export function CommandPalette({ compact = false }: { compact?: boolean }) {
         open={open}
         onOpenChange={setOpen}
         title="Search Deployik"
-        description="Search projects, workspaces, and actions."
+        description="Search projects, groups, and actions."
       >
         <CommandInput placeholder="Type a command or search…" />
         <CommandList>
@@ -128,7 +130,7 @@ export function CommandPalette({ compact = false }: { compact?: boolean }) {
 
           <CommandSeparator />
 
-          <CommandGroup heading="Workspaces">
+          <CommandGroup heading="Groups">
             {organizations.map((organization) => (
               <CommandItem
                 key={organization.id}
@@ -177,7 +179,7 @@ export function CommandPalette({ compact = false }: { compact?: boolean }) {
             ) : (
               <CommandItem disabled>
                 <FolderKanban />
-                <span>No projects in this workspace</span>
+                <span>No projects in this group</span>
               </CommandItem>
             )}
           </CommandGroup>

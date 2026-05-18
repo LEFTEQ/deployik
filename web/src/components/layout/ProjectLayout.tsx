@@ -75,7 +75,7 @@ export function ProjectLayout() {
             <BreadcrumbList>
               <BreadcrumbItem className="hidden md:block">
                 <BreadcrumbLink asChild>
-                  <Link to="/">{workspace?.name ?? "Workspace"}</Link>
+                  <Link to="/">{workspace?.name ?? "Group"}</Link>
                 </BreadcrumbLink>
               </BreadcrumbItem>
               <BreadcrumbSeparator className="hidden md:block" />

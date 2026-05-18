@@ -54,7 +54,7 @@ func TestMigrations(t *testing.T) {
 	db := newTestDB(t)
 
 	// Verify tables exist
-	tables := []string{"users", "organizations", "organization_memberships", "projects", "preview_instances", "project_analytics", "project_email_settings", "deployments", "build_logs", "domains", "env_variables", "refresh_tokens", "audit_logs", "api_tokens", "_migrations"}
+	tables := []string{"users", "organizations", "organization_memberships", "group_invitations", "projects", "preview_instances", "project_analytics", "project_email_settings", "deployments", "build_logs", "domains", "env_variables", "refresh_tokens", "audit_logs", "api_tokens", "_migrations"}
 	for _, table := range tables {
 		var count int
 		err := db.QueryRow("SELECT COUNT(*) FROM " + table).Scan(&count)

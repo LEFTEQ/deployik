@@ -3,6 +3,9 @@ import type {
   AuthResponse,
   User,
   Organization,
+  Group,
+  GroupInvite,
+  GroupMember,
   Project,
   Deployment,
   Domain,
@@ -167,6 +170,98 @@ class ApiClient {
 
   async listOrganizations(): Promise<Organization[]> {
     return this.request("/organizations");
+  }
+
+  async listGroups(): Promise<Group[]> {
+    return this.request("/groups");
+  }
+
+  async createGroup(data: {
+    name: string;
+    project_ids?: string[];
+  }): Promise<Group> {
+    return this.request("/groups", {
+      method: "POST",
+      body: JSON.stringify(data),
+    });
+  }
+
+  async updateGroup(id: string, data: { name: string }): Promise<Group> {
+    return this.request(`/groups/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify(data),
+    });
+  }
+
+  async deleteGroup(id: string): Promise<void> {
+    await this.request<void>(`/groups/${id}`, { method: "DELETE" });
+  }
+
+  async moveProjectsToGroup(
+    groupId: string,
+    projectIds: string[],
+  ): Promise<Group> {
+    return this.request(`/groups/${groupId}/projects`, {
+      method: "PUT",
+      body: JSON.stringify({ project_ids: projectIds }),
+    });
+  }
+
+  async listGroupMembers(groupId: string): Promise<GroupMember[]> {
+    return this.request(`/groups/${groupId}/members`);
+  }
+
+  async updateGroupMember(
+    groupId: string,
+    userId: string,
+    data: { role: "owner" | "member" },
+  ): Promise<void> {
+    await this.request<void>(`/groups/${groupId}/members/${userId}`, {
+      method: "PATCH",
+      body: JSON.stringify(data),
+    });
+  }
+
+  async removeGroupMember(groupId: string, userId: string): Promise<void> {
+    await this.request<void>(`/groups/${groupId}/members/${userId}`, {
+      method: "DELETE",
+    });
+  }
+
+  async listGroupInvites(groupId: string): Promise<GroupInvite[]> {
+    return this.request(`/groups/${groupId}/invites`);
+  }
+
+  async createGroupInvite(
+    groupId: string,
+    data: { github_username: string; role: "owner" | "member" },
+  ): Promise<GroupInvite> {
+    return this.request(`/groups/${groupId}/invites`, {
+      method: "POST",
+      body: JSON.stringify(data),
+    });
+  }
+
+  async cancelGroupInvite(groupId: string, inviteId: string): Promise<void> {
+    await this.request<void>(`/groups/${groupId}/invites/${inviteId}`, {
+      method: "DELETE",
+    });
+  }
+
+  async listMyGroupInvites(): Promise<GroupInvite[]> {
+    return this.request("/me/group-invites");
+  }
+
+  async acceptGroupInvite(inviteId: string): Promise<void> {
+    await this.request<void>(`/me/group-invites/${inviteId}/accept`, {
+      method: "POST",
+    });
+  }
+
+  async declineGroupInvite(inviteId: string): Promise<void> {
+    await this.request<void>(`/me/group-invites/${inviteId}/decline`, {
+      method: "POST",
+    });
   }
 
   async getPlatformInfo(): Promise<PlatformInfo> {

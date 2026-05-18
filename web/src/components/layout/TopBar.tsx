@@ -13,6 +13,7 @@ import { useOrganizationStore } from "@/store/organization";
 import { useOrganizations } from "@/hooks/use-organizations";
 import { api } from "@/lib/api";
 import { queryKeys } from "@/lib/queryKeys";
+import { useGroupStore } from "@/store/group";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { CommandPalette } from "@/components/layout/CommandPalette";
@@ -57,6 +58,7 @@ export function TopBar() {
     try {
       await api.logout();
     } finally {
+      useGroupStore.getState().clearSelection();
       useOrganizationStore.getState().clearSelection();
       clearAuth();
     }
@@ -146,14 +148,14 @@ export function TopBar() {
                     {user?.username}
                   </p>
                   <p className="truncate text-xs text-muted-foreground">
-                    {selectedOrganization?.name ?? "Workspace"}
+                    {selectedOrganization?.name ?? "Group"}
                   </p>
                 </div>
               </div>
             </DropdownMenuLabel>
 
             <DropdownMenuSeparator />
-            <DropdownMenuLabel>Workspaces</DropdownMenuLabel>
+            <DropdownMenuLabel>Groups</DropdownMenuLabel>
             <DropdownMenuRadioGroup
               value={selectedOrganizationId ?? ""}
               onValueChange={setSelectedOrganizationId}

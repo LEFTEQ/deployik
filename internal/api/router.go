@@ -153,6 +153,21 @@ func NewRouter(cfg *RouterConfig) *chi.Mux {
 
 			organizationHandler := &handlers.OrganizationHandler{DB: cfg.DB}
 			r.Get("/organizations", organizationHandler.List)
+			groupHandler := &handlers.GroupHandler{DB: cfg.DB}
+			r.Get("/groups", groupHandler.List)
+			r.With(mutationLimiter.Middleware("group_create")).Post("/groups", groupHandler.Create)
+			r.Get("/me/group-invites", groupHandler.ListMyInvites)
+			r.With(mutationLimiter.Middleware("group_invite_accept")).Post("/me/group-invites/{iid}/accept", groupHandler.AcceptInvite)
+			r.With(mutationLimiter.Middleware("group_invite_decline")).Post("/me/group-invites/{iid}/decline", groupHandler.DeclineInvite)
+			r.With(mutationLimiter.Middleware("group_update")).Patch("/groups/{id}", groupHandler.Update)
+			r.With(mutationLimiter.Middleware("group_delete")).Delete("/groups/{id}", groupHandler.Delete)
+			r.Get("/groups/{id}/members", groupHandler.ListMembers)
+			r.With(mutationLimiter.Middleware("group_projects_move")).Put("/groups/{id}/projects", groupHandler.MoveProjects)
+			r.With(mutationLimiter.Middleware("group_member_update")).Patch("/groups/{id}/members/{uid}", groupHandler.UpdateMember)
+			r.With(mutationLimiter.Middleware("group_member_remove")).Delete("/groups/{id}/members/{uid}", groupHandler.RemoveMember)
+			r.Get("/groups/{id}/invites", groupHandler.ListInvites)
+			r.With(mutationLimiter.Middleware("group_invite_create")).Post("/groups/{id}/invites", groupHandler.CreateInvite)
+			r.With(mutationLimiter.Middleware("group_invite_cancel")).Delete("/groups/{id}/invites/{iid}", groupHandler.CancelInvite)
 
 			platformHandler := &handlers.PlatformHandler{}
 			if cfg.DomainManager != nil {

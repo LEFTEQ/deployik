@@ -7,6 +7,10 @@
 export const queryKeys = {
   // Auth & identity
   organizations: () => ["organizations"] as const,
+  groups: () => ["groups"] as const,
+  groupMembers: (groupId: string) => ["groups", groupId, "members"] as const,
+  groupInvites: (groupId: string) => ["groups", groupId, "invites"] as const,
+  myGroupInvites: () => ["me", "group-invites"] as const,
   platform: () => ["platform"] as const,
   health: () => ["health"] as const,
 

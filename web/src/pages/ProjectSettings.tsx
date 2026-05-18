@@ -141,7 +141,7 @@ function BuildSettingsSection({
         </p>
       </div>
       <div className="space-y-2">
-        <Label>Workspace</Label>
+        <Label>Group</Label>
         <Input value={project.organization_name || "Personal"} disabled />
       </div>
       <div className="space-y-2">
