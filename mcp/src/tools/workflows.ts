@@ -8,6 +8,8 @@ import { renderDryRun, renderProjectSummary, renderDeploymentSummary, renderDoma
 import { formatLogs } from "../lib/logs.js";
 import { writeBinding, ensureGitignore, readBinding } from "../config/binding.js";
 import { requireEnvironment, requireScope } from "../lib/normalize.js";
+import { resolveGroupId } from "../lib/groups.js";
+import { buildCreateProjectPayload } from "./projects.js";
 import type {
   Project,
   Deployment,
@@ -17,7 +19,6 @@ import type {
   BuildLog,
   User,
   RepoInspection,
-  CreateProjectPayload,
 } from "../client/types.js";
 
 // Accept any string so we can normalize 'prod'/'live'/'staging' charitably.
@@ -30,7 +31,7 @@ export function registerWorkflowTools(server: McpServer, ctx: ToolContext): void
   registerTool(server, ctx, {
     name: "init_in_repo",
     description:
-      "Bootstrap this repo: write `.deployik/binding.json` (project + workspace), append `.deployik/` to .gitignore, and validate the token via whoami. Run this once per repo.",
+      "Bootstrap this repo: write `.deployik.json` (project + dashboard group), append `.deployik/` to .gitignore, and validate the token via whoami. Run this once per repo.",
     inputSchema: {
       project: z.string().optional(),
       project_id: z.string().optional(),
@@ -49,7 +50,7 @@ export function registerWorkflowTools(server: McpServer, ctx: ToolContext): void
       writeBinding(ctx.stateDir, ctx.cwd, binding);
       const gitignoreUpdated = ensureGitignore(ctx.cwd);
       const lines = [
-        `Bound this repo to Deployik project '${project.name}' (workspace: ${binding.workspace}).`,
+        `Bound this repo to Deployik project '${project.name}' (group: ${binding.workspace}).`,
         `Authenticated as ${user.username} (${user.role}).`,
         `Resolution source: ${source}.`,
         `Wrote .deployik.json (commit this — it tells teammates which project deploys here).`,
@@ -72,9 +73,14 @@ export function registerWorkflowTools(server: McpServer, ctx: ToolContext): void
       framework: z.enum(["nextjs", "vite", "astro", "static"]).optional(),
       package_manager: z.enum(["auto", "bun", "pnpm", "npm", "yarn"]).optional(),
       root_directory: z.string().optional().describe("If the repo is a monorepo, the app subdirectory."),
-      organization_id: z.string().optional(),
+      group_id: z.string().optional().describe("Dashboard group id. Preferred over organization_id."),
+      group: z.string().optional().describe("Dashboard group name, slug, or id."),
+      organization_id: z.string().optional().describe("Backward-compatible alias for group_id."),
       auto_build_enabled: z.boolean().default(true),
       auto_production_enabled: z.boolean().default(false),
+      resource_tier: z.enum(["nano", "small", "medium", "large"]).optional(),
+      start_command: z.string().optional(),
+      health_path: z.string().optional(),
     },
     handler: async (args) => {
       const inspection = await ctx.client.request<RepoInspection>(
@@ -89,23 +95,33 @@ export function registerWorkflowTools(server: McpServer, ctx: ToolContext): void
         detectedApp = inspection.apps[0];
       }
 
-      const payload: CreateProjectPayload = {
-        name: args.name,
-        github_owner: args.owner,
-        github_repo: args.repo,
-        branch: args.branch,
-        framework: args.framework ?? detectedApp?.framework ?? "nextjs",
-        package_manager: args.package_manager ?? inspection.package_manager ?? "auto",
-        root_directory: args.root_directory ?? detectedApp?.path ?? "",
-        output_directory: detectedApp?.output_directory ?? "",
-        build_command: detectedApp?.suggested_build_command ?? "",
-        install_command: "",
-        node_version: "22",
-        port: 3000,
-        auto_build_enabled: args.auto_build_enabled,
-        auto_production_enabled: args.auto_production_enabled,
-      };
-      if (args.organization_id) payload.organization_id = args.organization_id;
+      const groupId = await resolveGroupId(ctx.client, {
+        group_id: args.group_id,
+        group: args.group,
+        organization_id: args.organization_id,
+      });
+      const payload = buildCreateProjectPayload(
+        {
+          name: args.name,
+          github_owner: args.owner,
+          github_repo: args.repo,
+          branch: args.branch,
+          framework: args.framework ?? detectedApp?.framework ?? "nextjs",
+          package_manager: args.package_manager ?? inspection.package_manager ?? "auto",
+          root_directory: args.root_directory ?? detectedApp?.path ?? "",
+          output_directory: detectedApp?.output_directory ?? "",
+          build_command: detectedApp?.suggested_build_command ?? "",
+          install_command: "",
+          node_version: "22",
+          port: 3000,
+          auto_build_enabled: args.auto_build_enabled,
+          auto_production_enabled: args.auto_production_enabled,
+          resource_tier: args.resource_tier,
+          start_command: args.start_command,
+          health_path: args.health_path,
+        },
+        groupId,
+      );
 
       const project = await ctx.client.request<Project>(`/projects`, { method: "POST", body: payload });
 
@@ -384,7 +400,7 @@ export function registerWorkflowTools(server: McpServer, ctx: ToolContext): void
 
   registerTool(server, ctx, {
     name: "show_binding",
-    description: "Print the current .deployik binding (project + workspace) for this repo, if any. Useful to confirm resolution before running other tools.",
+    description: "Print the current .deployik binding (project + dashboard group) for this repo, if any. Useful to confirm resolution before running other tools.",
     annotations: { readOnlyHint: true },
     handler: async () => {
       const binding = readBinding(ctx.stateDir);
@@ -396,7 +412,8 @@ export function registerWorkflowTools(server: McpServer, ctx: ToolContext): void
       const lines = [
         `Binding (${ctx.stateDir}):`,
         `  project:             ${binding.project}`,
-        `  workspace:           ${binding.workspace ?? "(unset)"}`,
+        `  group:               ${binding.workspace ?? "(unset)"}`,
+        `  workspace:           ${binding.workspace ?? "(unset)"} (legacy key)`,
         `  defaultEnvironment:  ${binding.defaultEnvironment ?? "(unset)"}`,
       ];
       if (project) lines.push("", renderProjectSummary(project));

@@ -5,18 +5,81 @@ import { resolveProject, fetchProjects } from "../resolve/project.js";
 import { checkSafety } from "../lib/safety.js";
 import { renderDryRun, renderProjectSummary } from "../lib/format.js";
 import type { Project, CreateProjectPayload } from "../client/types.js";
+import { resolveGroupId } from "../lib/groups.js";
+
+export interface CreateProjectToolArgs {
+  name: string;
+  github_owner: string;
+  github_repo: string;
+  branch: string;
+  framework: "nextjs" | "vite" | "astro" | "static";
+  package_manager: "auto" | "bun" | "pnpm" | "npm" | "yarn";
+  root_directory: string;
+  output_directory: string;
+  build_command: string;
+  install_command: string;
+  node_version: string;
+  port: number;
+  group_id?: string;
+  group?: string;
+  organization_id?: string;
+  auto_build_enabled: boolean;
+  auto_production_enabled: boolean;
+  resource_tier?: "nano" | "small" | "medium" | "large";
+  start_command?: string;
+  health_path?: string;
+}
+
+export function buildCreateProjectPayload(
+  args: CreateProjectToolArgs,
+  resolvedGroupId?: string,
+): CreateProjectPayload {
+  const payload: CreateProjectPayload = {
+    name: args.name,
+    github_owner: args.github_owner,
+    github_repo: args.github_repo,
+    branch: args.branch,
+    framework: args.framework,
+    package_manager: args.package_manager,
+    root_directory: args.root_directory,
+    output_directory: args.output_directory,
+    build_command: args.build_command,
+    install_command: args.install_command,
+    node_version: args.node_version,
+    port: args.port,
+    auto_build_enabled: args.auto_build_enabled,
+    auto_production_enabled: args.auto_production_enabled,
+  };
+  const groupId = resolvedGroupId ?? args.group_id ?? args.organization_id;
+  if (groupId) payload.organization_id = groupId;
+  if (args.resource_tier) payload.resource_tier = args.resource_tier;
+  if (args.start_command) payload.start_command = args.start_command;
+  if (args.health_path) payload.health_path = args.health_path;
+  return payload;
+}
 
 export function registerProjectTools(server: McpServer, ctx: ToolContext): void {
   registerTool(server, ctx, {
     name: "list_projects",
-    description: "List Deployik projects this token can access. Optionally filter by workspace.",
+    description: "List Deployik projects this token can access. Optionally filter by dashboard group.",
     inputSchema: {
-      workspace: z.string().optional().describe("Workspace slug or organization id to filter by."),
+      group_id: z.string().optional().describe("Dashboard group id to filter by."),
+      group: z.string().optional().describe("Dashboard group name, slug, or id to filter by."),
+      workspace: z.string().optional().describe("Deprecated alias for group name, slug, or id."),
     },
     annotations: { readOnlyHint: true, title: "List projects" },
     handler: async (args) => {
-      const projects = await fetchProjects(ctx);
-      const filtered = args.workspace
+      const groupId = await resolveGroupId(ctx.client, {
+        group_id: args.group_id,
+        group: args.group,
+        workspace: args.workspace,
+      });
+      const projects = groupId
+        ? await ctx.client.request<Project[]>("/projects", {
+            query: { organization_id: groupId },
+          })
+        : await fetchProjects(ctx);
+      const filtered = args.workspace && !groupId
         ? projects.filter(
             (p) =>
               (p.organization_name ?? "").toLowerCase() === args.workspace!.toLowerCase() ||
@@ -37,10 +100,14 @@ export function registerProjectTools(server: McpServer, ctx: ToolContext): void 
         data: filtered.map((p) => ({
           id: p.id,
           name: p.name,
+          group: p.organization_name ?? p.organization_id,
           workspace: p.organization_name ?? p.organization_id,
           repo: `${p.github_owner}/${p.github_repo}`,
           branch: p.branch,
           status: p.status,
+          latest_deployment_status: p.latest_deployment_status,
+          latest_deployment_environment: p.latest_deployment_environment,
+          latest_deployment_created_at: p.latest_deployment_created_at,
         })),
       };
     },
@@ -52,6 +119,8 @@ export function registerProjectTools(server: McpServer, ctx: ToolContext): void 
     inputSchema: {
       project_id: z.string().optional(),
       project: z.string().optional().describe("Project slug, e.g. 'my-app'."),
+      group_id: z.string().optional(),
+      group: z.string().optional().describe("Dashboard group name, slug, or id."),
       workspace: z.string().optional(),
     },
     annotations: { readOnlyHint: true },
@@ -78,31 +147,23 @@ export function registerProjectTools(server: McpServer, ctx: ToolContext): void 
       install_command: z.string().default(""),
       node_version: z.string().default("22"),
       port: z.number().int().min(1).max(65535).default(3000),
-      organization_id: z.string().optional(),
+      group_id: z.string().optional().describe("Dashboard group id. Preferred over organization_id."),
+      group: z.string().optional().describe("Dashboard group name, slug, or id."),
+      organization_id: z.string().optional().describe("Backward-compatible alias for group_id."),
       auto_build_enabled: z.boolean().default(true),
       auto_production_enabled: z.boolean().default(false),
       resource_tier: z.enum(["nano", "small", "medium", "large"]).optional(),
+      start_command: z.string().optional(),
+      health_path: z.string().optional(),
     },
     annotations: { title: "Create project" },
     handler: async (args) => {
-      const payload: CreateProjectPayload = {
-        name: args.name,
-        github_owner: args.github_owner,
-        github_repo: args.github_repo,
-        branch: args.branch,
-        framework: args.framework,
-        package_manager: args.package_manager,
-        root_directory: args.root_directory,
-        output_directory: args.output_directory,
-        build_command: args.build_command,
-        install_command: args.install_command,
-        node_version: args.node_version,
-        port: args.port,
-        auto_build_enabled: args.auto_build_enabled,
-        auto_production_enabled: args.auto_production_enabled,
-      };
-      if (args.organization_id) payload.organization_id = args.organization_id;
-      if (args.resource_tier) payload.resource_tier = args.resource_tier;
+      const groupId = await resolveGroupId(ctx.client, {
+        group_id: args.group_id,
+        group: args.group,
+        organization_id: args.organization_id,
+      });
+      const payload = buildCreateProjectPayload(args, groupId);
       const project = await ctx.client.request<Project>(`/projects`, { method: "POST", body: payload });
       return { text: `Created project '${project.name}' (id: ${project.id}).\n\n${renderProjectSummary(project)}`, data: project };
     },
@@ -129,6 +190,8 @@ export function registerProjectTools(server: McpServer, ctx: ToolContext): void 
           host_network_access: z.boolean().optional(),
           data_volume_enabled: z.boolean().optional(),
           data_mount_path: z.string().optional(),
+          start_command: z.string().optional(),
+          health_path: z.string().optional(),
           resource_tier: z.enum(["nano", "small", "medium", "large"]).optional(),
         })
         .describe("Fields to update. Server validates."),
@@ -166,6 +229,7 @@ export function registerProjectTools(server: McpServer, ctx: ToolContext): void 
             project: project.name,
             id: project.id,
             workspace: project.organization_name ?? project.organization_id,
+            group: project.organization_name ?? project.organization_id,
             note: "Will stop all containers, remove nginx configs, drop domains. Soft-deleted in DB (status='deleted').",
           },
         },

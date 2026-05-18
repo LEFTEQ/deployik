@@ -68,10 +68,10 @@ Get a token at **Account → Access tokens** in Deployik. The token is shown onc
 
 ## What it does
 
-- **~32 thin tools** — one per Deployik HTTP endpoint (projects, deployments, env vars, secrets, domains, auto-build, password protection, volumes, analytics, email, workspaces, tokens, GitHub).
+- **~37 thin tools** — one per Deployik HTTP endpoint (projects, deployments, env vars, secrets, domains, auto-build, password protection, volumes, analytics, email, dashboard groups, tokens, GitHub).
 - **12 workflow tools** — `setup_project_from_repo`, `deploy_project`, `set_secret`, `tail_latest_logs`, `debug_failed_deployment`, `get_project_health`, `init_in_repo`, `whats_my_url`, `whats_broken`, `redeploy`, and more.
 - **Bundled knowledge** — Deployik's how-to recipes ship as MCP prompts (`deployik_recipe_*`), plus three tools: `list_recipes`, `get_recipe(topic)`, and **`find_help(question)`** which routes free-form English ("where do I set the Stripe key for the live site?") to the right recipe automatically.
-- **Repo binding** — first call inside a git repo with a unique-match `origin` auto-writes `.deployik.json` (committed, just project + workspace + schema URL) and gitignores the private `.deployik/` directory. Self-healing `.gitignore`.
+- **Repo binding** — first call inside a git repo with a unique-match `origin` auto-writes `.deployik.json` (committed, just project + dashboard group + schema URL) and gitignores the private `.deployik/` directory. Self-healing `.gitignore`.
 - **Tiered safety** — destructive operations require `confirm: true`; production-touching operations also require `confirm_name: <project>`. Every destructive call is logged to `.deployik/audit.log`.
 - **Loose English** — `prod` / `live` / `staging` / `dev` / `both` / `everywhere` all normalize to the right scope automatically.
 
@@ -99,7 +99,7 @@ Project ↔ repo state is split into two layers — **public** (commit it) and
 │                     Deployik project this folder deploys to.
 └── .deployik/        PRIVATE. Auto-added to .gitignore (and re-added on every
                       MCP call if a teammate clobbers the .gitignore line).
-    ├── cache.json    Project + workspace list (1h TTL).
+    ├── cache.json    Project + dashboard group list (1h TTL).
     ├── token         Optional token fallback (mode 0600) — only used if
                       DEPLOYIK_TOKEN env var is unset.
     └── audit.log     Append-only ledger of destructive calls (secret values

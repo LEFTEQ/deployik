@@ -19,7 +19,7 @@ export function hintForStatus(status: number, endpoint: string): string | undefi
     return "Token is missing, expired, or revoked. Set DEPLOYIK_TOKEN to a fresh `dpk_…` token from Account → Access tokens.";
   }
   if (status === 403) {
-    return "Token is valid but the owner cannot access this resource. Check the project's workspace membership.";
+    return "Token is valid but the owner cannot access this resource. Check the project's dashboard group membership.";
   }
   if (status === 404) {
     if (endpoint.includes("/projects/")) {

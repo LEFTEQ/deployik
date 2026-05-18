@@ -63,7 +63,8 @@ deployik api GET /api/projects
   "build_command": "bun run build",
   "install_command": "bun install",
   "node_version": "22",
-  "organization_id": "(optional — defaults to personal workspace)"
+  "group_id": "(optional — dashboard group id; defaults to your personal group)",
+  "organization_id": "(deprecated alias for group_id)"
 }
 ```
 
@@ -74,6 +75,11 @@ deployik api POST /api/projects '{"name":"my-app","github_repo":"my-repo","githu
 ```
 
 **Behavior:** creates the project, auto-domain, GitHub webhook (best-effort), and triggers an initial preview deployment.
+
+**Groups:** the Projects dashboard uses dashboard groups. Call `GET /api/groups`
+to list available group ids. To create into a specific dashboard tab, pass that
+group's id as `group_id` (the API still accepts the legacy field name
+`organization_id` for backward compatibility).
 
 ---
 

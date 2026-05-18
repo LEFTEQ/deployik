@@ -3,7 +3,7 @@ export type SafetyTier = "read" | "mutating" | "destructive" | "destructive_prod
 export interface SafetyContext {
   toolName: string;
   tier: SafetyTier;
-  /** The resource name a `confirm_name` arg must match (for destructive_production). */
+  /** The resource name a `confirm_name` arg must match when set. */
   expectedName?: string;
   /** What this call will do, surfaced in dry-run mode. */
   impact: Record<string, unknown>;
@@ -23,11 +23,14 @@ export function checkSafety(ctx: SafetyContext, args: SafetyArgs): SafetyResult 
     return { proceed: true };
   }
 
+  const requiresName = ctx.tier === "destructive_production" || !!ctx.expectedName;
   const required: Record<string, unknown> = { confirm: true };
   if (ctx.tier === "destructive_production") {
     if (!ctx.expectedName) {
       throw new Error(`safety: destructive_production tier requires expectedName for tool ${ctx.toolName}`);
     }
+  }
+  if (requiresName && ctx.expectedName) {
     required.confirm_name = ctx.expectedName;
   }
 
@@ -43,7 +46,7 @@ export function checkSafety(ctx: SafetyContext, args: SafetyArgs): SafetyResult 
     };
   }
 
-  if (ctx.tier === "destructive_production") {
+  if (requiresName) {
     if (args.confirm_name !== ctx.expectedName) {
       return {
         proceed: false,

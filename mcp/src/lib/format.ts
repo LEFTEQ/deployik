@@ -16,7 +16,7 @@ export function renderDryRun(dryRun: { tool: string; tier: string; willDo: Recor
 export function renderProjectSummary(project: Project): string {
   const lines = [
     `Project: ${project.name} (id: ${project.id})`,
-    `  Workspace:    ${project.organization_name ?? project.organization_id}`,
+    `  Group:        ${project.organization_name ?? project.organization_id}`,
     `  Repo:         ${project.github_owner}/${project.github_repo} @ ${project.branch}`,
     `  Framework:    ${project.framework} (${project.package_manager}, node ${project.node_version})`,
     `  Status:       ${project.status}`,

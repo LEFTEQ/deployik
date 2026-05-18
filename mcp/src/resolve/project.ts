@@ -2,7 +2,8 @@ import { execSync } from "node:child_process";
 import { DeployikClient } from "../client/http.js";
 import { readBinding, writeBinding } from "../config/binding.js";
 import { readCache, writeCache, isCacheFresh, type CachedProject } from "../config/cache.js";
-import type { Project, Organization } from "../client/types.js";
+import { fetchGroups } from "../lib/groups.js";
+import type { Project, Group } from "../client/types.js";
 
 export interface ResolveInput {
   /** Explicit ULID. Highest precedence. */
@@ -11,6 +12,10 @@ export interface ResolveInput {
   project?: string;
   /** Optional workspace slug or id to disambiguate. */
   workspace?: string;
+  /** Optional dashboard group slug, name, or id to disambiguate. */
+  group?: string;
+  /** Optional dashboard group id to disambiguate. */
+  group_id?: string;
 }
 
 export interface ResolveContext {
@@ -43,10 +48,11 @@ export async function resolveProject(ctx: ResolveContext, input: ResolveInput = 
 
   // 2. explicit slug
   if (input.project) {
-    const match = matchProjectByName(projects, input.project, input.workspace);
+    const groupSelector = input.group_id ?? input.group ?? input.workspace;
+    const match = matchProjectByName(projects, input.project, groupSelector);
     if (match) return { project: match, source: "slug" };
     throw new ResolveError(
-      `No project named '${input.project}' is visible to this token${input.workspace ? ` in workspace '${input.workspace}'` : ""}.`,
+      `No project named '${input.project}' is visible to this token${groupSelector ? ` in group '${groupSelector}'` : ""}.`,
       "Call `list_projects` to see what this token can reach.",
     );
   }
@@ -108,32 +114,34 @@ export async function fetchProjects(ctx: ResolveContext): Promise<Project[]> {
 }
 
 export async function refreshCache(ctx: ResolveContext, projects: Project[]): Promise<void> {
-  // workspaces fetched lazily — only when cache is stale or missing
-  let workspaces: Organization[] = [];
+  // groups fetched lazily — only when cache is stale or missing
+  let groups: Group[] = [];
   const existing = readCache(ctx.stateDir);
   if (!existing || !isCacheFresh(existing)) {
     try {
-      workspaces = await ctx.client.request<Organization[]>(`/organizations`);
+      groups = await fetchGroups(ctx.client);
     } catch {
-      workspaces = existing?.workspaces.map((w) => ({
+      groups = existing?.workspaces.map((w) => ({
         id: w.id,
         slug: w.slug,
         name: w.name,
-        is_personal: false,
+        is_default: false,
         membership_role: "member",
         project_count: 0,
+        display_order: 0,
         created_at: "",
         updated_at: "",
       })) ?? [];
     }
   } else {
-    workspaces = existing.workspaces.map((w) => ({
+    groups = existing.workspaces.map((w) => ({
       id: w.id,
       slug: w.slug,
       name: w.name,
-      is_personal: false,
+      is_default: false,
       membership_role: "member",
       project_count: 0,
+      display_order: 0,
       created_at: "",
       updated_at: "",
     }));
@@ -149,20 +157,33 @@ export async function refreshCache(ctx: ResolveContext, projects: Project[]): Pr
 
   writeCache(ctx.stateDir, {
     projects: cached,
-    workspaces: workspaces.map((w) => ({ id: w.id, slug: w.slug, name: w.name })),
+    workspaces: groups.map((w) => ({ id: w.id, slug: w.slug, name: w.name })),
     platform: existing?.platform,
   });
 }
 
-function matchProjectByName(projects: Project[], slug: string, workspace?: string): Project | undefined {
+function matchProjectByName(projects: Project[], slug: string, groupSelector?: string): Project | undefined {
   const slugLower = slug.toLowerCase();
   const matches = projects.filter((p) => p.name.toLowerCase() === slugLower);
   if (matches.length === 0) return undefined;
   if (matches.length === 1) return matches[0]!;
-  if (!workspace) return matches[0]!;
-  const ws = workspace.toLowerCase();
-  const refined = matches.find((p) => (p.organization_name ?? "").toLowerCase() === ws || p.organization_id === workspace);
+  if (!groupSelector) return matches[0]!;
+  const group = groupSelector.toLowerCase();
+  const refined = matches.find(
+    (p) =>
+      p.organization_id === groupSelector ||
+      (p.organization_name ?? "").toLowerCase() === group ||
+      slugifyGroupName(p.organization_name ?? "") === group,
+  );
   return refined ?? matches[0]!;
+}
+
+function slugifyGroupName(name: string): string {
+  return name
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
 }
 
 interface GitRemote {

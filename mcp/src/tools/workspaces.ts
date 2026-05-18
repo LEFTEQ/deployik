@@ -1,21 +1,17 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { registerTool, type ToolContext } from "./_helpers.js";
-import type { Organization, PlatformInfo, User, HealthResponse } from "../client/types.js";
+import { fetchGroups, renderGroupsList } from "../lib/groups.js";
+import type { PlatformInfo, User, HealthResponse } from "../client/types.js";
 
 export function registerWorkspaceTools(server: McpServer, ctx: ToolContext): void {
   registerTool(server, ctx, {
     name: "list_workspaces",
-    description: "List workspaces (organizations) the token owner can see.",
+    description:
+      "Deprecated alias for list_groups. Lists dashboard groups the token owner can see.",
     annotations: { readOnlyHint: true },
     handler: async () => {
-      const orgs = await ctx.client.request<Organization[]>(`/organizations`);
-      const text = orgs
-        .map(
-          (o) =>
-            `  • ${o.slug.padEnd(24)}  ${o.is_personal ? "personal" : "shared"}  role=${o.membership_role}  projects=${o.project_count}`,
-        )
-        .join("\n");
-      return { text, data: orgs };
+      const groups = await fetchGroups(ctx.client);
+      return { text: renderGroupsList(groups), data: groups };
     },
   });
 

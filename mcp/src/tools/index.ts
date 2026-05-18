@@ -9,6 +9,7 @@ import { registerProtectionTools } from "./protection.js";
 import { registerVolumeTools } from "./volumes.js";
 import { registerServiceTools } from "./services.js";
 import { registerGithubTools } from "./github.js";
+import { registerGroupTools } from "./groups.js";
 import { registerWorkspaceTools } from "./workspaces.js";
 import { registerAnalyticsTools } from "./analytics.js";
 import { registerEmailTools } from "./email.js";
@@ -28,6 +29,7 @@ export function registerAllTools(server: McpServer, ctx: ToolContext): void {
   registerVolumeTools(server, ctx);
   registerServiceTools(server, ctx);
   registerGithubTools(server, ctx);
+  registerGroupTools(server, ctx);
   registerWorkspaceTools(server, ctx);
   registerAnalyticsTools(server, ctx);
   registerEmailTools(server, ctx);
