@@ -18,6 +18,7 @@ import { useGroups } from "@/hooks/use-groups";
 import {
   DEPLOYMENT_STATUS_META,
   ENVIRONMENT_META,
+  formatDateTime,
   formatRelativeDate,
 } from "@/lib/deployment-helpers";
 import { Badge } from "@/components/ui/badge";
@@ -73,6 +74,10 @@ function ProjectTableRow({ project }: { project: Project }) {
     | keyof typeof ENVIRONMENT_META
     | null;
   const environmentMeta = environment ? ENVIRONMENT_META[environment] : null;
+  const deployedAt = project.latest_deployment_created_at;
+  const hasLatestDeployment = Boolean(
+    environmentMeta || statusMeta || deployedAt,
+  );
 
   const open = () => navigate({ to: "/projects/$id", params: { id: project.id } });
 
@@ -110,14 +115,33 @@ function ProjectTableRow({ project }: { project: Project }) {
         <span className="font-mono">{project.branch}</span>
       </TableCell>
       <TableCell>
-        {environmentMeta && statusMeta ? (
-          <div className="flex flex-wrap items-center gap-1.5">
-            <Badge variant="outline" className={environmentMeta.badgeClass}>
-              {environmentMeta.label}
-            </Badge>
-            <Badge variant="outline" className={statusMeta.badgeClass}>
-              {statusMeta.label}
-            </Badge>
+        {hasLatestDeployment ? (
+          <div className="flex min-w-0 flex-col gap-1.5">
+            {environmentMeta || statusMeta ? (
+              <div className="flex flex-wrap items-center gap-1.5">
+                {environmentMeta ? (
+                  <Badge
+                    variant="outline"
+                    className={environmentMeta.badgeClass}
+                  >
+                    {environmentMeta.label}
+                  </Badge>
+                ) : null}
+                {statusMeta ? (
+                  <Badge variant="outline" className={statusMeta.badgeClass}>
+                    {statusMeta.label}
+                  </Badge>
+                ) : null}
+              </div>
+            ) : null}
+            {deployedAt ? (
+              <span
+                className="text-xs text-muted-foreground"
+                title={formatDateTime(deployedAt)}
+              >
+                {formatRelativeDate(deployedAt)}
+              </span>
+            ) : null}
           </div>
         ) : (
           <span className="text-xs text-muted-foreground">—</span>

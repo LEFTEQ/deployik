@@ -1,4 +1,4 @@
-import { formatDistanceToNow } from "date-fns";
+import { formatDistance } from "date-fns";
 import type {
   Deployment,
   DeploymentStatus,
@@ -292,8 +292,27 @@ export function getLatestLiveEnvironmentDeployment(
 // ---------------------------------------------------------------------------
 
 /** Formats a date string as a human-readable relative time (e.g. "5 minutes ago"). */
+export function formatRelativeDateFrom(
+  value: string,
+  baseDate: Date = new Date(),
+): string {
+  return formatDistance(new Date(value), baseDate, { addSuffix: true });
+}
+
+/** Formats a date string relative to the current time. */
 export function formatRelativeDate(value: string): string {
-  return formatDistanceToNow(new Date(value), { addSuffix: true });
+  return formatRelativeDateFrom(value);
+}
+
+/** Formats a date string as a local absolute timestamp for titles/tooltips. */
+export function formatDateTime(value: string): string {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+
+  return new Intl.DateTimeFormat(undefined, {
+    dateStyle: "medium",
+    timeStyle: "short",
+  }).format(date);
 }
 
 /** Builds a release tag name like `release-20260405-1430`. */

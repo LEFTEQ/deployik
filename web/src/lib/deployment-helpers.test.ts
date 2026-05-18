@@ -1,6 +1,9 @@
 import { describe, expect, test } from "bun:test";
 
-import { getPreferredEnvironmentDomain } from "./deployment-helpers";
+import {
+  formatRelativeDateFrom,
+  getPreferredEnvironmentDomain,
+} from "./deployment-helpers";
 import type { Domain } from "@/types/api";
 
 function makeDomain(overrides: Partial<Domain> & Pick<Domain, "domain">): Domain {
@@ -84,5 +87,16 @@ describe("deployment domain helpers", () => {
     ];
 
     expect(getPreferredEnvironmentDomain(domains, "production")).toBeNull();
+  });
+});
+
+describe("deployment date helpers", () => {
+  test("formats relative dates from a fixed base date", () => {
+    expect(
+      formatRelativeDateFrom(
+        "2026-05-18T08:00:00.000Z",
+        new Date("2026-05-18T10:00:00.000Z"),
+      ),
+    ).toBe("about 2 hours ago");
   });
 });
