@@ -334,3 +334,26 @@ export function formatCompactNumber(value: number): string {
     maximumFractionDigits: 1,
   }).format(value);
 }
+
+/** Builds the canonical GitHub repository URL for the given owner/repo. */
+export function buildGithubRepoUrl(owner: string, repo: string): string {
+  return `https://github.com/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}`;
+}
+
+/** Builds a GitHub URL pointing at a specific commit. */
+export function buildGithubCommitUrl(
+  owner: string,
+  repo: string,
+  sha: string,
+): string {
+  return `${buildGithubRepoUrl(owner, repo)}/commit/${encodeURIComponent(sha)}`;
+}
+
+/** Builds a GitHub URL pointing at a branch's tree view. */
+export function buildGithubBranchUrl(
+  owner: string,
+  repo: string,
+  branch: string,
+): string {
+  return `${buildGithubRepoUrl(owner, repo)}/tree/${encodeURIComponent(branch)}`;
+}

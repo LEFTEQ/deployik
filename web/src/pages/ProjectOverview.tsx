@@ -31,6 +31,7 @@ import { DeploymentThumbnail } from "@/components/projects/deployment-thumbnail"
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { LoadingState } from "@/components/ui/spinner";
+import { BranchLink, CommitLink } from "@/components/ui/github-link";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -156,7 +157,11 @@ export function ProjectOverview() {
           </a>
           <span className="flex items-center gap-1">
             <GitBranch className="h-3.5 w-3.5" />
-            {project.branch}
+            <BranchLink
+              owner={project.github_owner}
+              repo={project.github_repo}
+              branch={project.branch}
+            />
           </span>
           {project.organization_name ? (
             <span className="flex items-center gap-1">
@@ -218,6 +223,8 @@ export function ProjectOverview() {
             environment="preview"
             deployment={latestPreview}
             projectId={id}
+            githubOwner={project.github_owner}
+            githubRepo={project.github_repo}
             envDomainCount={getEnvironmentDomains(allDomains, "preview").length}
             onNavigate={navigate}
           />
@@ -225,6 +232,8 @@ export function ProjectOverview() {
             environment="production"
             deployment={latestProduction}
             projectId={id}
+            githubOwner={project.github_owner}
+            githubRepo={project.github_repo}
             envDomainCount={getEnvironmentDomains(allDomains, "production").length}
             onNavigate={navigate}
           />
@@ -233,6 +242,8 @@ export function ProjectOverview() {
 
       <PreviewInstancesPanel
         projectId={id}
+        githubOwner={project.github_owner}
+        githubRepo={project.github_repo}
         instances={previewInstances ?? []}
       />
 
@@ -260,17 +271,24 @@ export function ProjectOverview() {
             {recentDeployments.map((d) => {
               const meta = DEPLOYMENT_STATUS_META[d.status];
               const envMeta = ENVIRONMENT_META[d.environment];
+              const goToDeployment = () =>
+                navigate({
+                  to: "/projects/$id/deployments/$did",
+                  params: { id, did: d.id },
+                });
               return (
-                <button
+                <div
                   key={d.id}
-                  type="button"
-                  className="flex w-full items-center gap-3 px-4 py-2.5 text-left transition-colors hover:bg-accent first:rounded-t-lg last:rounded-b-lg"
-                  onClick={() =>
-                    navigate({
-                      to: "/projects/$id/deployments/$did",
-                      params: { id, did: d.id },
-                    })
-                  }
+                  role="button"
+                  tabIndex={0}
+                  className="flex w-full cursor-pointer items-center gap-3 px-4 py-2.5 text-left transition-colors first:rounded-t-lg last:rounded-b-lg hover:bg-accent"
+                  onClick={goToDeployment}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter" || event.key === " ") {
+                      event.preventDefault();
+                      goToDeployment();
+                    }
+                  }}
                 >
                   <span
                     className={cn(
@@ -280,7 +298,15 @@ export function ProjectOverview() {
                   />
                   <GitCommit className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
                   <span className="font-mono text-xs text-foreground">
-                    {d.commit_sha ? d.commit_sha.slice(0, 7) : d.id.slice(0, 7)}
+                    {d.commit_sha ? (
+                      <CommitLink
+                        owner={project.github_owner}
+                        repo={project.github_repo}
+                        sha={d.commit_sha}
+                      />
+                    ) : (
+                      d.id.slice(0, 7)
+                    )}
                   </span>
                   <span className="min-w-0 flex-1 truncate text-sm text-muted-foreground">
                     {d.commit_message || meta?.label || d.status}
@@ -294,7 +320,7 @@ export function ProjectOverview() {
                   <span className="shrink-0 text-xs text-muted-foreground">
                     {formatRelativeDate(d.created_at)}
                   </span>
-                </button>
+                </div>
               );
             })}
           </div>
@@ -306,9 +332,13 @@ export function ProjectOverview() {
 
 function PreviewInstancesPanel({
   projectId,
+  githubOwner,
+  githubRepo,
   instances,
 }: {
   projectId: string;
+  githubOwner: string;
+  githubRepo: string;
   instances: PreviewInstance[];
 }) {
   const queryClient = useQueryClient();
@@ -354,7 +384,11 @@ function PreviewInstancesPanel({
               <div className="min-w-[180px] flex-1">
                 <div className="flex flex-wrap items-center gap-2">
                   <span className="font-mono text-sm text-foreground">
-                    {instance.branch}
+                    <BranchLink
+                      owner={githubOwner}
+                      repo={githubRepo}
+                      branch={instance.branch}
+                    />
                   </span>
                   {instance.is_default ? (
                     <Badge variant="outline" className="text-xs">
@@ -448,12 +482,16 @@ function EnvironmentRow({
   environment,
   deployment,
   projectId,
+  githubOwner,
+  githubRepo,
   envDomainCount,
   onNavigate,
 }: {
   environment: "preview" | "production";
   deployment: Deployment | undefined;
   projectId: string;
+  githubOwner: string;
+  githubRepo: string;
   envDomainCount: number;
   onNavigate: ReturnType<typeof useNavigate>;
 }) {
@@ -647,9 +685,15 @@ function EnvironmentRow({
           <span className="flex shrink-0 items-center gap-1.5 text-muted-foreground">
             <GitCommit className="h-3.5 w-3.5" />
             <span className="font-mono text-xs">
-              {deployment.commit_sha
-                ? deployment.commit_sha.slice(0, 7)
-                : "pending"}
+              {deployment.commit_sha ? (
+                <CommitLink
+                  owner={githubOwner}
+                  repo={githubRepo}
+                  sha={deployment.commit_sha}
+                />
+              ) : (
+                "pending"
+              )}
             </span>
           </span>
 
@@ -661,7 +705,11 @@ function EnvironmentRow({
 
           <span className="hidden shrink-0 items-center gap-1 text-xs text-muted-foreground sm:flex">
             <GitBranch className="h-3.5 w-3.5" />
-            {deployment.branch}
+            <BranchLink
+              owner={githubOwner}
+              repo={githubRepo}
+              branch={deployment.branch}
+            />
           </span>
 
           {deployment.build_duration > 0 && (

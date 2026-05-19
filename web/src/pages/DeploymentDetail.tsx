@@ -13,6 +13,7 @@ import { BuildLog } from "@/components/BuildLog";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { LoadingState } from "@/components/ui/spinner";
+import { BranchLink, CommitLink } from "@/components/ui/github-link";
 import { cn } from "@/lib/utils";
 
 const statusColor: Record<string, string> = {
@@ -45,6 +46,11 @@ export function DeploymentDetail() {
         return 3000;
       return false;
     },
+  });
+
+  const { data: project } = useQuery({
+    queryKey: queryKeys.project(id),
+    queryFn: () => api.getProject(id),
   });
 
   const { data: historicalLogs } = useQuery({
@@ -159,12 +165,29 @@ export function DeploymentDetail() {
             {deployment.commit_sha && (
               <span className="flex items-center gap-1">
                 <GitCommit className="h-3.5 w-3.5" />
-                {deployment.commit_sha.slice(0, 7)} {deployment.commit_message}
+                {project ? (
+                  <CommitLink
+                    owner={project.github_owner}
+                    repo={project.github_repo}
+                    sha={deployment.commit_sha}
+                  />
+                ) : (
+                  deployment.commit_sha.slice(0, 7)
+                )}{" "}
+                {deployment.commit_message}
               </span>
             )}
             <span className="flex items-center gap-1">
               <GitBranch className="h-3.5 w-3.5" />
-              {deployment.branch}
+              {project ? (
+                <BranchLink
+                  owner={project.github_owner}
+                  repo={project.github_repo}
+                  branch={deployment.branch}
+                />
+              ) : (
+                deployment.branch
+              )}
             </span>
             <span className="flex items-center gap-1">
               <Clock className="h-3.5 w-3.5" />

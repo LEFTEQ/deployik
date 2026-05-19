@@ -43,6 +43,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { LoadingState } from "@/components/ui/spinner";
+import { BranchLink } from "@/components/ui/github-link";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Table,
@@ -112,7 +113,13 @@ function ProjectTableRow({ project }: { project: Project }) {
           {project.github_owner}/{project.github_repo}
         </span>
         <span className="mx-1.5">·</span>
-        <span className="font-mono">{project.branch}</span>
+        <span className="font-mono">
+          <BranchLink
+            owner={project.github_owner}
+            repo={project.github_repo}
+            branch={project.branch}
+          />
+        </span>
       </TableCell>
       <TableCell>
         {hasLatestDeployment ? (

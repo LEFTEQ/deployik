@@ -36,6 +36,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { LoadingState } from "@/components/ui/spinner";
+import { BranchLink, CommitLink } from "@/components/ui/github-link";
 import {
   Table,
   TableBody,
@@ -302,9 +303,17 @@ export function ProjectDeployments() {
                         <div className="space-y-1">
                           <div className="flex items-center gap-2 text-sm font-medium text-foreground">
                             <GitCommit className="h-3.5 w-3.5 text-muted-foreground" />
-                            {deployment.commit_sha
-                              ? deployment.commit_sha.slice(0, 7)
-                              : "pending"}
+                            {deployment.commit_sha && project ? (
+                              <CommitLink
+                                owner={project.github_owner}
+                                repo={project.github_repo}
+                                sha={deployment.commit_sha}
+                              />
+                            ) : deployment.commit_sha ? (
+                              deployment.commit_sha.slice(0, 7)
+                            ) : (
+                              "pending"
+                            )}
                           </div>
                           <p
                             className="truncate text-xs text-muted-foreground"
@@ -320,7 +329,15 @@ export function ProjectDeployments() {
                         </div>
                       </TableCell>
                       <TableCell className="text-sm text-muted-foreground">
-                        {deployment.branch}
+                        {project ? (
+                          <BranchLink
+                            owner={project.github_owner}
+                            repo={project.github_repo}
+                            branch={deployment.branch}
+                          />
+                        ) : (
+                          deployment.branch
+                        )}
                       </TableCell>
                       <TableCell className="text-sm text-muted-foreground">
                         {formatRelativeDate(deployment.created_at)}

@@ -1,4 +1,5 @@
 import { getReadyEnvironmentDomains } from "@/lib/deployment-helpers";
+import { BranchLink } from "@/components/ui/github-link";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
@@ -29,7 +30,13 @@ export function ReleasePanelContent({
         <p className="text-sm font-medium text-muted-foreground">
           Source branch
         </p>
-        <p className="font-mono text-sm text-foreground">{project.branch}</p>
+        <p className="font-mono text-sm text-foreground">
+          <BranchLink
+            owner={project.github_owner}
+            repo={project.github_repo}
+            branch={project.branch}
+          />
+        </p>
         <p className="font-mono text-xs text-muted-foreground">
           {project.github_owner}/{project.github_repo}
         </p>

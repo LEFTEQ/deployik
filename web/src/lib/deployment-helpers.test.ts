@@ -1,6 +1,9 @@
 import { describe, expect, test } from "bun:test";
 
 import {
+  buildGithubBranchUrl,
+  buildGithubCommitUrl,
+  buildGithubRepoUrl,
   formatRelativeDateFrom,
   getPreferredEnvironmentDomain,
 } from "./deployment-helpers";
@@ -98,5 +101,50 @@ describe("deployment date helpers", () => {
         new Date("2026-05-18T10:00:00.000Z"),
       ),
     ).toBe("about 2 hours ago");
+  });
+});
+
+describe("GitHub URL helpers", () => {
+  test("buildGithubRepoUrl builds the canonical repo URL", () => {
+    expect(buildGithubRepoUrl("lefteq", "lovinka-deployik")).toBe(
+      "https://github.com/lefteq/lovinka-deployik",
+    );
+  });
+
+  test("buildGithubCommitUrl points at the commit page with the full SHA", () => {
+    const sha = "0123456789abcdef0123456789abcdef01234567";
+    expect(buildGithubCommitUrl("lefteq", "lovinka-deployik", sha)).toBe(
+      `https://github.com/lefteq/lovinka-deployik/commit/${sha}`,
+    );
+  });
+
+  test("buildGithubCommitUrl does not truncate short SHAs", () => {
+    expect(buildGithubCommitUrl("lefteq", "lovinka-deployik", "abc1234")).toBe(
+      "https://github.com/lefteq/lovinka-deployik/commit/abc1234",
+    );
+  });
+
+  test("buildGithubBranchUrl points at the branch tree view", () => {
+    expect(buildGithubBranchUrl("lefteq", "lovinka-deployik", "main")).toBe(
+      "https://github.com/lefteq/lovinka-deployik/tree/main",
+    );
+  });
+
+  test("buildGithubBranchUrl URL-encodes slashes in branch names", () => {
+    expect(
+      buildGithubBranchUrl("lefteq", "lovinka-deployik", "feature/foo-bar"),
+    ).toBe("https://github.com/lefteq/lovinka-deployik/tree/feature%2Ffoo-bar");
+  });
+
+  test("URL helpers encode owners and repos defensively", () => {
+    expect(buildGithubRepoUrl("acme inc", "weird name")).toBe(
+      "https://github.com/acme%20inc/weird%20name",
+    );
+    expect(buildGithubCommitUrl("acme inc", "weird name", "abc")).toBe(
+      "https://github.com/acme%20inc/weird%20name/commit/abc",
+    );
+    expect(buildGithubBranchUrl("acme inc", "weird name", "release/1.0")).toBe(
+      "https://github.com/acme%20inc/weird%20name/tree/release%2F1.0",
+    );
   });
 });
