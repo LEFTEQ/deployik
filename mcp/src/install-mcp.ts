@@ -31,6 +31,12 @@ export interface McpInstallResult {
   skipped: { path: string; reason: string }[];
 }
 
+export interface ExistingMcpConfig {
+  path: string;
+  url?: string;
+  token?: string;
+}
+
 interface ClaudeConfig {
   mcpServers?: Record<string, McpServerEntry>;
   [k: string]: unknown;
@@ -101,6 +107,35 @@ function readConfig(path: string): ClaudeConfig | undefined {
   } catch (err) {
     throw new Error(`Failed to parse ${path} — refusing to overwrite. (${(err as Error).message})`);
   }
+}
+
+export function findExistingMcpConfig(opts: {
+  scope: InstallScope;
+  cwd?: string;
+  name?: string;
+}): ExistingMcpConfig | undefined {
+  const cwd = opts.cwd ?? process.cwd();
+  const name = opts.name ?? "deployik";
+  const scopes: InstallScope[] =
+    opts.scope === "local" ? ["local", "global"] : ["global", "local"];
+
+  for (const scope of scopes) {
+    for (const target of targetsFor(scope, cwd)) {
+      if (!existsSync(target.path)) continue;
+      const config = readConfig(target.path);
+      const entry = config?.mcpServers?.[name];
+      const url = entry?.env?.DEPLOYIK_URL?.trim();
+      const token = entry?.env?.DEPLOYIK_TOKEN?.trim();
+      if (url || token) {
+        return {
+          path: target.path,
+          ...(url ? { url } : {}),
+          ...(token ? { token } : {}),
+        };
+      }
+    }
+  }
+  return undefined;
 }
 
 function backup(path: string): string {

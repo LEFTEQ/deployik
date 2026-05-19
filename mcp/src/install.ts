@@ -7,7 +7,11 @@
 // URL still aborts, since installing a config that can't authenticate would
 // be a footgun.
 
-import { installMcp, type InstallScope } from "./install-mcp.js";
+import {
+  findExistingMcpConfig,
+  installMcp,
+  type InstallScope,
+} from "./install-mcp.js";
 import { installSkillResult, prompt, promptYesNo, promptChoice, closeReadline } from "./install-skill.js";
 import { openInBrowser } from "./lib/browser.js";
 import { box, dim, fail, info, ok, section, warn, bold, cyan } from "./lib/term.js";
@@ -27,6 +31,9 @@ const DEFAULT_URL = "https://deployik.example.com";
 
 export async function installAll(opts: InstallAllOpts): Promise<number> {
   const cwd = opts.cwd ?? process.cwd();
+  const existing = opts.skipMcp
+    ? undefined
+    : findExistingMcpConfig({ scope: opts.scope, cwd });
 
   if (!opts.yes) {
     process.stdout.write("\n" + box(`@lovinka/deployik-mcp installer (${VERSION})`, [
@@ -36,7 +43,7 @@ export async function installAll(opts: InstallAllOpts): Promise<number> {
   }
 
   // ─── Step 1: URL ──────────────────────────────────────────────
-  let url = opts.url ?? process.env.DEPLOYIK_URL ?? "";
+  let url = opts.url ?? process.env.DEPLOYIK_URL ?? existing?.url ?? "";
   if (!opts.skipMcp) {
     if (!opts.yes && !url) {
       process.stdout.write(section(1, 4, "Deployik server URL"));
@@ -59,6 +66,9 @@ export async function installAll(opts: InstallAllOpts): Promise<number> {
 
   // ─── Step 2: Token ────────────────────────────────────────────
   let token = opts.token ?? process.env.DEPLOYIK_TOKEN ?? "";
+  if (!token && existing?.token && (!opts.url || sameUrl(url, existing.url))) {
+    token = existing.token;
+  }
   let user: { username?: string; role?: string } | undefined;
   if (!opts.skipMcp) {
     process.stdout.write(section(2, 4, "Personal Access Token"));
@@ -152,6 +162,11 @@ export async function installAll(opts: InstallAllOpts): Promise<number> {
   if (scope === "local") process.stdout.write(`\n${dim("Note: with --local, the MCP only fires when Claude is opened in this folder.")}\n`);
   closeReadline();
   return 0;
+}
+
+function sameUrl(left: string | undefined, right: string | undefined): boolean {
+  if (!left || !right) return false;
+  return left.replace(/\/+$/, "") === right.replace(/\/+$/, "");
 }
 
 function abort(msg: string): number {
