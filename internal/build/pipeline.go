@@ -262,7 +262,7 @@ func (p *Pipeline) Deploy(ctx context.Context, project *db.Project, deployment *
 
 	// Step 5: Generate Dockerfile
 	emit("Generating Dockerfile...")
-	dockerfilePath, err := GenerateDockerfile(repoDir, DockerfileData{
+	buildPlan, err := PrepareDockerBuild(repoDir, DockerfileData{
 		PackageManager:  settings.PackageManager,
 		NodeVersion:     settings.NodeVersion,
 		InstallCommand:  settings.InstallCommand,
@@ -308,7 +308,7 @@ func (p *Pipeline) Deploy(ctx context.Context, project *db.Project, deployment *
 		tier.Label, tier.MemoryMB, tier.CPUCores, tier.BuildMemoryMB, tier.BuildCPUCores))
 
 	emit(fmt.Sprintf("Building image %s...", imageTag))
-	_, err = p.Docker.BuildImage(ctx, repoDir, dockerfilePath, imageTag, BuildImageOptions{
+	_, err = p.Docker.BuildImage(ctx, buildPlan.ContextDir, buildPlan.DockerfilePath, imageTag, BuildImageOptions{
 		SecretsFile: secretsFile,
 		Tier:        tier,
 		OnLog: func(line string) {

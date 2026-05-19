@@ -52,6 +52,36 @@ type EnvVar struct {
 	Value string
 }
 
+type DockerBuildPlan struct {
+	DockerfilePath string
+	ContextDir     string
+}
+
+// PrepareDockerBuild resolves both the Dockerfile and the build context.
+// Generated Dockerfiles keep the repository as context because they are
+// authored for monorepos. A user Dockerfile inside root_directory is built
+// from that app directory so Docker sees the app's files and ignore rules.
+func PrepareDockerBuild(repoDir string, data DockerfileData) (DockerBuildPlan, error) {
+	dockerfilePath, err := GenerateDockerfile(repoDir, data)
+	if err != nil {
+		return DockerBuildPlan{}, err
+	}
+
+	contextDir := repoDir
+	if data.RootDirectory != "" {
+		appDir := filepath.Join(repoDir, filepath.FromSlash(data.RootDirectory))
+		appDockerfilePath := filepath.Join(appDir, "Dockerfile")
+		if sameFilesystemPath(dockerfilePath, appDockerfilePath) {
+			contextDir = appDir
+		}
+	}
+
+	return DockerBuildPlan{
+		DockerfilePath: dockerfilePath,
+		ContextDir:     contextDir,
+	}, nil
+}
+
 // GenerateDockerfile creates a Dockerfile in the repo directory.
 // If a Dockerfile already exists, it is used as-is.
 // Otherwise, generates one from the selected framework runtime.
@@ -512,6 +542,18 @@ func dockerProjectPath(rootDirectory, relative string) string {
 		parts = append(parts, strings.TrimPrefix(path.Clean(relative), "./"))
 	}
 	return path.Join(parts...)
+}
+
+func sameFilesystemPath(a, b string) bool {
+	return cleanFilesystemPath(a) == cleanFilesystemPath(b)
+}
+
+func cleanFilesystemPath(p string) string {
+	abs, err := filepath.Abs(p)
+	if err == nil {
+		p = abs
+	}
+	return filepath.Clean(p)
 }
 
 func resolvePackageManager(data DockerfileData) string {

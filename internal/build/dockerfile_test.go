@@ -83,6 +83,95 @@ func TestGenerateDockerfileSupportsRootDirectoryAndNextOutput(t *testing.T) {
 	}
 }
 
+func TestPrepareDockerBuildUsesRootDirectoryContextForAppDockerfile(t *testing.T) {
+	t.Parallel()
+
+	repoDir := t.TempDir()
+	appDir := filepath.Join(repoDir, "csob", "tracker")
+	if err := os.MkdirAll(appDir, 0755); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(repoDir, ".dockerignore"), []byte("*\n"), 0644); err != nil {
+		t.Fatalf("WriteFile .dockerignore: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(appDir, "Dockerfile"), []byte("FROM scratch\n"), 0644); err != nil {
+		t.Fatalf("WriteFile Dockerfile: %v", err)
+	}
+
+	plan, err := PrepareDockerBuild(repoDir, DockerfileData{
+		RootDirectory: "csob/tracker",
+	})
+	if err != nil {
+		t.Fatalf("PrepareDockerBuild: %v", err)
+	}
+
+	if got, want := filepath.Clean(plan.DockerfilePath), filepath.Join(appDir, "Dockerfile"); got != want {
+		t.Fatalf("DockerfilePath = %q, want %q", got, want)
+	}
+	if got, want := filepath.Clean(plan.ContextDir), appDir; got != want {
+		t.Fatalf("ContextDir = %q, want %q", got, want)
+	}
+}
+
+func TestPrepareDockerBuildKeepsRepoContextForRootDockerfile(t *testing.T) {
+	t.Parallel()
+
+	repoDir := t.TempDir()
+	appDir := filepath.Join(repoDir, "apps", "web")
+	if err := os.MkdirAll(appDir, 0755); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(repoDir, "Dockerfile"), []byte("FROM scratch\n"), 0644); err != nil {
+		t.Fatalf("WriteFile Dockerfile: %v", err)
+	}
+
+	plan, err := PrepareDockerBuild(repoDir, DockerfileData{
+		RootDirectory: "apps/web",
+	})
+	if err != nil {
+		t.Fatalf("PrepareDockerBuild: %v", err)
+	}
+
+	if got, want := filepath.Clean(plan.DockerfilePath), filepath.Join(repoDir, "Dockerfile"); got != want {
+		t.Fatalf("DockerfilePath = %q, want %q", got, want)
+	}
+	if got, want := filepath.Clean(plan.ContextDir), repoDir; got != want {
+		t.Fatalf("ContextDir = %q, want %q", got, want)
+	}
+}
+
+func TestPrepareDockerBuildKeepsRepoContextForGeneratedDockerfile(t *testing.T) {
+	t.Parallel()
+
+	repoDir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(repoDir, "apps", "web"), 0755); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(repoDir, "package.json"), []byte(`{"name":"app"}`), 0644); err != nil {
+		t.Fatalf("WriteFile package.json: %v", err)
+	}
+
+	plan, err := PrepareDockerBuild(repoDir, DockerfileData{
+		PackageManager:  projectconfig.PackageManagerNpm,
+		NodeVersion:     "22",
+		RootDirectory:   "apps/web",
+		OutputDirectory: "dist",
+		Runtime:         projectconfig.RuntimeStatic,
+		BuildCommand:    "npm run build",
+		InstallCommand:  "npm ci",
+	})
+	if err != nil {
+		t.Fatalf("PrepareDockerBuild: %v", err)
+	}
+
+	if got, want := filepath.Clean(plan.DockerfilePath), filepath.Join(repoDir, "Dockerfile"); got != want {
+		t.Fatalf("DockerfilePath = %q, want %q", got, want)
+	}
+	if got, want := filepath.Clean(plan.ContextDir), repoDir; got != want {
+		t.Fatalf("ContextDir = %q, want %q", got, want)
+	}
+}
+
 func TestPnpmFlagInjectionLeavesCustomInstallCommandsAlone(t *testing.T) {
 	t.Parallel()
 
