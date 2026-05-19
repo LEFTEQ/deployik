@@ -3,11 +3,13 @@ import { RECIPE_FILES } from "./recipes.generated.js";
 export type RecipeTopic =
   | "overview"
   | "create-project"
+  | "dockerfile-app"
   | "custom-domain"
   | "env-vars"
   | "auto-deploy"
   | "password-protection"
   | "contact-form-email"
+  | "attach-postgres"
   | "rollback";
 
 export interface Recipe {
@@ -20,22 +22,26 @@ export interface Recipe {
 const TOPIC_TITLES: Record<RecipeTopic, string> = {
   overview: "Deployik overview",
   "create-project": "Connect a GitHub repo and deploy it",
+  "dockerfile-app": "Deploy a Dockerfile, Go server, API, or SQLite-backed app",
   "custom-domain": "Set up a custom domain with SSL",
   "env-vars": "Add environment variables and secrets",
   "auto-deploy": "Configure auto-deploy from GitHub",
   "password-protection": "Password-protect a preview or production site",
   "contact-form-email": "Wire up a contact form with email + reCAPTCHA",
+  "attach-postgres": "Attach and manage a Postgres sidecar database",
   rollback: "Roll back a deployment",
 };
 
 const TOPIC_SUMMARIES: Record<RecipeTopic, string> = {
   overview: "What Deployik is and the dashboard's anatomy.",
   "create-project": "From 'I have a GitHub repo' to 'it's deployed' in seven clicks.",
+  "dockerfile-app": "How to deploy Dockerfile/Go/custom long-running apps: use framework static, root_directory, port, and optional persistent volume.",
   "custom-domain": "DNS verification, SSL provisioning, and primary-domain selection.",
   "env-vars": "Shared, preview, and production scopes — when to use which.",
   "auto-deploy": "GitHub webhooks, preview/production branch matching, opt-in production fan-out.",
   "password-protection": "Generate a per-environment password and share the URL.",
   "contact-form-email": "Webglobe SMTP + reCAPTCHA v3 + the AI-install prompt for Next.js routes.",
+  "attach-postgres": "Postgres attach/restart/credentials/reset workflow and safety gates.",
   rollback: "Promote a previous successful deployment back to live.",
 };
 
@@ -67,11 +73,13 @@ function buildRecipes(): Recipe[] {
 
   const topicHeaders: Array<{ topic: RecipeTopic; header: string }> = [
     { topic: "create-project", header: "create-project" },
+    { topic: "dockerfile-app", header: "dockerfile-app" },
     { topic: "custom-domain", header: "custom-domain" },
     { topic: "env-vars", header: "env-vars" },
     { topic: "auto-deploy", header: "auto-deploy" },
     { topic: "password-protection", header: "password-protection" },
     { topic: "contact-form-email", header: "contact-form-email" },
+    { topic: "attach-postgres", header: "attach-postgres" },
     { topic: "rollback", header: "rollback" },
   ];
 
@@ -131,10 +139,12 @@ export function getRecipe(topic: RecipeTopic): Recipe | undefined {
 export const RECIPE_TOPICS: RecipeTopic[] = [
   "overview",
   "create-project",
+  "dockerfile-app",
   "custom-domain",
   "env-vars",
   "auto-deploy",
   "password-protection",
   "contact-form-email",
+  "attach-postgres",
   "rollback",
 ];

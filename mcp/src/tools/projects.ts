@@ -12,7 +12,7 @@ export interface CreateProjectToolArgs {
   github_owner: string;
   github_repo: string;
   branch: string;
-  framework: "nextjs" | "vite" | "astro" | "static";
+  framework: "nextjs" | "vite" | "astro" | "static" | "node-api";
   package_manager: "auto" | "bun" | "pnpm" | "npm" | "yarn";
   root_directory: string;
   output_directory: string;
@@ -20,6 +20,9 @@ export interface CreateProjectToolArgs {
   install_command: string;
   node_version: string;
   port: number;
+  host_network_access?: boolean;
+  data_volume_enabled?: boolean;
+  data_mount_path?: string;
   group_id?: string;
   group?: string;
   organization_id?: string;
@@ -52,6 +55,9 @@ export function buildCreateProjectPayload(
   };
   const groupId = resolvedGroupId ?? args.group_id ?? args.organization_id;
   if (groupId) payload.organization_id = groupId;
+  if (args.host_network_access !== undefined) payload.host_network_access = args.host_network_access;
+  if (args.data_volume_enabled !== undefined) payload.data_volume_enabled = args.data_volume_enabled;
+  if (args.data_mount_path) payload.data_mount_path = args.data_mount_path;
   if (args.resource_tier) payload.resource_tier = args.resource_tier;
   if (args.start_command) payload.start_command = args.start_command;
   if (args.health_path) payload.health_path = args.health_path;
@@ -133,20 +139,26 @@ export function registerProjectTools(server: McpServer, ctx: ToolContext): void 
   registerTool(server, ctx, {
     name: "create_project",
     description:
-      "Create a new Deployik project from a GitHub repo. Returns the new project record. Use `setup_project_from_repo` if you want auto-inspection of monorepo apps + an initial deploy.",
+      "Create a new Deployik project from a GitHub repo. Supports generated Next.js/Vite/Astro/static/node-api Dockerfiles and user-provided Dockerfiles. For Dockerfile/Go/custom apps, use framework='static', set root_directory to the folder containing Dockerfile, and set port to the container listen port. Use `setup_project_from_repo` if you want JS app auto-inspection of monorepos + an initial deploy.",
     inputSchema: {
       name: z.string().describe("DNS-safe slug. Must match ^[a-z0-9]([a-z0-9-]*[a-z0-9])?$"),
       github_owner: z.string(),
       github_repo: z.string(),
       branch: z.string().default("main"),
-      framework: z.enum(["nextjs", "vite", "astro", "static"]).default("nextjs"),
+      framework: z
+        .enum(["nextjs", "vite", "astro", "static", "node-api"])
+        .default("nextjs")
+        .describe("Build preset for generated Dockerfiles. For a user Dockerfile, choose 'static'; Dockerfile presence makes Deployik build it as-is."),
       package_manager: z.enum(["auto", "bun", "pnpm", "npm", "yarn"]).default("auto"),
-      root_directory: z.string().default(""),
-      output_directory: z.string().default(""),
-      build_command: z.string().default(""),
-      install_command: z.string().default(""),
+      root_directory: z.string().default("").describe("App subdirectory. For Dockerfile apps, this must be the directory containing Dockerfile."),
+      output_directory: z.string().default("").describe("Generated-Dockerfile output folder. Ignored by user-provided Dockerfiles."),
+      build_command: z.string().default("").describe("Generated-Dockerfile build command. Ignored by user-provided Dockerfiles."),
+      install_command: z.string().default("").describe("Generated-Dockerfile install command. Ignored by user-provided Dockerfiles."),
       node_version: z.string().default("22"),
-      port: z.number().int().min(1).max(65535).default(3000),
+      port: z.number().int().min(1).max(65535).default(3000).describe("Container HTTP listen port. Required for Dockerfile apps if they do not listen on 3000."),
+      host_network_access: z.boolean().optional().describe("Allow runtime container to reach host services via host.docker.internal."),
+      data_volume_enabled: z.boolean().optional().describe("Enable a persistent Docker volume for runtime file storage."),
+      data_mount_path: z.string().optional().describe("Container mount path for the persistent volume, e.g. /data or /app/data."),
       group_id: z.string().optional().describe("Dashboard group id. Preferred over organization_id."),
       group: z.string().optional().describe("Dashboard group name, slug, or id."),
       organization_id: z.string().optional().describe("Backward-compatible alias for group_id."),

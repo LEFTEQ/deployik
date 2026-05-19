@@ -18,7 +18,7 @@
     "start": "node dist/index.js",
     "inspect": "node scripts/copy-recipes.mjs && tsc -p tsconfig.json && npx @modelcontextprotocol/inspector node dist/index.js",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "bun test",
+    "test": "node scripts/copy-recipes.mjs && bun test",
     "prepublishOnly": "npm run build"
   },
   "engines": {

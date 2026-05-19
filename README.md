@@ -1,17 +1,17 @@
 # Deployik
 
-Self-hosted deployment platform for the [Lovinka](https://example.com) VPS. A lightweight Vercel alternative that deploys Next.js and static web apps from GitHub repositories with automatic domains, SSL certificates, environment variables, auto-build previews, opt-in production auto-deploy, and blue-green zero-downtime deployments.
+Self-hosted deployment platform for the [Lovinka](https://example.com) VPS. A lightweight Vercel alternative that deploys Next.js, static sites, Node APIs, and user-provided Dockerfile apps from GitHub repositories with automatic domains, SSL certificates, environment variables, auto-build previews, opt-in production auto-deploy, and blue-green zero-downtime deployments.
 
 ## Features
 
 - **GitHub Integration** -- Import repos, select branches, deploy with one click
-- **Framework Support** -- Next.js (standalone), Vite, Astro, and generic static sites
+- **Framework Support** -- Next.js (standalone), Vite, Astro, generic static sites, Node APIs, and custom Dockerfiles
 - **Blue-Green Deploys** -- Zero-downtime container swaps with automatic health checks
 - **Automatic Domains** -- Preview URLs generated per project and branch (`{name}.preview.example.com`, `{name}-{branch}.preview.example.com`)
 - **Custom Domains** -- Add your own domain with DNS verification and auto-provisioned SSL (Let's Encrypt)
 - **Auto-Build on Push** -- GitHub webhooks deploy previews automatically; production can opt in to track pushes to the production branch without creating release tags
 - **Environment Variables and Secrets** -- Separate stores with shared/preview/production scoping, encrypted at rest (AES-256-GCM)
-- **Build Settings** -- Configurable framework preset, root directory (monorepo support), output directory, install/build commands, Node.js version
+- **Build Settings** -- Configurable framework preset, root directory (monorepo + Dockerfile context support), output directory, install/build commands, Node.js version, and container port
 - **Real-time Build Logs** -- WebSocket streaming during builds, persisted for later review
 - **Monorepo Support** -- Root directory support for apps inside monorepos, automatic lock file detection from repo root or app directory
 - **Dockerfile Override** -- Bring your own Dockerfile; Deployik only generates one when none exists

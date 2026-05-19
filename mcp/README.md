@@ -70,6 +70,7 @@ Get a token at **Account → Access tokens** in Deployik. The token is shown onc
 
 - **~37 thin tools** — one per Deployik HTTP endpoint (projects, deployments, env vars, secrets, domains, auto-build, password protection, volumes, analytics, email, dashboard groups, tokens, GitHub).
 - **12 workflow tools** — `setup_project_from_repo`, `deploy_project`, `set_secret`, `tail_latest_logs`, `debug_failed_deployment`, `get_project_health`, `init_in_repo`, `whats_my_url`, `whats_broken`, `redeploy`, and more.
+- **Dockerfile-aware project creation** — generated presets cover Next.js, Vite, Astro, static sites, and Node APIs; user-provided Dockerfiles are supported by choosing `framework: "static"`, setting `root_directory` to the Dockerfile folder, and setting `port` to the container listen port.
 - **Bundled knowledge** — Deployik's how-to recipes ship as MCP prompts (`deployik_recipe_*`), plus three tools: `list_recipes`, `get_recipe(topic)`, and **`find_help(question)`** which routes free-form English ("where do I set the Stripe key for the live site?") to the right recipe automatically.
 - **Repo binding** — first call inside a git repo with a unique-match `origin` auto-writes `.deployik.json` (committed, just project + dashboard group + schema URL) and gitignores the private `.deployik/` directory. Self-healing `.gitignore`.
 - **Tiered safety** — destructive operations require `confirm: true`; production-touching operations also require `confirm_name: <project>`. Every destructive call is logged to `.deployik/audit.log`.

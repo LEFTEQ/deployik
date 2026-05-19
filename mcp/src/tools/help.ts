@@ -112,6 +112,12 @@ const SYNONYMS: Record<string, string> = {
   // email / contact form
   email: "email", contact: "email", smtp: "email", recaptcha: "email", form: "email",
   webglobe: "email", mail: "email", "form-email": "email",
+  // dockerfile / custom servers
+  docker: "dockerfile", dockerfile: "dockerfile", container: "dockerfile", image: "dockerfile",
+  go: "dockerfile", golang: "dockerfile", api: "dockerfile", server: "dockerfile",
+  sqlite: "dockerfile", volume: "dockerfile", persistent: "dockerfile",
+  // postgres sidecar
+  postgres: "postgres", postgresql: "postgres", database: "postgres", db: "postgres", sidecar: "postgres",
   // rollback
   rollback: "rollback", revert: "rollback", undo: "rollback", restore: "rollback", previous: "rollback",
   // create / connect project

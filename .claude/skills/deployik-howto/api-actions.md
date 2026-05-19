@@ -4,7 +4,9 @@ Action mode for the goals in [click-paths.md](click-paths.md). Each entry has th
 
 ## Helper script
 
-Always invoke the API via `./helpers/deployik` (relative to this skill's directory) — never paste tokens into raw curl. The wrapper:
+Prefer Deployik MCP tools when they are available in the current session. They already hold the configured Deployik token and are safer than shelling out.
+
+If MCP tools are unavailable, invoke the API via `./helpers/deployik` (relative to this skill's directory) — never paste tokens into raw curl. The wrapper:
 
 - Reads `~/.config/deployik/config` (`DEPLOYIK_BASE_URL`, `DEPLOYIK_TOKEN`)
 - Sends `Authorization: Bearer $DEPLOYIK_TOKEN`
@@ -18,7 +20,7 @@ Usage:
 deployik api <METHOD> <path> [json-body]
 ```
 
-If `~/.config/deployik/config` is missing, stop and direct the user to create a token (Sidebar → **Access tokens** → **Create token**) before retrying.
+If `~/.config/deployik/config` is missing and no Deployik MCP tools are available, stop and direct the user to create a token (Sidebar → **Access tokens** → **Create token**) before retrying. If MCP tools are available, do not require this file.
 
 ## Safety tiers
 
@@ -68,6 +70,12 @@ deployik api GET /api/projects
 }
 ```
 
+**Framework values:** `nextjs`, `vite`, `astro`, `static`, `node-api`.
+For a user-provided Dockerfile, use `framework: "static"` and set
+`root_directory` to the folder containing the Dockerfile. There is no special
+`framework: "docker"` value; Dockerfile presence is what makes Deployik build
+the Dockerfile as-is.
+
 **Invocation:**
 
 ```
@@ -80,6 +88,50 @@ deployik api POST /api/projects '{"name":"my-app","github_repo":"my-repo","githu
 to list available group ids. To create into a specific dashboard tab, pass that
 group's id as `group_id` (the API still accepts the legacy field name
 `organization_id` for backward compatibility).
+
+---
+
+## dockerfile-app
+
+**Goal:** [click-paths.md#dockerfile-app](click-paths.md#dockerfile-app)
+
+**Endpoint:** `POST /api/projects`, then optional `PATCH /api/projects/{id}` for runtime volume settings if they were not included at create time.
+**Tier:** Mutation — confirm before executing.
+
+**Deployik Dockerfile rule:** if a `Dockerfile` exists at repo root, Deployik uses it as-is with repo root as context. If `root_directory` is set and that folder contains a `Dockerfile`, Deployik uses that Dockerfile with `root_directory` as context. Do not invent `framework: "docker"`; use `framework: "static"` as the neutral preset.
+
+**Body shape for a Go / Dockerfile app in a subdirectory:**
+
+```json
+{
+  "name": "fleet",
+  "github_repo": "QTTa",
+  "github_owner": "LEFTEQ",
+  "branch": "main",
+  "framework": "static",
+  "package_manager": "auto",
+  "root_directory": "apps/fleet",
+  "output_directory": "",
+  "build_command": "",
+  "install_command": "",
+  "node_version": "22",
+  "port": 8080,
+  "data_volume_enabled": true,
+  "data_mount_path": "/data"
+}
+```
+
+**Invocation:**
+
+```
+deployik api POST /api/projects '{"name":"fleet","github_repo":"QTTa","github_owner":"LEFTEQ","branch":"main","framework":"static","package_manager":"auto","root_directory":"apps/fleet","output_directory":"","build_command":"","install_command":"","node_version":"22","port":8080,"data_volume_enabled":true,"data_mount_path":"/data"}'
+```
+
+**When the repo inspector misses the app:** Dockerfile-only or Go-only folders may not appear in the JS-oriented repo inspector because they have no `package.json`. That is not evidence Deployik cannot run them. If the user knows the folder, create the project directly with `root_directory` and `framework: "static"`.
+
+**After creation:** Deployik triggers an initial preview deployment automatically. Use `GET /api/projects/{id}/deployments` or the MCP `list_deployments` / `deploy_project(wait:true)` flow to watch it.
+
+**Common failure:** Docker cannot copy files outside its build context. If the Dockerfile says `COPY go.sum .` or `COPY internal ./internal`, those paths must exist inside `root_directory` when `root_directory` is used.
 
 ---
 

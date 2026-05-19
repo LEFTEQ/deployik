@@ -64,21 +64,28 @@ export function registerWorkflowTools(server: McpServer, ctx: ToolContext): void
   registerTool(server, ctx, {
     name: "setup_project_from_repo",
     description:
-      "End-to-end: inspect the GitHub repo for monorepo/framework, create a Deployik project, optionally enable auto-build + auto-production. Returns the project + initial preview deploy id (if any).",
+      "End-to-end: inspect the GitHub repo for JS monorepo/framework apps, create a Deployik project, optionally enable auto-build + auto-production. Returns the project + initial preview deploy id (if any). For Dockerfile-only or Go-only folders the inspector may miss the app; that is not evidence Deployik cannot deploy it. Use create_project directly with framework='static', root_directory pointing at the Dockerfile folder, and port set to the container listen port.",
     inputSchema: {
       owner: z.string(),
       repo: z.string(),
       name: z.string().describe("DNS-safe slug, e.g. 'my-app'."),
       branch: z.string().default("main"),
-      framework: z.enum(["nextjs", "vite", "astro", "static"]).optional(),
+      framework: z
+        .enum(["nextjs", "vite", "astro", "static", "node-api"])
+        .optional()
+        .describe("Override detected generated-Dockerfile preset. For user Dockerfiles, use 'static'."),
       package_manager: z.enum(["auto", "bun", "pnpm", "npm", "yarn"]).optional(),
-      root_directory: z.string().optional().describe("If the repo is a monorepo, the app subdirectory."),
+      root_directory: z.string().optional().describe("If the repo is a monorepo, the app subdirectory. For Dockerfile apps, use the folder containing Dockerfile."),
       group_id: z.string().optional().describe("Dashboard group id. Preferred over organization_id."),
       group: z.string().optional().describe("Dashboard group name, slug, or id."),
       organization_id: z.string().optional().describe("Backward-compatible alias for group_id."),
       auto_build_enabled: z.boolean().default(true),
       auto_production_enabled: z.boolean().default(false),
       resource_tier: z.enum(["nano", "small", "medium", "large"]).optional(),
+      port: z.number().int().min(1).max(65535).optional().describe("Container HTTP listen port. Important for Dockerfile apps."),
+      host_network_access: z.boolean().optional(),
+      data_volume_enabled: z.boolean().optional().describe("Enable a persistent Docker volume for runtime file storage."),
+      data_mount_path: z.string().optional().describe("Container mount path for the persistent volume, e.g. /data."),
       start_command: z.string().optional(),
       health_path: z.string().optional(),
     },
@@ -113,7 +120,10 @@ export function registerWorkflowTools(server: McpServer, ctx: ToolContext): void
           build_command: detectedApp?.suggested_build_command ?? "",
           install_command: "",
           node_version: "22",
-          port: 3000,
+          port: args.port ?? 3000,
+          host_network_access: args.host_network_access,
+          data_volume_enabled: args.data_volume_enabled,
+          data_mount_path: args.data_mount_path,
           auto_build_enabled: args.auto_build_enabled,
           auto_production_enabled: args.auto_production_enabled,
           resource_tier: args.resource_tier,

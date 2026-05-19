@@ -1,6 +1,6 @@
 # Deployik — Where to click
 
-Eight recipes for the most common things a user wants to do in the Deployik dashboard. If the user's goal isn't in the table, ask them warmly to rephrase, or check whether their goal is actually outside Deployik's scope.
+Nine recipes for the most common things a user wants to do in the Deployik dashboard. If the user's goal isn't in the table, ask them warmly to rephrase, or check whether their goal is actually outside Deployik's scope.
 
 Every recipe ends with a friendly "stuck on a step?" line. If the user uses it, ask which step and walk through that single step in fine detail (one click, one screenshot description, or one clarifying question at a time) before continuing.
 
@@ -9,6 +9,7 @@ Every recipe ends with a friendly "stuck on a step?" line. If the user uses it, 
 | Goal | Recipe |
 |------|--------|
 | I want to put my GitHub repo online | [#create-project](#create-project) |
+| I want to deploy a Dockerfile, Go server, API, or SQLite-backed app | [#dockerfile-app](#dockerfile-app) |
 | I want to use my own domain (example.com) | [#custom-domain](#custom-domain) |
 | I want to set environment variables / API keys | [#env-vars](#env-vars) |
 | I want it to redeploy when I push to GitHub | [#auto-deploy](#auto-deploy) |
@@ -44,6 +45,40 @@ Every recipe ends with a friendly "stuck on a step?" line. If the user uses it, 
 **Stuck on any of these steps? Tell me which one and I'll walk through it with you.**
 
 **API equivalent:** [api-actions.md#create-project](api-actions.md#create-project)
+
+---
+
+## dockerfile-app
+
+**Goal:** Deploy a project that already has its own Dockerfile, such as a Go HTTP server, a custom API, or an app that needs SQLite/persistent files.
+
+**Route:** `/new`, then project **Settings** if you need to adjust runtime fields.
+**Sidebar:** (top-right of the Projects page) → **+ New project**
+
+**What Deployik supports:**
+- If the repo root contains `Dockerfile`, Deployik builds that Dockerfile as-is.
+- If the app lives in a subfolder, set **Root directory** to that subfolder and put `Dockerfile` there. Deployik builds with that subfolder as the Docker context, so files beside the Dockerfile are included correctly.
+- There is no special **Docker** framework option. Pick **Static Site** as the neutral preset for custom Dockerfiles; the Dockerfile takes over the real build.
+
+**Steps:**
+1. Make sure the repo is pushed to GitHub. Deployik clones from GitHub, not your unpushed local files.
+2. Make sure the app folder has a `Dockerfile`. For a subfolder app, the Dockerfile should be inside that folder.
+3. Click **+ New project**, import the repo, and choose the app folder if Deployik shows a monorepo picker.
+4. On the configuration screen:
+   - **Framework** — choose **Static Site** for a custom Dockerfile.
+   - **Root directory** — folder containing the Dockerfile, or leave empty for repo root.
+   - **Port** — the HTTP port your container listens on, for example `8080` for many Go servers or `3000` for many web apps.
+   - **Group** — choose the dashboard group/tab this project should live in.
+5. If the app writes local files, open project **Settings** → **Runtime** after creation and enable **Persistent data volume**. Set **Mount path** to the path your container writes to, such as `/data` or `/app/data`.
+6. Trigger a preview deploy. The build log should show `docker buildx build` using your Dockerfile.
+
+**Gotcha:** Docker can only copy files inside the build context. If your Dockerfile is in `apps/fleet`, keep `go.mod`, `go.sum`, `internal/`, `web/`, and other copied files inside `apps/fleet`, or move the Dockerfile to a higher folder and use that as the root directory.
+
+**Gotcha:** the `framework`, `build_command`, `install_command`, `output_directory`, `node_version`, `start_command`, and `health_path` fields are for Deployik-generated Dockerfiles. A user Dockerfile controls its own build, command, and health check. The Deployik **Port** field still matters because the reverse proxy connects to that port.
+
+**Stuck on any of these steps? Tell me which one and I'll walk through it with you.**
+
+**API equivalent:** [api-actions.md#dockerfile-app](api-actions.md#dockerfile-app)
 
 ---
 

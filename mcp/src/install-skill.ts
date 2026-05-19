@@ -6,11 +6,11 @@
 //   global → ~/.claude/skills/deployik-howto/        (default)
 //   local  → <cwd>/.claude/skills/deployik-howto/    (per-project)
 
-import { existsSync, mkdirSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
-import { join, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { createInterface, type Interface as ReadlineInterface } from "node:readline";
-import { RECIPE_FILES } from "./knowledge/recipes.generated.js";
+import { RECIPE_FILES, SKILL_FILES } from "./knowledge/recipes.generated.js";
 import type { InstallScope } from "./install-mcp.js";
 
 // Two read modes, chosen at first prompt by checking whether stdin is a TTY:
@@ -75,6 +75,12 @@ export interface SkillInstallResult {
   alreadyExisted: boolean;
 }
 
+interface InstallableSkillFile {
+  file: string;
+  content: string;
+  executable?: boolean;
+}
+
 export function skillTargetDir(scope: InstallScope, cwd: string, destBase?: string): string {
   if (destBase) return resolve(destBase, "deployik-howto");
   if (scope === "local") return resolve(cwd, ".claude", "skills", "deployik-howto");
@@ -98,8 +104,10 @@ export async function installSkillResult(opts: SkillInstallOpts): Promise<SkillI
     return null;
   }
 
+  const files: InstallableSkillFile[] = SKILL_FILES.length > 0 ? SKILL_FILES : RECIPE_FILES;
+
   process.stdout.write(`Skill files (${opts.scope}) → ${target}\n`);
-  for (const f of RECIPE_FILES) process.stdout.write(`  - ${f.file}\n`);
+  for (const f of files) process.stdout.write(`  - ${f.file}\n`);
 
   const alreadyExisted = existsSync(target);
   if (alreadyExisted) {
@@ -115,9 +123,14 @@ export async function installSkillResult(opts: SkillInstallOpts): Promise<SkillI
   }
 
   mkdirSync(target, { recursive: true });
-  for (const f of RECIPE_FILES) writeFileSync(join(target, f.file), f.content, "utf8");
+  for (const f of files) {
+    const filePath = join(target, f.file);
+    mkdirSync(dirname(filePath), { recursive: true });
+    writeFileSync(filePath, f.content, "utf8");
+    if (f.executable) chmodSync(filePath, 0o755);
+  }
 
-  return { target, files: RECIPE_FILES.map((f) => f.file), alreadyExisted };
+  return { target, files: files.map((f) => f.file), alreadyExisted };
 }
 
 export async function promptYesNo(promptText: string): Promise<boolean> {

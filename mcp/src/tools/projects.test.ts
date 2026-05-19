@@ -41,11 +41,40 @@ describe("create_project payload", () => {
   test("includes dashboard runtime fields when provided", () => {
     const payload = buildCreateProjectPayload({
       ...baseArgs,
+      framework: "node-api",
+      host_network_access: true,
+      data_volume_enabled: true,
+      data_mount_path: "/data",
       start_command: "bun run start",
       health_path: "/api/health",
     });
 
+    expect(payload.framework).toBe("node-api");
+    expect(payload.host_network_access).toBe(true);
+    expect(payload.data_volume_enabled).toBe(true);
+    expect(payload.data_mount_path).toBe("/data");
     expect(payload.start_command).toBe("bun run start");
     expect(payload.health_path).toBe("/api/health");
+  });
+
+  test("supports the documented Dockerfile app payload shape", () => {
+    const payload = buildCreateProjectPayload({
+      ...baseArgs,
+      name: "fleet",
+      framework: "static",
+      root_directory: "apps/fleet",
+      output_directory: "",
+      build_command: "",
+      install_command: "",
+      port: 8080,
+      data_volume_enabled: true,
+      data_mount_path: "/data",
+    });
+
+    expect(payload.framework).toBe("static");
+    expect(payload.root_directory).toBe("apps/fleet");
+    expect(payload.port).toBe(8080);
+    expect(payload.data_volume_enabled).toBe(true);
+    expect(payload.data_mount_path).toBe("/data");
   });
 });

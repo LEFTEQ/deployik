@@ -1,9 +1,10 @@
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, test } from "bun:test";
 
 import { installAll } from "./install";
+import { installSkillResult } from "./install-skill";
 
 const originalFetch = globalThis.fetch;
 const originalDeployikUrl = process.env.DEPLOYIK_URL;
@@ -69,6 +70,26 @@ describe("installAll", () => {
       expect(config.mcpServers.deployik.env.DEPLOYIK_TOKEN).toBe(
         "dpk_existing",
       );
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("installSkillResult", () => {
+  test("installs the API helper script with executable mode", async () => {
+    const cwd = mkdtempSync(join(tmpdir(), "deployik-skill-install-"));
+    try {
+      const result = await installSkillResult({
+        scope: "local",
+        yes: true,
+        cwd,
+      });
+
+      const helperPath = join(cwd, ".claude", "skills", "deployik-howto", "helpers", "deployik");
+      expect(result?.files).toContain("helpers/deployik");
+      expect(existsSync(helperPath)).toBe(true);
+      expect(statSync(helperPath).mode & 0o111).not.toBe(0);
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
