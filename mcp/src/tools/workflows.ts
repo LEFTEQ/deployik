@@ -28,7 +28,14 @@ const VAR_SCOPE = z.string().describe("'shared' (both envs), 'preview' (test onl
 const TERMINAL_STATUSES = new Set(["live", "failed", "replaced", "rolled_back"]);
 
 export function registerWorkflowTools(server: McpServer, ctx: ToolContext): void {
-  registerTool(server, ctx, {
+  // `init_in_repo` and `show_binding` write/read .deployik.json relative to
+  // ctx.cwd. In http (daemon) mode ctx.cwd is the daemon's own state dir,
+  // not the user's repo — registering them there would silently create
+  // bindings in the wrong place. Skip in http mode; resolution still works
+  // via explicit project_id / slug / single-project workspace.
+  const includeRepoBoundTools = ctx.mode !== "http";
+
+  if (includeRepoBoundTools) registerTool(server, ctx, {
     name: "init_in_repo",
     description:
       "Bootstrap this repo: write `.deployik.json` (project + dashboard group), append `.deployik/` to .gitignore, and validate the token via whoami. Run this once per repo.",
@@ -408,7 +415,7 @@ export function registerWorkflowTools(server: McpServer, ctx: ToolContext): void
     },
   });
 
-  registerTool(server, ctx, {
+  if (includeRepoBoundTools) registerTool(server, ctx, {
     name: "show_binding",
     description: "Print the current .deployik binding (project + dashboard group) for this repo, if any. Useful to confirm resolution before running other tools.",
     annotations: { readOnlyHint: true },

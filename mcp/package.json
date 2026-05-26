@@ -1,6 +1,6 @@
 {
   "name": "@lovinka/deployik-mcp",
-  "version": "0.3.2",
+  "version": "0.4.0",
   "description": "MCP server for Deployik — drive projects, deployments, secrets, and domains from any MCP-aware AI.",
   "type": "module",
   "main": "dist/index.js",

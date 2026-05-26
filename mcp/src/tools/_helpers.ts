@@ -6,10 +6,18 @@ import { ApiError, asString } from "../client/errors.js";
 import { appendAudit, redact, type AuditEntry } from "../config/audit.js";
 import type { ResolveContext } from "../resolve/project.js";
 
+export type ServerMode = "stdio" | "http";
+
 export interface ToolContext extends ResolveContext {
   client: DeployikClient;
   stateDir: string;
   cwd: string;
+  /**
+   * Transport mode. `stdio` runs inside the user's repo (filesystem-aware
+   * tools like init_in_repo / show_binding work). `http` runs as a shared
+   * daemon with no per-repo context (those tools are skipped at registration).
+   */
+  mode: ServerMode;
 }
 
 export type Annotations = ToolAnnotations;

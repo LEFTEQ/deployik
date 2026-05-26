@@ -43,9 +43,37 @@ Or set `DEPLOYIK_URL` / `DEPLOYIK_TOKEN` env vars and pass `--yes`.
 | Command | What it does |
 |---|---|
 | `install` | MCP registration + skill files (default) |
+| `install --daemon` | Long-lived launchd daemon — one HTTP process for every Claude window (macOS only, see below) |
 | `install-mcp` | MCP registration only |
 | `install-skill` | Skill files only |
 | `uninstall` | Removes the `deployik` MCP entry from every Claude config |
+| `uninstall --daemon` | Stops + removes the launchd daemon and clears the HTTP entry from Claude configs |
+| `daemon` | Runs the HTTP daemon in the foreground (for testing) |
+
+## Daemon mode (one process, every Claude window)
+
+By default each Claude Code window spawns its own stdio child for every configured MCP. After a few open windows you can easily have 10+ idle `node` processes eating ~100 MB each. The daemon mode collapses this to a single long-lived HTTP MCP server bound to `127.0.0.1:8788`.
+
+```bash
+npx -y @lovinka/deployik-mcp install --daemon --token=dpk_xxx
+```
+
+What it does:
+
+- Writes a launchd plist at `~/Library/LaunchAgents/com.lovinka.deployik-mcp.plist` with `KeepAlive=true`, `RunAtLoad=true`, and `DEPLOYIK_URL` / `DEPLOYIK_TOKEN` in `EnvironmentVariables` (file mode 0600 — token only readable by your user).
+- Stages the runtime into `~/.deployik-mcp/runtime/` so launchd can read it on every macOS regardless of TCC (Transparency, Consent, Control) restrictions on `~/Documents`, `~/Desktop`, etc.
+- Runs `launchctl bootstrap gui/$UID <plist>` to start the daemon immediately.
+- Rewrites the `deployik` entry in `~/.claude.json` (and the Claude Desktop config) from a stdio command to `{ "type": "http", "url": "http://127.0.0.1:8788/mcp" }`.
+
+After install, **restart any open Claude windows** so they pick up the HTTP entry. From then on, opening N windows still uses **one** daemon process.
+
+Tools that need the client's filesystem (`init_in_repo`, `show_binding`) are skipped in HTTP mode since the daemon has no per-repo context. Project resolution still works via explicit `project_id` / `slug` / single-project workspace.
+
+Logs: `~/Library/Logs/deployik-mcp.{out,err}.log`.
+
+To go back to per-window stdio: `npx -y @lovinka/deployik-mcp uninstall --daemon`, then re-run `install` without `--daemon`.
+
+> Linux note: launchd is macOS-only. On Linux, run the daemon under `systemd --user` pointing at `node <prefix>/lib/node_modules/@lovinka/deployik-mcp/dist/daemon.js` and add the matching HTTP entry to your client config manually.
 
 ### Manual install (if you prefer to edit JSON yourself)
 
