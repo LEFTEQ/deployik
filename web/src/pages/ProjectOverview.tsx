@@ -28,6 +28,7 @@ import {
 import { formatFrameworkLabel } from "@/components/projects/build-settings";
 import { DeployMenu } from "@/components/projects/deploy-menu";
 import { DeploymentThumbnail } from "@/components/projects/deployment-thumbnail";
+import { EditableProjectName } from "@/components/projects/editable-project-name";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { LoadingState } from "@/components/ui/spinner";
@@ -141,9 +142,7 @@ export function ProjectOverview() {
             {formatFrameworkLabel(project.framework)}
           </Badge>
         </div>
-        <h1 className="text-xl font-semibold tracking-tight sm:text-2xl">
-          {project.name}
-        </h1>
+        <EditableProjectName project={project} />
         <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-muted-foreground">
           <a
             href={githubRepoUrl}
