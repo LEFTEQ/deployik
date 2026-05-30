@@ -212,6 +212,9 @@ export interface PreviewInstance {
   latest_deployment_commit_message?: string | null;
   latest_deployment_created_at?: string | null;
   latest_deployment_screenshot_path?: string | null;
+  // This branch's isolated data volume, when the project uses data volumes.
+  volume_exists?: boolean;
+  volume_size_bytes?: number;
   created_at: string;
   updated_at: string;
 }

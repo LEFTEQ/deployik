@@ -440,6 +440,191 @@ func TestWebhookFormEncodedRejectsMissingPayloadField(t *testing.T) {
 	}
 }
 
+// sendGithubEvent posts an arbitrary push/delete event (any ref, deleted flag,
+// and signing secret) so tests can exercise the branch-delete and tag-ref paths.
+func sendGithubEvent(t *testing.T, handler *WebhookHandler, deliveryID, ref string, deleted bool, secret string) *httptest.ResponseRecorder {
+	t.Helper()
+	payload := map[string]any{
+		"ref":     ref,
+		"after":   "abcdef1234567890",
+		"deleted": deleted,
+		"repository": map[string]any{
+			"full_name": "owner/repo",
+		},
+		"pusher": map[string]any{
+			"name": "alice",
+		},
+		"head_commit": map[string]any{
+			"message": "Ship homepage",
+		},
+	}
+	body, err := json.Marshal(payload)
+	if err != nil {
+		t.Fatalf("marshal payload: %v", err)
+	}
+	mac := hmac.New(sha256.New, []byte(secret))
+	mac.Write(body)
+	signature := "sha256=" + hex.EncodeToString(mac.Sum(nil))
+
+	req := httptest.NewRequest(http.MethodPost, "/api/webhooks/github", bytes.NewReader(body))
+	req.Header.Set("X-GitHub-Event", "push")
+	req.Header.Set("X-GitHub-Delivery", deliveryID)
+	req.Header.Set("X-Hub-Signature-256", signature)
+	rr := httptest.NewRecorder()
+	handler.HandleGithub(rr, req)
+	return rr
+}
+
+func previewInstanceStatus(t *testing.T, database *db.DB, id string) string {
+	t.Helper()
+	var status string
+	if err := database.QueryRow(`SELECT status FROM preview_instances WHERE id = ?`, id).Scan(&status); err != nil {
+		t.Fatalf("get preview instance status: %v", err)
+	}
+	return status
+}
+
+func domainCountForInstance(t *testing.T, database *db.DB, projectID, instanceID string) int {
+	t.Helper()
+	domains, err := database.ListDomains(projectID)
+	if err != nil {
+		t.Fatalf("ListDomains: %v", err)
+	}
+	count := 0
+	for _, d := range domains {
+		if d.PreviewInstanceID == instanceID {
+			count++
+		}
+	}
+	return count
+}
+
+func TestWebhookBranchDeletionTearsDownPreviewInstance(t *testing.T) {
+	database, handler, project := setupWebhookProject(t, false, "*")
+
+	// First a push creates the branch preview instance + auto-domain.
+	if rr := sendGithubPush(t, handler, "delivery-create-feature", "feature/cleanup-me"); rr.Code != http.StatusOK {
+		t.Fatalf("create status = %d, body: %s", rr.Code, rr.Body.String())
+	}
+	instance, err := database.GetPreviewInstanceForBranch(project.ID, "feature/cleanup-me")
+	if err != nil {
+		t.Fatalf("GetPreviewInstanceForBranch: %v", err)
+	}
+	if instance == nil {
+		t.Fatal("expected a preview instance for the feature branch")
+	}
+	if domainCountForInstance(t, database, project.ID, instance.ID) == 0 {
+		t.Fatal("expected an auto-domain for the feature branch preview")
+	}
+
+	// Deleting the branch on GitHub fires a push with deleted=true.
+	rr := sendGithubEvent(t, handler, "delivery-delete-feature", "refs/heads/feature/cleanup-me", true, webhookSecretForTests)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("delete status = %d, body: %s", rr.Code, rr.Body.String())
+	}
+
+	if status := previewInstanceStatus(t, database, instance.ID); status != "deleted" {
+		t.Fatalf("preview instance status = %q, want deleted", status)
+	}
+	if count := domainCountForInstance(t, database, project.ID, instance.ID); count != 0 {
+		t.Fatalf("domains for torn-down instance = %d, want 0", count)
+	}
+}
+
+func TestWebhookBranchDeletionLeavesDefaultPreviewIntact(t *testing.T) {
+	database, handler, project := setupWebhookProject(t, false, "*")
+
+	if rr := sendGithubPush(t, handler, "delivery-create-main", "main"); rr.Code != http.StatusOK {
+		t.Fatalf("create status = %d, body: %s", rr.Code, rr.Body.String())
+	}
+	instance, err := database.GetPreviewInstanceForBranch(project.ID, "main")
+	if err != nil {
+		t.Fatalf("GetPreviewInstanceForBranch: %v", err)
+	}
+	if instance == nil || !instance.IsDefault {
+		t.Fatal("expected a default preview instance for main")
+	}
+
+	rr := sendGithubEvent(t, handler, "delivery-delete-main", "refs/heads/main", true, webhookSecretForTests)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("delete status = %d, body: %s", rr.Code, rr.Body.String())
+	}
+
+	if status := previewInstanceStatus(t, database, instance.ID); status != "active" {
+		t.Fatalf("default preview status = %q, want active (must not be torn down)", status)
+	}
+}
+
+func TestWebhookBranchDeletionInvalidSignatureKeepsPreview(t *testing.T) {
+	database, handler, project := setupWebhookProject(t, false, "*")
+
+	if rr := sendGithubPush(t, handler, "delivery-create-keep", "feature/keep-me"); rr.Code != http.StatusOK {
+		t.Fatalf("create status = %d, body: %s", rr.Code, rr.Body.String())
+	}
+	instance, err := database.GetPreviewInstanceForBranch(project.ID, "feature/keep-me")
+	if err != nil {
+		t.Fatalf("GetPreviewInstanceForBranch: %v", err)
+	}
+	if instance == nil {
+		t.Fatal("expected a preview instance for the feature branch")
+	}
+
+	rr := sendGithubEvent(t, handler, "delivery-delete-forged", "refs/heads/feature/keep-me", true, "wrong-secret")
+	if rr.Code != http.StatusOK {
+		t.Fatalf("delete status = %d, body: %s", rr.Code, rr.Body.String())
+	}
+
+	if status := previewInstanceStatus(t, database, instance.ID); status != "active" {
+		t.Fatalf("preview status = %q, want active (forged delete must not tear down)", status)
+	}
+}
+
+func TestWebhookTagPushDoesNotCreatePreview(t *testing.T) {
+	database, handler, project := setupWebhookProject(t, false, "*")
+
+	rr := sendGithubEvent(t, handler, "delivery-tag-push", "refs/tags/v1.2.3", false, webhookSecretForTests)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status = %d, body: %s", rr.Code, rr.Body.String())
+	}
+
+	if deployments := deploymentsForProject(t, database, project.ID); len(deployments) != 0 {
+		t.Fatalf("deployments = %d, want 0 (tag pushes must not deploy)", len(deployments))
+	}
+	instance, err := database.GetPreviewInstanceForBranch(project.ID, "refs/tags/v1.2.3")
+	if err != nil {
+		t.Fatalf("GetPreviewInstanceForBranch: %v", err)
+	}
+	if instance != nil {
+		t.Fatal("tag push must not create a preview instance")
+	}
+}
+
+func TestWebhookTagDeletionTearsDownLegacyPreview(t *testing.T) {
+	database, handler, project := setupWebhookProject(t, false, "*")
+
+	// Simulate a legacy junk preview created from a tag push before the guard
+	// existed: its branch key is the raw, un-stripped ref.
+	instance, err := database.GetOrCreatePreviewInstance(project, "refs/tags/old-release")
+	if err != nil {
+		t.Fatalf("GetOrCreatePreviewInstance: %v", err)
+	}
+	if _, err := database.EnsurePreviewAutoDomains(project, instance); err != nil {
+		t.Fatalf("EnsurePreviewAutoDomains: %v", err)
+	}
+
+	rr := sendGithubEvent(t, handler, "delivery-tag-delete", "refs/tags/old-release", true, webhookSecretForTests)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status = %d, body: %s", rr.Code, rr.Body.String())
+	}
+
+	if status := previewInstanceStatus(t, database, instance.ID); status != "deleted" {
+		t.Fatalf("legacy tag preview status = %q, want deleted", status)
+	}
+	if count := domainCountForInstance(t, database, project.ID, instance.ID); count != 0 {
+		t.Fatalf("domains for torn-down legacy instance = %d, want 0", count)
+	}
+}
+
 func TestWebhookPreclaimedEnvironmentDoesNotCreateDeployment(t *testing.T) {
 	database, handler, project := setupWebhookProject(t, false, "*")
 	if err := database.CreateWebhookEvent(&db.WebhookEvent{

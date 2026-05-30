@@ -20,6 +20,7 @@ import {
   ACTIVE_DEPLOYMENT_STATUSES,
   DEPLOYMENT_STATUS_META,
   ENVIRONMENT_META,
+  formatBytes,
   formatRelativeDate,
   getEnvironmentDomains,
   getLatestEnvironmentDeployment,
@@ -31,6 +32,7 @@ import { DeploymentThumbnail } from "@/components/projects/deployment-thumbnail"
 import { EditableProjectName } from "@/components/projects/editable-project-name";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { LoadingState } from "@/components/ui/spinner";
 import { BranchLink, CommitLink } from "@/components/ui/github-link";
 import {
@@ -342,18 +344,33 @@ function PreviewInstancesPanel({
 }) {
   const queryClient = useQueryClient();
   const [deleteTarget, setDeleteTarget] = useState<PreviewInstance | null>(null);
+  const [deleteVolume, setDeleteVolume] = useState(false);
+
+  const closeDeleteDialog = () => {
+    setDeleteTarget(null);
+    setDeleteVolume(false);
+  };
 
   const deleteMutation = useMutation({
-    mutationFn: (instanceId: string) =>
-      api.deletePreviewInstance(projectId, instanceId),
-    onSuccess: () => {
+    mutationFn: ({
+      instanceId,
+      deleteVolume,
+    }: {
+      instanceId: string;
+      deleteVolume: boolean;
+    }) => api.deletePreviewInstance(projectId, instanceId, { deleteVolume }),
+    onSuccess: (_data, variables) => {
       queryClient.invalidateQueries({
         queryKey: queryKeys.previewInstances(projectId),
       });
       queryClient.invalidateQueries({ queryKey: queryKeys.deployments(projectId) });
       queryClient.invalidateQueries({ queryKey: queryKeys.domains(projectId) });
-      setDeleteTarget(null);
-      toast.success("Preview deleted");
+      closeDeleteDialog();
+      toast.success(
+        variables.deleteVolume
+          ? "Preview and data volume deleted"
+          : "Preview deleted",
+      );
     },
     onError: (err: Error) => toast.error(err.message),
   });
@@ -437,7 +454,7 @@ function PreviewInstancesPanel({
 
       <AlertDialog
         open={!!deleteTarget}
-        onOpenChange={(open) => !open && setDeleteTarget(null)}
+        onOpenChange={(open) => !open && closeDeleteDialog()}
       >
         <AlertDialogContent>
           <AlertDialogHeader>
@@ -447,6 +464,28 @@ function PreviewInstancesPanel({
               preview domain. Deployment history remains available.
             </AlertDialogDescription>
           </AlertDialogHeader>
+          {deleteTarget?.volume_exists ? (
+            <label className="flex items-start gap-3 rounded-md border border-border p-3 text-sm">
+              <Checkbox
+                checked={deleteVolume}
+                onCheckedChange={(checked) => setDeleteVolume(checked === true)}
+                disabled={deleteMutation.isPending}
+                className="mt-0.5"
+              />
+              <span>
+                <span className="font-medium text-foreground">
+                  Also delete the data volume
+                  {deleteTarget.volume_size_bytes
+                    ? ` (${formatBytes(deleteTarget.volume_size_bytes)})`
+                    : ""}
+                </span>
+                <span className="mt-1 block text-muted-foreground">
+                  Permanently erases this branch's stored data. Leave unchecked
+                  to keep the volume and reuse it if the branch is recreated.
+                </span>
+              </span>
+            </label>
+          ) : null}
           <AlertDialogFooter>
             <AlertDialogCancel disabled={deleteMutation.isPending}>
               Cancel
@@ -456,7 +495,10 @@ function PreviewInstancesPanel({
               onClick={(event) => {
                 event.preventDefault();
                 if (deleteTarget) {
-                  deleteMutation.mutate(deleteTarget.id);
+                  deleteMutation.mutate({
+                    instanceId: deleteTarget.id,
+                    deleteVolume,
+                  });
                 }
               }}
             >

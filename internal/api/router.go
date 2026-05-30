@@ -108,6 +108,10 @@ func NewRouter(cfg *RouterConfig) *chi.Mux {
 			DB:        cfg.DB,
 			Encryptor: cfg.Encryptor,
 			Pipeline:  cfg.Pipeline,
+			Manager:   cfg.DomainManager,
+		}
+		if cfg.Pipeline != nil {
+			webhookHandler.Docker = cfg.Pipeline.Docker
 		}
 		webhookLimiter := middleware.NewRateLimiter(60, time.Minute)
 		r.With(webhookLimiter.Middleware("webhook_github")).

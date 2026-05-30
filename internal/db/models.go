@@ -442,6 +442,12 @@ type PreviewInstanceSummary struct {
 	LatestDeploymentMessage *string    `json:"latest_deployment_commit_message,omitempty"`
 	LatestDeploymentAt      *time.Time `json:"latest_deployment_created_at,omitempty"`
 	LatestScreenshotPath    *string    `json:"latest_deployment_screenshot_path,omitempty"`
+	// VolumeExists/VolumeSizeBytes describe this branch's isolated data volume
+	// (deployik-{project}-preview-{slug}-data). Populated by the handler from a
+	// Docker /system/df lookup; false/0 when the project has no data volumes or
+	// the branch hasn't created one yet.
+	VolumeExists    bool  `json:"volume_exists"`
+	VolumeSizeBytes int64 `json:"volume_size_bytes"`
 }
 
 type DeploymentListResponse struct {
