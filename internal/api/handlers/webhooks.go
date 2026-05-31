@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"context"
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/hex"
@@ -15,6 +16,7 @@ import (
 	"github.com/LEFTEQ/lovinka-deployik/internal/build"
 	"github.com/LEFTEQ/lovinka-deployik/internal/crypto"
 	"github.com/LEFTEQ/lovinka-deployik/internal/db"
+	"github.com/LEFTEQ/lovinka-deployik/internal/domain"
 )
 
 // WebhookHandler processes incoming GitHub webhook events.
@@ -22,6 +24,8 @@ type WebhookHandler struct {
 	DB        *db.DB
 	Encryptor *crypto.Encryptor
 	Pipeline  *build.Pipeline
+	Docker    *build.DockerClient
+	Manager   *domain.Manager
 }
 
 type githubPushPayload struct {
@@ -76,11 +80,6 @@ func (h *WebhookHandler) HandleGithub(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if payload.Deleted {
-		w.WriteHeader(http.StatusOK)
-		return
-	}
-
 	parts := strings.SplitN(payload.Repository.FullName, "/", 2)
 	if len(parts) != 2 {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid repository name"})
@@ -88,6 +87,9 @@ func (h *WebhookHandler) HandleGithub(w http.ResponseWriter, r *http.Request) {
 	}
 	owner, repo := parts[0], parts[1]
 
+	// branch is the "branch key" stored on preview instances: for branch refs
+	// it's the name with refs/heads/ stripped; for legacy tag previews it's the
+	// raw refs/tags/... ref they were created with before the tag-ref guard.
 	branch := strings.TrimPrefix(payload.Ref, "refs/heads/")
 
 	signatureHeader := r.Header.Get("X-Hub-Signature-256")
@@ -95,6 +97,23 @@ func (h *WebhookHandler) HandleGithub(w http.ResponseWriter, r *http.Request) {
 	configs, err := h.DB.ListActiveAutoBuildConfigsByRepo(owner, repo)
 	if err != nil {
 		log.Printf("Webhook: failed to list configs for %s/%s: %v", owner, repo, err)
+		w.WriteHeader(http.StatusOK)
+		return
+	}
+
+	// A deleted ref (branch or tag) tears down its preview instance instead of
+	// deploying. Handled before the tag-ref guard so deleting a tag also reaps
+	// any legacy preview a tag push created.
+	if payload.Deleted {
+		h.handleRefDeleted(r.Context(), configs, branch, body, signatureHeader)
+		w.WriteHeader(http.StatusOK)
+		return
+	}
+
+	// Tag-ref guard: only branch pushes create or refresh preview/production
+	// targets. Tag pushes (refs/tags/*) and other non-branch refs are ignored
+	// so they never spin up a deployment.
+	if !strings.HasPrefix(payload.Ref, "refs/heads/") {
 		w.WriteHeader(http.StatusOK)
 		return
 	}
@@ -198,6 +217,50 @@ func (h *WebhookHandler) HandleGithub(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.WriteHeader(http.StatusOK)
+}
+
+// handleRefDeleted tears down the preview instance for a deleted ref across all
+// auto-build configs on the repo. The webhook signature is validated per config
+// (each project has its own secret) so a forged delete cannot destroy infra.
+// The default preview (e.g. main) is never torn down. Teardown is idempotent,
+// so GitHub redelivery is harmless.
+func (h *WebhookHandler) handleRefDeleted(ctx context.Context, configs []db.AutoBuildConfig, branch string, body []byte, signatureHeader string) {
+	for _, config := range configs {
+		secret, err := h.Encryptor.Decrypt(config.WebhookSecret)
+		if err != nil {
+			log.Printf("Webhook: failed to decrypt secret for project %s: %v", config.ProjectID, err)
+			continue
+		}
+		if !validateGithubSignature(secret, body, signatureHeader) {
+			log.Printf("Webhook: invalid signature for project %s", config.ProjectID)
+			continue
+		}
+
+		instance, err := h.DB.GetPreviewInstanceForBranch(config.ProjectID, branch)
+		if err != nil {
+			log.Printf("Webhook: failed to look up preview instance for project %s branch %s: %v", config.ProjectID, branch, err)
+			continue
+		}
+		if instance == nil || instance.Status == "deleted" || instance.IsDefault {
+			continue
+		}
+
+		project, err := h.DB.GetProject(config.ProjectID)
+		if err != nil || project == nil {
+			log.Printf("Webhook: project %s not found for ref-delete cleanup: %v", config.ProjectID, err)
+			continue
+		}
+
+		// Delete the volume too: a preview's data volume is branch-isolated
+		// (deployik-{project}-preview-{slug}-data), so dropping it on branch
+		// deletion can't touch another branch's or production's data, and it
+		// stops one orphaned volume accumulating per deleted branch.
+		if err := teardownPreviewInstance(ctx, h.DB, h.Docker, h.Manager, project, instance, true); err != nil {
+			log.Printf("Webhook: failed to tear down preview instance %s for project %s: %v", instance.ID, config.ProjectID, err)
+			continue
+		}
+		log.Printf("Webhook: tore down preview instance %s (branch %s) for project %s after ref deletion", instance.ID, branch, config.ProjectID)
+	}
 }
 
 func webhookTargetEnvironments(branch string, config db.AutoBuildConfig) []string {

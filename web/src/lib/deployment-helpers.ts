@@ -335,6 +335,19 @@ export function formatCompactNumber(value: number): string {
   }).format(value);
 }
 
+/** Formats a byte count into a human-readable size, e.g. "24 MB". */
+export function formatBytes(value: number): string {
+  if (value <= 0) return "0 B";
+  const units = ["B", "KB", "MB", "GB", "TB"];
+  let v = value;
+  let i = 0;
+  while (v >= 1024 && i < units.length - 1) {
+    v /= 1024;
+    i++;
+  }
+  return `${v.toFixed(v >= 10 || i === 0 ? 0 : 1)} ${units[i]}`;
+}
+
 /** Builds the canonical GitHub repository URL for the given owner/repo. */
 export function buildGithubRepoUrl(owner: string, repo: string): string {
   return `https://github.com/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}`;

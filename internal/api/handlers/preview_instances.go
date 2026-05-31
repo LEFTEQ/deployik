@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"net/http"
 	"time"
@@ -35,7 +36,8 @@ func ensurePreviewTarget(database *db.DB, project *db.Project, branch string) (*
 
 func (h *PreviewInstanceHandler) List(w http.ResponseWriter, r *http.Request) {
 	projectID := chi.URLParam(r, "id")
-	if _, _, ok := loadAuthorizedProject(w, r, h.DB, projectID); !ok {
+	project, _, ok := loadAuthorizedProject(w, r, h.DB, projectID)
+	if !ok {
 		return
 	}
 
@@ -47,7 +49,36 @@ func (h *PreviewInstanceHandler) List(w http.ResponseWriter, r *http.Request) {
 	if summaries == nil {
 		summaries = []db.PreviewInstanceSummary{}
 	}
+
+	h.attachVolumeInfo(r.Context(), project, summaries)
+
 	writeJSON(w, http.StatusOK, summaries)
+}
+
+// attachVolumeInfo fills in each branch's isolated data-volume existence + size
+// from a single Docker /system/df lookup, so the UI can offer to delete the
+// volume only when one is actually attached. It's a no-op (leaving
+// VolumeExists=false) when the project has no data volumes or Docker is
+// unavailable, mirroring the volumes handler's reliance on /system/df.
+func (h *PreviewInstanceHandler) attachVolumeInfo(ctx context.Context, project *db.Project, summaries []db.PreviewInstanceSummary) {
+	if h.Docker == nil || !project.DataVolumeEnabled || len(summaries) == 0 {
+		return
+	}
+	usage, err := h.Docker.VolumesDiskUsage(ctx)
+	if err != nil {
+		log.Printf("Warning: failed to read docker disk usage for preview volumes: %v", err)
+		return
+	}
+	for i := range summaries {
+		instance := summaries[i].PreviewInstance
+		name := db.DeploymentVolumeName(project.Name, "preview", &instance)
+		if v, ok := usage[name]; ok && v != nil {
+			summaries[i].VolumeExists = true
+			if v.UsageData != nil && v.UsageData.Size >= 0 {
+				summaries[i].VolumeSizeBytes = v.UsageData.Size
+			}
+		}
+	}
 }
 
 func (h *PreviewInstanceHandler) Delete(w http.ResponseWriter, r *http.Request) {
@@ -72,56 +103,13 @@ func (h *PreviewInstanceHandler) Delete(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	domains, err := h.DB.ListDomains(projectID)
-	if err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to load preview domains"})
-		return
-	}
-
 	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
 	defer cancel()
 
-	containerName := db.PreviewContainerName(project.Name, instance)
-	if h.Docker != nil {
-		if containerID, exists := h.Docker.ContainerExists(ctx, containerName); exists {
-			if err := h.Docker.StopContainer(ctx, containerID); err != nil {
-				log.Printf("Warning: failed to stop preview container %s: %v", containerName, err)
-			}
-		}
-		if r.URL.Query().Get("delete_volume") == "1" && project.DataVolumeEnabled {
-			if err := h.Docker.RemoveVolume(ctx, db.DeploymentVolumeName(project.Name, "preview", instance)); err != nil {
-				log.Printf("Warning: failed to remove preview volume for %s: %v", instance.ID, err)
-			}
-		}
-	}
-
-	reloadNeeded := false
-	if h.Manager != nil {
-		for _, d := range domains {
-			if d.PreviewInstanceID != instance.ID {
-				continue
-			}
-			if err := h.Manager.RemoveDomain(d.DomainName); err != nil {
-				log.Printf("Warning: failed to remove preview domain config %s: %v", d.DomainName, err)
-				continue
-			}
-			reloadNeeded = true
-		}
-	}
-
-	if err := h.DB.DeleteDomainsForPreviewInstance(projectID, instance.ID); err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to delete preview domains"})
+	deleteVolume := r.URL.Query().Get("delete_volume") == "1"
+	if err := teardownPreviewInstance(ctx, h.DB, h.Docker, h.Manager, project, instance, deleteVolume); err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		return
-	}
-	if err := h.DB.DeletePreviewInstance(projectID, instance.ID); err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to delete preview instance"})
-		return
-	}
-
-	if reloadNeeded {
-		if err := h.Manager.ReloadProxy(); err != nil {
-			log.Printf("Warning: failed to reload proxy after deleting preview instance %s: %v", instance.ID, err)
-		}
 	}
 
 	writeJSON(w, http.StatusOK, map[string]string{"status": "deleted"})
@@ -135,8 +123,63 @@ func (h *PreviewInstanceHandler) Delete(w http.ResponseWriter, r *http.Request) 
 			Metadata: map[string]any{
 				"branch":        instance.Branch,
 				"branch_slug":   instance.BranchSlug,
-				"delete_volume": r.URL.Query().Get("delete_volume") == "1",
+				"delete_volume": deleteVolume,
 			},
 		})
 	}
+}
+
+// teardownPreviewInstance stops the preview container, removes its proxy configs
+// and domain rows, soft-deletes the instance, and reloads the proxy if any vhost
+// was removed. The container/proxy side is best-effort (logs and continues); an
+// error is returned only when a database write fails. Safe to call when pieces
+// are already gone, so GitHub webhook redelivery is harmless. Shared by the
+// manual delete endpoint and the branch-deletion webhook path.
+func teardownPreviewInstance(ctx context.Context, database *db.DB, docker *build.DockerClient, manager *domain.Manager, project *db.Project, instance *db.PreviewInstance, deleteVolume bool) error {
+	domains, err := database.ListDomains(project.ID)
+	if err != nil {
+		return fmt.Errorf("load preview domains: %w", err)
+	}
+
+	containerName := db.PreviewContainerName(project.Name, instance)
+	if docker != nil {
+		if containerID, exists := docker.ContainerExists(ctx, containerName); exists {
+			if err := docker.StopContainer(ctx, containerID); err != nil {
+				log.Printf("Warning: failed to stop preview container %s: %v", containerName, err)
+			}
+		}
+		if deleteVolume && project.DataVolumeEnabled {
+			if err := docker.RemoveVolume(ctx, db.DeploymentVolumeName(project.Name, "preview", instance)); err != nil {
+				log.Printf("Warning: failed to remove preview volume for %s: %v", instance.ID, err)
+			}
+		}
+	}
+
+	reloadNeeded := false
+	if manager != nil {
+		for _, d := range domains {
+			if d.PreviewInstanceID != instance.ID {
+				continue
+			}
+			if err := manager.RemoveDomain(d.DomainName); err != nil {
+				log.Printf("Warning: failed to remove preview domain config %s: %v", d.DomainName, err)
+				continue
+			}
+			reloadNeeded = true
+		}
+	}
+
+	if err := database.DeleteDomainsForPreviewInstance(project.ID, instance.ID); err != nil {
+		return fmt.Errorf("delete preview domains: %w", err)
+	}
+	if err := database.DeletePreviewInstance(project.ID, instance.ID); err != nil {
+		return fmt.Errorf("delete preview instance: %w", err)
+	}
+
+	if reloadNeeded && manager != nil {
+		if err := manager.ReloadProxy(); err != nil {
+			log.Printf("Warning: failed to reload proxy after deleting preview instance %s: %v", instance.ID, err)
+		}
+	}
+	return nil
 }
