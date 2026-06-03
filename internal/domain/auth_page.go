@@ -75,7 +75,7 @@ const authPageHTML = `<!DOCTYPE html>
       border: 1px solid #27272a;
       border-radius: 6px;
       color: #e4e4e7;
-      font-size: 0.9rem;
+      font-size: 16px; /* 16px (not <16) prevents iOS Safari zoom-on-focus */
       padding: 0.5rem 0.75rem;
       outline: none;
       transition: border-color 0.15s;
