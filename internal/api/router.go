@@ -206,6 +206,7 @@ func NewRouter(cfg *RouterConfig) *chi.Mux {
 
 			// Password protection
 			r.Get("/projects/{id}/protection", protectionHandler.Get)
+			r.Get("/projects/{id}/protection/password", protectionHandler.RevealPassword)
 			r.With(mutationLimiter.Middleware("protection_update")).Put("/projects/{id}/protection", protectionHandler.Update)
 			r.With(mutationLimiter.Middleware("protection_regenerate")).Post("/projects/{id}/protection/regenerate", protectionHandler.Regenerate)
 

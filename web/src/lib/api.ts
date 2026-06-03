@@ -25,6 +25,7 @@ import type {
   DeploymentListResponse,
   ProtectionStatus,
   ProtectionUpdateResponse,
+  RevealPasswordResponse,
   VerifyDomainResponse,
   VolumeInfo,
   HealthResponse,
@@ -634,7 +635,7 @@ class ApiClient {
 
   async updateProtection(
     projectId: string,
-    data: { environment: string; enabled: boolean },
+    data: { environment: string; enabled: boolean; password?: string },
   ): Promise<ProtectionUpdateResponse> {
     return this.request(`/projects/${projectId}/protection`, {
       method: "PUT",
@@ -644,12 +645,21 @@ class ApiClient {
 
   async regeneratePassword(
     projectId: string,
-    data: { environment: string },
+    data: { environment: string; password?: string },
   ): Promise<ProtectionUpdateResponse> {
     return this.request(`/projects/${projectId}/protection/regenerate`, {
       method: "POST",
       body: JSON.stringify(data),
     });
+  }
+
+  async revealProtectionPassword(
+    projectId: string,
+    environment: string,
+  ): Promise<RevealPasswordResponse> {
+    return this.request(
+      `/projects/${projectId}/protection/password?environment=${encodeURIComponent(environment)}`,
+    );
   }
 
   // Volumes

@@ -7,6 +7,7 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"strconv"
@@ -56,6 +57,7 @@ func (h *ProtectionHandler) Get(w http.ResponseWriter, r *http.Request) {
 type updateProtectionRequest struct {
 	Environment string `json:"environment"`
 	Enabled     bool   `json:"enabled"`
+	Password    string `json:"password"` // optional custom password; generated when empty
 }
 
 // Update handles PUT /api/projects/{id}/protection
@@ -77,9 +79,10 @@ func (h *ProtectionHandler) Update(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if req.Enabled {
-		plaintext, err := h.generateAndStorePassword(project.ID, req.Environment)
+		plaintext, custom, err := h.setOrGeneratePassword(project.ID, req.Environment, req.Password)
 		if err != nil {
-			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to set password"})
+			status, msg := passwordWriteError(err)
+			writeJSON(w, status, map[string]string{"error": msg})
 			return
 		}
 
@@ -91,7 +94,7 @@ func (h *ProtectionHandler) Update(w http.ResponseWriter, r *http.Request) {
 			ResourceType: "project",
 			ResourceID:   project.ID,
 			ProjectID:    project.ID,
-			Metadata:     map[string]any{"environment": req.Environment},
+			Metadata:     map[string]any{"environment": req.Environment, "custom": custom},
 		})
 
 		writeJSON(w, http.StatusOK, map[string]any{
@@ -125,6 +128,7 @@ func (h *ProtectionHandler) Update(w http.ResponseWriter, r *http.Request) {
 
 type regenerateProtectionRequest struct {
 	Environment string `json:"environment"`
+	Password    string `json:"password"` // optional custom password; generated when empty
 }
 
 // Regenerate handles POST /api/projects/{id}/protection/regenerate
@@ -145,9 +149,10 @@ func (h *ProtectionHandler) Regenerate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	plaintext, err := h.generateAndStorePassword(project.ID, req.Environment)
+	plaintext, custom, err := h.setOrGeneratePassword(project.ID, req.Environment, req.Password)
 	if err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to regenerate password"})
+		status, msg := passwordWriteError(err)
+		writeJSON(w, status, map[string]string{"error": msg})
 		return
 	}
 
@@ -159,11 +164,58 @@ func (h *ProtectionHandler) Regenerate(w http.ResponseWriter, r *http.Request) {
 		ResourceType: "project",
 		ResourceID:   project.ID,
 		ProjectID:    project.ID,
-		Metadata:     map[string]any{"environment": req.Environment},
+		Metadata:     map[string]any{"environment": req.Environment, "custom": custom},
 	})
 
 	writeJSON(w, http.StatusOK, map[string]any{
 		"environment": req.Environment,
+		"password":    plaintext,
+	})
+}
+
+// RevealPassword handles GET /api/projects/{id}/protection/password?environment=
+// Returns the decrypted password for the given environment to an authorized caller.
+// This is an explicit, audited action — it is not folded into the protection status read.
+func (h *ProtectionHandler) RevealPassword(w http.ResponseWriter, r *http.Request) {
+	projectID := chi.URLParam(r, "id")
+	project, claims, ok := loadAuthorizedProject(w, r, h.DB, projectID)
+	if !ok {
+		return
+	}
+
+	environment := r.URL.Query().Get("environment")
+	if environment != "preview" && environment != "production" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "environment must be 'preview' or 'production'"})
+		return
+	}
+
+	encrypted, err := h.DB.GetProjectPassword(project.ID, environment)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "internal error"})
+		return
+	}
+	if encrypted == "" {
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": "no password set for this environment"})
+		return
+	}
+
+	plaintext, err := h.Encryptor.Decrypt(encrypted)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "internal error"})
+		return
+	}
+
+	h.Audit.Record(audit.Entry{
+		UserID:       claims.UserID,
+		Action:       "protection.reveal",
+		ResourceType: "project",
+		ResourceID:   project.ID,
+		ProjectID:    project.ID,
+		Metadata:     map[string]any{"environment": environment},
+	})
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"environment": environment,
 		"password":    plaintext,
 	})
 }
@@ -303,6 +355,57 @@ func (h *ProtectionHandler) Check(w http.ResponseWriter, r *http.Request) {
 }
 
 // --- Helpers ---
+
+// maxPasswordLength bounds custom passwords. There is intentionally NO minimum
+// length — the only requirement is a non-empty value.
+const maxPasswordLength = 256
+
+// passwordValidationError marks a rejected custom password (maps to HTTP 400).
+type passwordValidationError struct{ msg string }
+
+func (e passwordValidationError) Error() string { return e.msg }
+
+// validateCustomPassword enforces the single rule for a user-supplied password:
+// non-empty (an empty password would lock everyone out, since Verify rejects
+// empty submissions) and within a sane length bound. No minimum length.
+func validateCustomPassword(p string) error {
+	if p == "" {
+		return passwordValidationError{"password must not be empty"}
+	}
+	if len(p) > maxPasswordLength {
+		return passwordValidationError{fmt.Sprintf("password must be at most %d characters", maxPasswordLength)}
+	}
+	return nil
+}
+
+// setOrGeneratePassword stores a validated custom password when one is provided,
+// otherwise generates a random one. Returns the plaintext and whether it was custom.
+func (h *ProtectionHandler) setOrGeneratePassword(projectID, environment, custom string) (plaintext string, isCustom bool, err error) {
+	if custom == "" {
+		plaintext, err = h.generateAndStorePassword(projectID, environment)
+		return plaintext, false, err
+	}
+	if err = validateCustomPassword(custom); err != nil {
+		return "", true, err
+	}
+	encrypted, encErr := h.Encryptor.Encrypt(custom)
+	if encErr != nil {
+		return "", true, fmt.Errorf("encrypt password: %w", encErr)
+	}
+	if err = h.DB.SetProjectPassword(projectID, environment, encrypted); err != nil {
+		return "", true, err
+	}
+	return custom, true, nil
+}
+
+// passwordWriteError maps a setOrGeneratePassword error to an HTTP status + client message.
+func passwordWriteError(err error) (int, string) {
+	var ve passwordValidationError
+	if errors.As(err, &ve) {
+		return http.StatusBadRequest, ve.msg
+	}
+	return http.StatusInternalServerError, "failed to set password"
+}
 
 // generateAndStorePassword creates a random 16-char base64url password, encrypts it, and stores it.
 // Returns the plaintext password.

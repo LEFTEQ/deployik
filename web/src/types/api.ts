@@ -462,6 +462,11 @@ export interface ProtectionUpdateResponse {
   password?: string; // only present when enabling or regenerating
 }
 
+export interface RevealPasswordResponse {
+  environment: string;
+  password: string;
+}
+
 // Deployment list query filters
 export interface DeploymentListFilters {
   branch?: string;
