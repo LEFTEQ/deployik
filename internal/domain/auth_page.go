@@ -7,11 +7,11 @@ import (
 )
 
 const authPageHTML = `<!DOCTYPE html>
-<html lang="cs">
+<html lang="en">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Stránka není dostupná</title>
+  <title>Password protected</title>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -59,25 +59,9 @@ const authPageHTML = `<!DOCTYPE html>
       margin: 2.5rem 0 1.5rem;
     }
 
-    .access-toggle {
-      background: none;
-      border: none;
-      color: #52525b;
-      font-size: 0.8rem;
-      cursor: pointer;
-      padding: 0.25rem 0.5rem;
-      border-radius: 4px;
-      transition: color 0.15s;
-      letter-spacing: 0.05em;
-      text-transform: uppercase;
-    }
-    .access-toggle:hover { color: #a1a1aa; }
-
     .login-form {
-      display: none;
-      margin-top: 1.25rem;
+      margin-top: 1.5rem;
     }
-    .login-form.visible { display: block; }
 
     .input-group {
       display: flex;
@@ -125,38 +109,26 @@ const authPageHTML = `<!DOCTYPE html>
 <body>
   <div class="container">
     <svg class="icon" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
-      <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z" />
+      <path stroke-linecap="round" stroke-linejoin="round" d="M16.5 10.5V6.75a4.5 4.5 0 1 0-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 0 0 2.25-2.25v-6.75a2.25 2.25 0 0 0-2.25-2.25H6.75a2.25 2.25 0 0 0-2.25 2.25v6.75a2.25 2.25 0 0 0 2.25 2.25Z" />
     </svg>
 
-    <h1>Stránka není dostupná</h1>
-    <p>Omlouváme se, ale tato stránka je dočasně nedostupná.<br>Zkuste to prosím později.</p>
+    <h1>This page is password protected</h1>
+    <p>This content is private. Enter the password to continue.</p>
 
     <hr class="divider" />
 
-    <button class="access-toggle" onclick="toggleLogin()">Přístup</button>
-
-    <div class="login-form" id="loginForm">
-      <form method="POST" action="/_deployik/verify" id="authForm">
-        <div class="input-group">
-          <input type="password" name="password" id="passwordInput" placeholder="Heslo" autocomplete="current-password" />
-          <button type="submit" id="submitBtn">Vstoupit</button>
-        </div>
-        <div class="error-msg" id="errorMsg">Nesprávné heslo. Zkuste to znovu.</div>
-      </form>
-    </div>
+    <form class="login-form" method="POST" action="/_deployik/verify" id="authForm">
+      <div class="input-group">
+        <input type="password" name="password" id="passwordInput" placeholder="Password" autocomplete="current-password" autofocus />
+        <button type="submit" id="submitBtn">Continue</button>
+      </div>
+      <div class="error-msg" id="errorMsg">Incorrect password. Please try again.</div>
+    </form>
   </div>
 
   <script>
-    function toggleLogin() {
-      var form = document.getElementById('loginForm');
-      form.classList.toggle('visible');
-      if (form.classList.contains('visible')) {
-        document.getElementById('passwordInput').focus();
-      }
-    }
     // Show error if redirected back with ?error=1
     if (window.location.search.indexOf('error=1') !== -1) {
-      document.getElementById('loginForm').classList.add('visible');
       document.getElementById('errorMsg').classList.add('visible');
     }
   </script>
