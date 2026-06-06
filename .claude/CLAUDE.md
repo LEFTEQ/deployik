@@ -321,6 +321,7 @@ SQLite with 18 migrations. Tables:
 
 ### Public
 - `GET  /api/health` -- Health check; response includes `version` block (git SHA, GitHub Actions run id, commit_url, run_url) for the SPA's sidebar build badge
+- `GET  /api/monitoring/targets` -- Prometheus `http_sd` target list (`[{targets, labels}]`) of every live production URL across all projects (primary SSL-active production domain per project, with `project`/`deployik_env`/`protected`/`health_path` labels). System-token gated via `Authorization: Bearer <MONITORING_TOKEN>`; returns `404` when `MONITORING_TOKEN` is unset and `401` on a bad token. Consumed by the devops Prometheus blackbox uptime probes — see "Production Health-Check Monitoring" below
 - `GET  /api/auth/github` -- Redirects to GitHub OAuth
 - `GET  /api/auth/github/callback?code=&state=` -- Verifies OAuth state, sets session cookies, returns user
 - `POST /api/auth/refresh` -- Rotates refresh cookie, returns user
@@ -464,6 +465,29 @@ After a successful deployment, the pipeline asynchronously captures a screenshot
 4. Stores the PNG at `{SCREENSHOT_DIR}/{deployment_id}.png`
 5. Updates `deployments.screenshot_path` in the database
 6. Screenshots are served via `GET /api/deployments/{did}/screenshot`
+
+### Production Health-Check Monitoring
+
+Deployik does not poll deployed apps after a deploy. External uptime monitoring is
+driven from the separate **devops VPS** (`203.0.113.11`), not the lovinka-vps, so a
+total lovinka-vps/nginx outage is still detectable. Deployik's only role is target
+discovery:
+
+1. `GET /api/monitoring/targets` (handler `internal/api/handlers/monitoring.go`, query
+   `db.ListProductionMonitorTargets` in `queries_domains.go`) returns a Prometheus
+   `http_sd` document of one target per active project — its primary SSL-active
+   **production** domain. Token-gated by `MONITORING_TOKEN`; system-scoped (not per-user)
+   so it spans every project.
+2. The devops Prometheus (`devops-infra/apps/monitoring/`) uses `http_sd_configs`
+   against that endpoint and blackbox-probes each URL with a `http_app_up` module that
+   treats `200/204/3xx/401/403` as UP and `5xx`/connection failure/timeout as DOWN (so a
+   crashed container → nginx 502 → alert, while password-protected 401s stay UP).
+3. Alert rules (`alerts/deployik.yml`) fire `DeployikProdAppDown` (critical, 3m),
+   `DeployikProdSlow`, `DeployikProdCertExpiringSoon`, `DeployikProbeAbsent` →
+   Alertmanager catch-all → `monitoring-bot` Telegram. New production apps are
+   monitored automatically once their domain goes SSL-active; no manual prometheus.yml edits.
+   The `health_path`/`protected` labels are emitted now for a future strict-200 health
+   probe of protected sites.
 
 ### Variable System (Env Vars vs Secrets)
 
@@ -620,6 +644,7 @@ Production runs via `docker/docker-compose.yml` with:
 | `PROXY_SSL_CERT` | _(unset)_ | Path to a pre-existing wildcard cert — when set, per-domain certbot runs are skipped |
 | `PROXY_SSL_KEY` | _(unset)_ | Matching wildcard key |
 | `VITE_ALLOWED_HOSTS` | _(unset)_ | Comma-separated hostnames the Vite dev server will accept (for public HMR behind a reverse proxy) |
+| `MONITORING_TOKEN` | _(unset)_ | Bearer token gating `GET /api/monitoring/targets`. Unset = endpoint disabled (404). Set to a shared secret matched by the devops Prometheus `http_sd` credentials file to enable external production uptime monitoring |
 | `DEV_MODE` | _(unset)_ | Set to `true` to allow startup without required env vars; enables dev-login endpoint and mock GitHub data |
 
 ## Design Decisions

@@ -247,3 +247,46 @@ func (db *DB) ListActiveDomainProvisionTargets() ([]DomainProvisionTarget, error
 	}
 	return targets, rows.Err()
 }
+
+// ListProductionMonitorTargets returns one health-check target per active
+// project: its primary SSL-active production domain (is_primary first, then
+// oldest active — mirroring GetPrimaryDomainForTarget). Drives the
+// /api/monitoring/targets Prometheus http_sd endpoint, so it deliberately spans
+// every active project regardless of owner. Projects with no SSL-active
+// production domain are omitted. Project names are unique slugs, so the first
+// row seen per name is that project's primary.
+func (db *DB) ListProductionMonitorTargets() ([]ProductionMonitorTarget, error) {
+	rows, err := db.Query(
+		`SELECT p.name, d.domain,
+		        CASE WHEN p.production_password IS NOT NULL THEN 1 ELSE 0 END AS password_protected,
+		        p.health_path
+		 FROM domains d
+		 JOIN projects p ON p.id = d.project_id
+		 WHERE p.status = 'active'
+		   AND d.environment = 'production'
+		   AND d.ssl_status = 'active'
+		   AND COALESCE(d.preview_instance_id, '') = ''
+		 ORDER BY p.id ASC, d.is_primary DESC, d.created_at ASC`,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("list production monitor targets: %w", err)
+	}
+	defer rows.Close()
+
+	var targets []ProductionMonitorTarget
+	seen := map[string]struct{}{}
+	for rows.Next() {
+		var target ProductionMonitorTarget
+		var protected int
+		if err := rows.Scan(&target.ProjectName, &target.DomainName, &protected, &target.HealthPath); err != nil {
+			return nil, fmt.Errorf("scan production monitor target: %w", err)
+		}
+		if _, ok := seen[target.ProjectName]; ok {
+			continue // keep only the primary (first row) per project
+		}
+		seen[target.ProjectName] = struct{}{}
+		target.Protected = protected == 1
+		targets = append(targets, target)
+	}
+	return targets, rows.Err()
+}
