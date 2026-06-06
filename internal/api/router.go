@@ -26,25 +26,26 @@ import (
 
 // RouterConfig holds all dependencies needed by the router.
 type RouterConfig struct {
-	DB             *db.DB
-	JWTSecret      string
-	Encryptor      *crypto.Encryptor
-	OAuthConfig    *github.OAuthConfig
-	AllowedUsers   []string
-	AdminUsers     []string
-	FrontendURL    string
-	CookieSecure   bool
-	AllowedOrigins []string
-	Pipeline       *build.Pipeline
-	Services       *services.Manager
-	DomainManager  *domain.Manager
-	WSHub          *ws.Hub
-	Analytics      *analytics.Service
-	Email          *projectemail.Service
-	WebhookURL     string
-	ScreenshotDir  string
-	DevMode        bool
-	Version        *version.Info
+	DB              *db.DB
+	JWTSecret       string
+	Encryptor       *crypto.Encryptor
+	OAuthConfig     *github.OAuthConfig
+	AllowedUsers    []string
+	AdminUsers      []string
+	FrontendURL     string
+	CookieSecure    bool
+	AllowedOrigins  []string
+	Pipeline        *build.Pipeline
+	Services        *services.Manager
+	DomainManager   *domain.Manager
+	WSHub           *ws.Hub
+	Analytics       *analytics.Service
+	Email           *projectemail.Service
+	WebhookURL      string
+	ScreenshotDir   string
+	MonitoringToken string
+	DevMode         bool
+	Version         *version.Info
 }
 
 func NewRouter(cfg *RouterConfig) *chi.Mux {
@@ -91,6 +92,12 @@ func NewRouter(cfg *RouterConfig) *chi.Mux {
 		// Public routes
 		healthHandler := &handlers.HealthHandler{Version: cfg.Version}
 		r.Get("/health", healthHandler.Get)
+
+		// Monitoring target discovery (public route, gated by its own system
+		// token). Consumed by the devops Prometheus http_sd to enumerate live
+		// production URLs across all projects. 404s until MONITORING_TOKEN is set.
+		monitoringHandler := &handlers.MonitoringHandler{DB: cfg.DB, Token: cfg.MonitoringToken}
+		r.Get("/monitoring/targets", monitoringHandler.Targets)
 
 		// Auth routes (public)
 		r.With(oauthLimiter.Middleware("oauth_start")).Get("/auth/github", authHandler.GetGithubAuth)

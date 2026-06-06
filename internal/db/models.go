@@ -354,6 +354,17 @@ type DomainProvisionTarget struct {
 	Port                   int
 }
 
+// ProductionMonitorTarget is one external health-check target: the primary
+// SSL-active production domain of an active project. Consumed by the
+// /api/monitoring/targets Prometheus http_sd endpoint. HealthPath is carried
+// for a future health-endpoint probe; v1 probes the domain root.
+type ProductionMonitorTarget struct {
+	ProjectName string
+	DomainName  string
+	Protected   bool
+	HealthPath  string
+}
+
 type PreviewInstance struct {
 	ID         string    `json:"id"`
 	ProjectID  string    `json:"project_id"`

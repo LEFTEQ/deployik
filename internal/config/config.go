@@ -40,6 +40,7 @@ type Config struct {
 	ProxySSLKey             string
 	WebhookURL              string
 	ScreenshotDir           string
+	MonitoringToken         string
 }
 
 func Load() (*Config, error) {
@@ -70,6 +71,7 @@ func Load() (*Config, error) {
 		ProxyReloadCmd:          os.Getenv("PROXY_RELOAD_CMD"),
 		ProxySSLCert:            os.Getenv("PROXY_SSL_CERT"),
 		ProxySSLKey:             os.Getenv("PROXY_SSL_KEY"),
+		MonitoringToken:         os.Getenv("MONITORING_TOKEN"),
 	}
 
 	if cfg.AnalyticsUmamiPublicURL == "" {
