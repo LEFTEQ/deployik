@@ -1,5 +1,12 @@
 name: deployik
 
+# =============================================================================
+# Deployik - Self-hosted Deployment Platform
+# =============================================================================
+# Works with central nginx-proxy at /opt/nginx-proxy
+# Usage: docker compose up -d
+# =============================================================================
+
 services:
   app:
     image: ghcr.io/lefteq/lovinka-deployik:${IMAGE_TAG:-latest}
@@ -7,33 +14,70 @@ services:
     restart: unless-stopped
     env_file: .env
     environment:
-      - PORT=8080
-      - DATABASE_PATH=/data/deployik.db
-      - DATA_DIR=/data
-      - NGINX_CONF_DIR=/nginx-conf
-      - BUILD_DIR=/tmp/deployik-builds
+      PORT: 8080
+      DATABASE_PATH: /data/deployik.db
+      DATA_DIR: /data
+      NGINX_CONF_DIR: /nginx-conf
+      PROXY_CONTAINER_NAME: nginx-proxy
+      PROXY_CERTS_DIR: /opt/nginx-proxy/certs
+      PROXY_HTML_DIR: /opt/nginx-proxy/html
+      SSL_EMAIL: admin@example.com
+      BUILD_DIR: /tmp/deployik-builds
+      ANALYTICS_UMAMI_URL: ${ANALYTICS_UMAMI_URL:-http://umami-app:3000}
+      ANALYTICS_UMAMI_PUBLIC_URL: ${ANALYTICS_UMAMI_PUBLIC_URL:-https://analytics.example.com}
+      ANALYTICS_UMAMI_SCRIPT_URL: ${ANALYTICS_UMAMI_SCRIPT_URL:-https://cdn.example.com/deployik-analytics/umami/latest.js}
+      ANALYTICS_UMAMI_USERNAME: ${ANALYTICS_UMAMI_USERNAME:-}
+      ANALYTICS_UMAMI_PASSWORD: ${ANALYTICS_UMAMI_PASSWORD:-}
+      # Loki is centralized on the devops VPS (no loki container on lovinka-vps);
+      # reach it over the WireGuard mesh, the same path promtail/vmagent use to
+      # push. monitoring-loki:3100 would be unreachable here.
+      ANALYTICS_LOKI_URL: ${ANALYTICS_LOKI_URL:-http://203.0.113.13:3100}
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - /opt/nginx-proxy/conf.d:/nginx-conf
+      # Shared auth page dir: WriteAuthPage() writes auth.html here on startup
+      # (PROXY_HTML_DIR), and nginx-proxy serves it from the same host dir at
+      # /var/www/html. Without this mount the page is written inside the
+      # container only and never reaches the proxy.
+      - /opt/nginx-proxy/html:/opt/nginx-proxy/html
       - deployik_data:/data
+      - /opt/backups/deployik:/backups
       - /tmp/deployik-builds:/tmp/deployik-builds
     networks:
       - proxy
+      - monitoring-internal
     healthcheck:
       test: ['CMD-SHELL', 'wget -q --spider http://localhost:8080/api/health || exit 1']
       interval: 30s
       timeout: 10s
       retries: 3
-      start_period: 40s
+      start_period: 15s
+    deploy:
+      resources:
+        limits:
+          # 512m (was 256m) gives headroom for WebSocket log streaming during
+          # heavy builds and the in-process retention worker; current steady
+          # state is ~32 MB so this is a ceiling, not a target.
+          memory: 512m
+          cpus: '2.0'
+    # OOM kernel priority. -500 makes Deployik very hard to kill if the host
+    # runs out of memory — we'd much rather a misbehaving tenant container
+    # (left at default 0) gets selected first than lose the control plane
+    # that would let an operator stop it. Range is -1000 (never killed) to
+    # +1000 (kill first); -500 matches what nginx-proxy and postgres get on
+    # the same shape of host.
+    oom_score_adj: -500
     logging:
       driver: json-file
       options:
-        max-size: "50m"
-        max-file: "5"
+        max-size: '50m'
+        max-file: '5'
 
 volumes:
   deployik_data:
 
 networks:
   proxy:
+    external: true
+  monitoring-internal:
     external: true
