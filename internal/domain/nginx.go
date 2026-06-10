@@ -41,6 +41,10 @@ server {
     listen 443 ssl;
     listen [::]:443 ssl;
     http2 on;
+{{- if .HTTP3 }}
+    listen 443 quic;
+    listen [::]:443 quic;
+{{- end }}
     server_name {{.RedirectDomain}};
 
     ssl_certificate /etc/nginx/certs/live/{{.SSLDomain}}/fullchain.pem;
@@ -53,6 +57,9 @@ server {
     add_header Strict-Transport-Security "max-age=31536000" always;
     add_header X-Frame-Options "DENY" always;
     add_header X-Content-Type-Options "nosniff" always;
+{{- if .HTTP3 }}
+    add_header Alt-Svc 'h3=":443"; ma=86400' always;
+{{- end }}
 
     location / {
         return 301 https://{{.Domain}}$request_uri;
@@ -64,6 +71,10 @@ server {
     listen 443 ssl;
     listen [::]:443 ssl;
     http2 on;
+{{- if .HTTP3 }}
+    listen 443 quic;
+    listen [::]:443 quic;
+{{- end }}
     server_name {{.Domain}};
 
     ssl_certificate /etc/nginx/certs/live/{{.SSLDomain}}/fullchain.pem;
@@ -76,6 +87,9 @@ server {
     add_header Strict-Transport-Security "max-age=31536000" always;
     add_header X-Frame-Options "DENY" always;
     add_header X-Content-Type-Options "nosniff" always;
+{{- if .HTTP3 }}
+    add_header Alt-Svc 'h3=":443"; ma=86400' always;
+{{- end }}
     access_log /var/log/nginx/deployik-{{.ProjectID}}-{{.ProjectName}}-{{.Environment}}.json deployik_json;
 {{- if .PasswordProtected }}
 
@@ -191,6 +205,12 @@ type NginxConfig struct {
 	ContainerName     string
 	ContainerUpstream string // "host:port" — preferred; falls back to ContainerName:3000
 	PasswordProtected bool
+	// HTTP3 adds QUIC listeners + the Alt-Svc discovery header. Requires the
+	// proxy's nginx to be built with http_v3_module, UDP 443 reachable, and a
+	// `reuseport` quic listener configured once elsewhere (on the Lovinka VPS:
+	// 00-default-https.conf in infra-repo) — this template never emits
+	// reuseport itself, nginx allows it only once per address:port.
+	HTTP3             bool
 	RateLimitBurst    int // burst for dynamic requests; defaults via defaultRateLimitBurst
 	StaticBurst       int // burst for static-asset requests; defaults via defaultStaticBurst
 	MaxConnPerIP      int // concurrent connections per IP cap; defaults to 50

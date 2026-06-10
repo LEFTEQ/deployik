@@ -35,6 +35,7 @@ type Config struct {
 	AnalyticsLokiURL        string
 	ProxyType               string
 	ProxyConfigFormat       string
+	ProxyHTTP3              bool
 	ProxyReloadCmd          string
 	ProxySSLCert            string
 	ProxySSLKey             string
@@ -68,6 +69,9 @@ func Load() (*Config, error) {
 		AnalyticsLokiURL:        strings.TrimRight(strings.TrimSpace(os.Getenv("ANALYTICS_LOKI_URL")), "/"),
 		ProxyType:               getEnv("PROXY_TYPE", "docker"),
 		ProxyConfigFormat:       getEnv("PROXY_CONFIG_FORMAT", "nginx"),
+		// Off by default: emitting `listen 443 quic` against a proxy nginx
+		// that lacks http_v3_module fails the config test on every deploy.
+		ProxyHTTP3:              strings.EqualFold(getEnv("PROXY_HTTP3", "false"), "true"),
 		ProxyReloadCmd:          os.Getenv("PROXY_RELOAD_CMD"),
 		ProxySSLCert:            os.Getenv("PROXY_SSL_CERT"),
 		ProxySSLKey:             os.Getenv("PROXY_SSL_KEY"),

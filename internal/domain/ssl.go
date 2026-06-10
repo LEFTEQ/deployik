@@ -23,6 +23,7 @@ type ManagerConfig struct {
 	ProxyReloadCmd    string
 	ProxySSLCert      string
 	ProxySSLKey       string
+	HTTP3             bool // nginx format only — see NginxConfig.HTTP3
 }
 
 type Manager struct {
@@ -37,6 +38,7 @@ type Manager struct {
 	ProxyReloadCmd    string
 	ProxySSLCert      string
 	ProxySSLKey       string
+	HTTP3             bool
 	runner            commandRunner
 }
 
@@ -88,6 +90,7 @@ func NewManager(cfg ManagerConfig) *Manager {
 		ProxyReloadCmd:    cfg.ProxyReloadCmd,
 		ProxySSLCert:      cfg.ProxySSLCert,
 		ProxySSLKey:       cfg.ProxySSLKey,
+		HTTP3:             cfg.HTTP3,
 		runner:            execRunner{},
 	}
 }
@@ -281,6 +284,7 @@ func (m *Manager) WriteNginxConfig(cfg ProvisionConfig) (string, error) {
 		ContainerName:     cfg.ContainerName,
 		ContainerUpstream: upstream,
 		PasswordProtected: cfg.PasswordProtected,
+		HTTP3:             m.HTTP3,
 	})
 }
 

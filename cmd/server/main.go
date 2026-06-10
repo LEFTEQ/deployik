@@ -118,6 +118,7 @@ func main() {
 		ProxyReloadCmd:    cfg.ProxyReloadCmd,
 		ProxySSLCert:      cfg.ProxySSLCert,
 		ProxySSLKey:       cfg.ProxySSLKey,
+		HTTP3:             cfg.ProxyHTTP3,
 	})
 	analyticsService := analytics.NewService(
 		database,
