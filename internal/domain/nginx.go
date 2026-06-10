@@ -144,6 +144,10 @@ server {
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
+        # Ask the upstream for identity encoding so the proxy owns compression.
+        # App servers (e.g. Next.js) gzip themselves otherwise, which would
+        # bypass nginx brotli and lock all clients to gzip.
+        proxy_set_header Accept-Encoding "";
 
         proxy_connect_timeout 60s;
         proxy_send_timeout 60s;
@@ -164,6 +168,8 @@ server {
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
+        # See the static location above — proxy owns compression (brotli/gzip).
+        proxy_set_header Accept-Encoding "";
         proxy_set_header Upgrade $http_upgrade;
         proxy_set_header Connection "upgrade";
 

@@ -57,3 +57,17 @@ func TestGenerateNginxConfig_AuthPageIsNeverCacheable(t *testing.T) {
 		t.Fatalf("auth page location missing Cache-Control no-store:\n%s", authLoc)
 	}
 }
+
+// The proxy must own response compression: upstreams (e.g. Next.js) gzip
+// themselves when the client advertises gzip support, which bypasses nginx
+// brotli and locks every browser to gzip. Stripping Accept-Encoding toward
+// the upstream makes it respond identity-encoded so nginx can negotiate
+// brotli or gzip per client.
+func TestGenerateNginxConfig_StripsAcceptEncodingTowardUpstream(t *testing.T) {
+	content := generateProtectedConfig(t)
+
+	const directive = `proxy_set_header Accept-Encoding "";`
+	if got := strings.Count(content, directive); got != 2 {
+		t.Fatalf("expected Accept-Encoding stripped in both proxy locations (static + dynamic), found %d occurrences", got)
+	}
+}
