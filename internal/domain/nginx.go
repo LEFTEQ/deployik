@@ -93,11 +93,23 @@ server {
         proxy_set_header Content-Length "";
     }
 
-    error_page 401 = @auth_page;
+    # The URI form (no "=") preserves the 401 status while serving the auth
+    # page body. Returning it with 200 lets PWA service workers precache the
+    # password screen as the app shell, locking visitors out even after they
+    # log in. no-store keeps it out of HTTP caches for the same reason.
+    error_page 401 /_deployik/auth.html;
 
-    location @auth_page {
+    location = /_deployik/auth.html {
+        internal;
         root /var/www/html;
         try_files /auth.html =503;
+
+        # add_header in a location suppresses inherited server-level headers,
+        # so the security headers are re-declared alongside no-store.
+        add_header Cache-Control "no-store" always;
+        add_header Strict-Transport-Security "max-age=31536000" always;
+        add_header X-Frame-Options "DENY" always;
+        add_header X-Content-Type-Options "nosniff" always;
     }
 
     location = /_deployik/verify {
