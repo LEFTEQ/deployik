@@ -131,6 +131,21 @@ const authPageHTML = `<!DOCTYPE html>
     if (window.location.search.indexOf('error=1') !== -1) {
       document.getElementById('errorMsg').classList.add('visible');
     }
+
+    // The deployed app may be a PWA whose service worker cached pages while
+    // the visitor was unauthenticated. Unregister it and drop its caches so
+    // the app loads fresh after login. Complements the Clear-Site-Data header
+    // sent on successful verification for browsers that don't support it.
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.getRegistrations()
+        .then(function (rs) { rs.forEach(function (r) { r.unregister(); }); })
+        .catch(function () {});
+    }
+    if (window.caches && caches.keys) {
+      caches.keys()
+        .then(function (ks) { ks.forEach(function (k) { caches.delete(k); }); })
+        .catch(function () {});
+    }
   </script>
 </body>
 </html>

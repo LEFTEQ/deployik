@@ -306,6 +306,15 @@ func (h *ProtectionHandler) Verify(w http.ResponseWriter, r *http.Request) {
 		SameSite: http.SameSiteLaxMode,
 	})
 
+	// Heal browsers poisoned by a deployed PWA's service worker. The auth page
+	// used to be served with status 200, so Workbox-style service workers could
+	// precache it as the app shell and keep replaying the password screen from
+	// cache even after a successful login (this POST is the only request from
+	// such a browser that still reaches the server). "storage" unregisters
+	// service workers and clears CacheStorage; "cookies" is deliberately
+	// excluded so the auth cookie set above survives.
+	w.Header().Set("Clear-Site-Data", `"cache", "storage"`)
+
 	// If this is a form POST (not JSON fetch), redirect back to the site root
 	if r.Header.Get("Content-Type") == "application/x-www-form-urlencoded" {
 		redirectTo := r.Header.Get("Referer")

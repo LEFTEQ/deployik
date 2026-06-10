@@ -269,3 +269,75 @@ func TestCheckHandler_FallsBackToCookieWhenNoBypass(t *testing.T) {
 		t.Fatalf("expected 200 from cookie path, got %d", rr.Code)
 	}
 }
+
+// verifyFormRequest builds a form-encoded POST to the site-auth verify endpoint
+// the way nginx forwards it (project/environment in headers).
+func verifyFormRequest(projectID, environment, password string) *http.Request {
+	req := httptest.NewRequest(http.MethodPost, "/api/site-auth/verify", strings.NewReader("password="+password))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.Header.Set("X-Deployik-Project", projectID)
+	req.Header.Set("X-Deployik-Environment", environment)
+	req.Header.Set("Referer", "https://app.preview.example.com/")
+	return req
+}
+
+func TestVerify_SuccessIssuesCookieAndClearSiteData(t *testing.T) {
+	h, project := newProtectionHandler(t)
+
+	enc, err := h.Encryptor.Encrypt("pw123")
+	if err != nil {
+		t.Fatalf("Encrypt: %v", err)
+	}
+	if err := h.DB.SetProjectPassword(project.ID, "preview", enc); err != nil {
+		t.Fatalf("SetProjectPassword: %v", err)
+	}
+
+	rec := httptest.NewRecorder()
+	h.Verify(rec, verifyFormRequest(project.ID, "preview", "pw123"))
+
+	if rec.Code != http.StatusSeeOther {
+		t.Fatalf("status = %d, want 303 (%s)", rec.Code, rec.Body.String())
+	}
+
+	res := rec.Result()
+	var found bool
+	for _, c := range res.Cookies() {
+		if c.Name == siteAuthCookieName && c.Value != "" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("expected %s cookie to be set", siteAuthCookieName)
+	}
+
+	// Heals browsers whose PWA service worker cached the auth page as the app
+	// shell: must NOT include "cookies" or the fresh auth cookie would be wiped.
+	if got := res.Header.Get("Clear-Site-Data"); got != `"cache", "storage"` {
+		t.Fatalf("Clear-Site-Data = %q, want %q", got, `"cache", "storage"`)
+	}
+}
+
+func TestVerify_WrongPasswordOmitsClearSiteData(t *testing.T) {
+	h, project := newProtectionHandler(t)
+
+	enc, err := h.Encryptor.Encrypt("pw123")
+	if err != nil {
+		t.Fatalf("Encrypt: %v", err)
+	}
+	if err := h.DB.SetProjectPassword(project.ID, "preview", enc); err != nil {
+		t.Fatalf("SetProjectPassword: %v", err)
+	}
+
+	rec := httptest.NewRecorder()
+	h.Verify(rec, verifyFormRequest(project.ID, "preview", "nope"))
+
+	if rec.Code != http.StatusSeeOther {
+		t.Fatalf("status = %d, want 303 redirect back with error", rec.Code)
+	}
+	if loc := rec.Header().Get("Location"); !strings.Contains(loc, "error=1") {
+		t.Fatalf("Location = %q, want error=1 redirect", loc)
+	}
+	if got := rec.Header().Get("Clear-Site-Data"); got != "" {
+		t.Fatalf("Clear-Site-Data = %q, want empty on failed verification", got)
+	}
+}
