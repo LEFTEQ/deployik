@@ -14,6 +14,7 @@ import (
 
 	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/api/types/container"
+	"github.com/docker/docker/api/types/filters"
 	"github.com/docker/docker/api/types/image"
 	"github.com/docker/docker/api/types/network"
 	"github.com/docker/docker/api/types/volume"
@@ -522,6 +523,81 @@ func (d *DockerClient) VolumesDiskUsage(ctx context.Context) (map[string]*volume
 // actively mounted — the caller gets a Conflict and can surface it to the user.
 func (d *DockerClient) RemoveVolume(ctx context.Context, name string) error {
 	return d.cli.VolumeRemove(ctx, name, false)
+}
+
+// RemoveResourcesByPrefix force-removes every container, image, and volume
+// whose Docker name starts with prefix (e.g. "deployik-myapp-"). Matching is
+// by naming convention rather than recorded DB state, so it also sweeps
+// resources whose rows are long gone — leaked containers from older versions,
+// renamed preview branches, stale image tags. Containers go first so volume
+// removal (kept non-forced) only conflicts when something OUTSIDE the project
+// still mounts the volume; that surfaces as an error instead of silent data
+// loss. Best-effort: failures are collected and the sweep continues.
+func (d *DockerClient) RemoveResourcesByPrefix(ctx context.Context, prefix string) (removed []string, errs []error) {
+	// Docker's name filter is substring-based; HasPrefix is re-checked below
+	// so e.g. project "app" never matches "deployik-app2-preview".
+	containers, err := d.cli.ContainerList(ctx, container.ListOptions{
+		All:     true,
+		Filters: filters.NewArgs(filters.Arg("name", prefix)),
+	})
+	if err != nil {
+		errs = append(errs, fmt.Errorf("list containers %s*: %w", prefix, err))
+	}
+	for _, c := range containers {
+		name := containerNameWithPrefix(c.Names, prefix)
+		if name == "" {
+			continue
+		}
+		if err := d.cli.ContainerRemove(ctx, c.ID, container.RemoveOptions{Force: true}); err != nil {
+			errs = append(errs, fmt.Errorf("remove container %s: %w", name, err))
+			continue
+		}
+		removed = append(removed, "container "+name)
+	}
+
+	images, err := d.cli.ImageList(ctx, image.ListOptions{
+		Filters: filters.NewArgs(filters.Arg("reference", prefix+"*")),
+	})
+	if err != nil {
+		errs = append(errs, fmt.Errorf("list images %s*: %w", prefix, err))
+	}
+	for _, img := range images {
+		if _, err := d.cli.ImageRemove(ctx, img.ID, image.RemoveOptions{Force: true, PruneChildren: true}); err != nil {
+			errs = append(errs, fmt.Errorf("remove image %s: %w", strings.Join(img.RepoTags, ","), err))
+			continue
+		}
+		removed = append(removed, "image "+strings.Join(img.RepoTags, ","))
+	}
+
+	vols, err := d.cli.VolumeList(ctx, volume.ListOptions{
+		Filters: filters.NewArgs(filters.Arg("name", prefix)),
+	})
+	if err != nil {
+		errs = append(errs, fmt.Errorf("list volumes %s*: %w", prefix, err))
+	}
+	for _, v := range vols.Volumes {
+		if v == nil || !strings.HasPrefix(v.Name, prefix) {
+			continue
+		}
+		if err := d.cli.VolumeRemove(ctx, v.Name, false); err != nil {
+			errs = append(errs, fmt.Errorf("remove volume %s: %w", v.Name, err))
+			continue
+		}
+		removed = append(removed, "volume "+v.Name)
+	}
+	return removed, errs
+}
+
+// containerNameWithPrefix returns the first container name that starts with
+// prefix (Docker reports names with a leading slash), or "" when none match.
+func containerNameWithPrefix(names []string, prefix string) string {
+	for _, n := range names {
+		n = strings.TrimPrefix(n, "/")
+		if strings.HasPrefix(n, prefix) {
+			return n
+		}
+	}
+	return ""
 }
 
 // Close closes the Docker client.

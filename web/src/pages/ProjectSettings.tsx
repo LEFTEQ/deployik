@@ -698,6 +698,12 @@ function DangerZone({
   projectId: string;
   onDeleted: () => void;
 }) {
+  const { data: volumes } = useQuery({
+    queryKey: queryKeys.volumes(projectId),
+    queryFn: () => api.listVolumes(projectId),
+  });
+  const dataVolumes = (volumes ?? []).filter((v) => v.exists);
+
   const deleteMutation = useMutation({
     mutationFn: () => api.deleteProject(projectId),
     onSuccess: onDeleted,
@@ -723,10 +729,28 @@ function DangerZone({
             <AlertDialogHeader>
               <AlertDialogTitle>Delete project?</AlertDialogTitle>
               <AlertDialogDescription>
-                This will stop all running containers and remove the project.
-                This action cannot be undone.
+                This permanently removes the project and destroys all of its
+                containers, built images, and build artifacts. This action
+                cannot be undone.
               </AlertDialogDescription>
             </AlertDialogHeader>
+            {dataVolumes.length > 0 && (
+              <div className="rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-sm text-amber-200">
+                This project has persistent data — the following volume
+                {dataVolumes.length > 1 ? "s" : ""} will be permanently
+                destroyed with it:
+                <ul className="mt-1 list-disc pl-5">
+                  {dataVolumes.map((v) => (
+                    <li key={v.environment}>
+                      <span className="font-medium">{v.environment}</span>
+                      {" — "}
+                      {formatVolumeSize(v.size_bytes)} at{" "}
+                      <code className="font-mono text-xs">{v.mount_path}</code>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
             <AlertDialogFooter>
               <AlertDialogCancel>Cancel</AlertDialogCancel>
               <AlertDialogAction onClick={() => deleteMutation.mutate()}>

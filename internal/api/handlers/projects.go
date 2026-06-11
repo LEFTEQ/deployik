@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"os"
+	"path/filepath"
 	"regexp"
 	"strings"
 	"time"
@@ -446,12 +448,11 @@ func (h *ProjectHandler) Delete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	h.cleanupProjectRuntime(project, domains)
-
 	// Clean up attached services (stop container + remove volume + delete row)
-	// BEFORE the project is soft-deleted so the cleanup is idempotent on retry.
-	// Best-effort: errors are logged but don't block project delete — a failed
-	// container cleanup leaves orphaned docker state but the project is gone.
+	// BEFORE the project is soft-deleted so the cleanup is idempotent on retry,
+	// and BEFORE the runtime sweep so the service teardown still sees its
+	// recorded Docker state. Best-effort: errors are logged but don't block
+	// project delete — the sweep below catches leftover docker state anyway.
 	if h.Services != nil {
 		rows, err := h.DB.ListServicesByProject(project.ID)
 		if err != nil {
@@ -463,6 +464,8 @@ func (h *ProjectHandler) Delete(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
+
+	h.cleanupProjectRuntime(project, domains)
 
 	if err := h.DB.DeleteAllDomainsForProject(id); err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to release project domains"})
@@ -587,35 +590,45 @@ func (h *ProjectHandler) dispatchInitialDeployBestEffort(ctx context.Context, pr
 	_ = ctx
 }
 
+// cleanupProjectRuntime destroys everything a deleted project left behind:
+// containers, built images, and data volumes (swept by the "deployik-<name>-"
+// naming convention so even resources whose DB rows are gone — leaked
+// containers from older versions, renamed preview branches — are caught),
+// leftover build directories, and the generated nginx configs.
 func (h *ProjectHandler) cleanupProjectRuntime(project *db.Project, domains []db.Domain) {
 	if project == nil {
 		return
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	// 60s: the sweep may stop several containers, each with a graceful-stop
+	// window, before the (fast) image/volume/nginx steps run.
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 
 	if h.Docker != nil {
-		previewInstances, err := h.DB.ListPreviewInstances(project.ID)
-		if err != nil {
-			log.Printf("Warning: failed to load preview instances for deleted project %s: %v", project.ID, err)
+		removed, errs := h.Docker.RemoveResourcesByPrefix(ctx, fmt.Sprintf("deployik-%s-", project.Name))
+		for _, resource := range removed {
+			log.Printf("project delete %s: removed %s", project.Name, resource)
 		}
-		for _, instance := range previewInstances {
-			containerName := db.PreviewContainerName(project.Name, &instance)
-			containerID, exists := h.Docker.ContainerExists(ctx, containerName)
-			if !exists {
+		for _, err := range errs {
+			log.Printf("Warning: project delete %s: %v", project.Name, err)
+		}
+	}
+
+	// Build directories self-clean after every build (pipeline defers
+	// RemoveAll), but crashed builds leak them — sweep by recorded deployments.
+	if h.Pipeline != nil && h.Pipeline.BuildDir != "" {
+		deployments, err := h.DB.ListDeployments(project.ID, 1000)
+		if err != nil {
+			log.Printf("Warning: failed to list deployments for deleted project %s: %v", project.ID, err)
+		}
+		for _, deployment := range deployments {
+			if deployment.ID == "" {
 				continue
 			}
-			if err := h.Docker.StopContainer(ctx, containerID); err != nil {
-				log.Printf("Warning: failed to stop deleted project container %s: %v", containerName, err)
-			}
-		}
-
-		containerName := db.DeploymentContainerName(project.Name, "production", nil)
-		containerID, exists := h.Docker.ContainerExists(ctx, containerName)
-		if exists {
-			if err := h.Docker.StopContainer(ctx, containerID); err != nil {
-				log.Printf("Warning: failed to stop deleted project container %s: %v", containerName, err)
+			dir := filepath.Join(h.Pipeline.BuildDir, deployment.ID)
+			if err := os.RemoveAll(dir); err != nil {
+				log.Printf("Warning: failed to remove build dir %s: %v", dir, err)
 			}
 		}
 	}
