@@ -58,7 +58,7 @@ server {
     add_header X-Frame-Options "DENY" always;
     add_header X-Content-Type-Options "nosniff" always;
 {{- if .HTTP3 }}
-    add_header Alt-Svc 'h3=":443"; ma=86400' always;
+    add_header Alt-Svc $h3_alt_svc always;
 {{- end }}
 
     location / {
@@ -88,7 +88,7 @@ server {
     add_header X-Frame-Options "DENY" always;
     add_header X-Content-Type-Options "nosniff" always;
 {{- if .HTTP3 }}
-    add_header Alt-Svc 'h3=":443"; ma=86400' always;
+    add_header Alt-Svc $h3_alt_svc always;
 {{- end }}
     access_log /var/log/nginx/deployik-{{.ProjectID}}-{{.ProjectName}}-{{.Environment}}.json deployik_json;
 {{- if .PasswordProtected }}
@@ -210,6 +210,13 @@ type NginxConfig struct {
 	// `reuseport` quic listener configured once elsewhere (on the Lovinka VPS:
 	// 00-default-https.conf in infra-repo) — this template never emits
 	// reuseport itself, nginx allows it only once per address:port.
+	// The Alt-Svc value is the infra-owned $h3_alt_svc geo variable
+	// (00-h3-policy.conf in infra-repo): empty for VPN clients so they
+	// stay on h2/TCP (QUIC over the tunnel showed multi-minute response
+	// stalls browsers can't fall back from mid-request), the h3
+	// advertisement for everyone else. nginx fails the config test on an
+	// undefined variable, so the policy file must exist before any vhost
+	// generated with HTTP3=true is loaded.
 	HTTP3             bool
 	RateLimitBurst    int // burst for dynamic requests; defaults via defaultRateLimitBurst
 	StaticBurst       int // burst for static-asset requests; defaults via defaultStaticBurst

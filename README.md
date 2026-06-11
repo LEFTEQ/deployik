@@ -245,7 +245,7 @@ SSL_EMAIL=admin@yourdomain.com
 |---|---|---|
 | `PROXY_TYPE` | `docker` | `docker` (container name upstream) or `host-port` (random localhost port) |
 | `PROXY_CONFIG_FORMAT` | `nginx` | `nginx` (server blocks) or `apache` (VirtualHost blocks) |
-| `PROXY_HTTP3` | `false` | nginx format only: add HTTP/3 (QUIC) listeners + `Alt-Svc` header to generated vhosts. Requires proxy nginx built with `http_v3_module`, UDP 443 published/open, and a `reuseport` quic listener configured once outside Deployik (generated vhosts never emit `reuseport`) |
+| `PROXY_HTTP3` | `false` | nginx format only: add HTTP/3 (QUIC) listeners + `Alt-Svc` header to generated vhosts. Requires proxy nginx built with `http_v3_module`, UDP 443 published/open, a `reuseport` quic listener configured once outside Deployik (generated vhosts never emit `reuseport`), and a `geo $h3_alt_svc` map at http{} level (vhosts emit `add_header Alt-Svc $h3_alt_svc always;` so h3 advertisement can be suppressed per client source, e.g. VPN ranges where QUIC stalls) |
 | `PROXY_RELOAD_CMD` | _(empty)_ | Shell command to reload proxy in host-port mode (e.g. `apachectl graceful`) |
 | `PROXY_SSL_CERT` | _(empty)_ | Path to existing wildcard SSL cert (skips per-domain certbot) |
 | `PROXY_SSL_KEY` | _(empty)_ | Path to existing wildcard SSL key |

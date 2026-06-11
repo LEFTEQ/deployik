@@ -108,7 +108,12 @@ func TestGenerateNginxConfig_HTTP3(t *testing.T) {
 	if got := strings.Count(enabled, "listen [::]:443 quic;"); got != 2 {
 		t.Fatalf("expected 2 IPv6 quic listeners, found %d:\n%s", got, enabled)
 	}
-	if got := strings.Count(enabled, `add_header Alt-Svc 'h3=":443"; ma=86400' always;`); got != 2 {
+	// The value is the infra-owned $h3_alt_svc geo variable (infra-repo
+	// 00-h3-policy.conf) — empty for VPN clients (header omitted, they stay
+	// on h2/TCP), the h3 advertisement for everyone else. Never a literal:
+	// QUIC over the VPN tunnel showed multi-minute response stalls browsers
+	// can't fall back from mid-request.
+	if got := strings.Count(enabled, `add_header Alt-Svc $h3_alt_svc always;`); got != 2 {
 		t.Fatalf("expected Alt-Svc in both 443 server blocks, found %d:\n%s", got, enabled)
 	}
 	if strings.Contains(enabled, "reuseport") {
