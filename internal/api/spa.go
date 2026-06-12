@@ -61,11 +61,19 @@ func SPAHandler() http.HandlerFunc {
 				w.Header().Set("Content-Type", "image/png")
 			case ".ico":
 				w.Header().Set("Content-Type", "image/x-icon")
+			case ".webmanifest":
+				w.Header().Set("Content-Type", "application/manifest+json")
 			}
 
 			// Cache static assets (hashed filenames)
 			if strings.Contains(upath, "assets/") {
 				w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
+			}
+
+			// The service worker and the precache entry points must always be
+			// revalidated, otherwise a cached sw.js pins clients to a stale shell.
+			if upath == "sw.js" || upath == "index.html" || upath == "manifest.webmanifest" {
+				w.Header().Set("Cache-Control", "no-cache")
 			}
 
 			http.ServeFileFS(w, r, staticFS, upath)
@@ -80,6 +88,7 @@ func SPAHandler() http.HandlerFunc {
 		}
 
 		w.Header().Set("Content-Type", "text/html")
+		w.Header().Set("Cache-Control", "no-cache")
 		w.Write(data)
 	}
 }

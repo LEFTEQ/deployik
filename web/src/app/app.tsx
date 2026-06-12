@@ -9,6 +9,7 @@ import {
 } from "@tanstack/react-router";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "sonner";
+import { OfflineBanner } from "@/components/layout/OfflineBanner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { useAuthStore } from "@/store/auth";
 // Hot paths stay eager so the initial render is a single network round-trip.
@@ -93,6 +94,7 @@ const queryClient = new QueryClient({
 const rootRoute = createRootRoute({
   component: () => (
     <TooltipProvider>
+      <OfflineBanner />
       <Outlet />
       <Toaster position="bottom-right" richColors theme="dark" />
     </TooltipProvider>

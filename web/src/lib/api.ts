@@ -1,4 +1,5 @@
 import { useAuthStore } from "@/store/auth";
+import { reportNetworkError, reportNetworkSuccess } from "@/lib/network-status";
 import type {
   AuthResponse,
   User,
@@ -67,14 +68,24 @@ class ApiClient {
     allowRefresh = true,
   ): Promise<T> {
     const hasBody = !!options.body;
-    const response = await fetch(`${API_URL}${endpoint}`, {
-      ...options,
-      credentials: "include",
-      headers: {
-        ...this.getHeaders(hasBody),
-        ...options.headers,
-      },
-    });
+    let response: Response;
+    try {
+      response = await fetch(`${API_URL}${endpoint}`, {
+        ...options,
+        credentials: "include",
+        headers: {
+          ...this.getHeaders(hasBody),
+          ...options.headers,
+        },
+      });
+    } catch (err) {
+      // fetch rejects (TypeError) only on network-level failure.
+      reportNetworkError();
+      throw err instanceof Error && err.name !== "TypeError"
+        ? err
+        : new Error("Network error — check your connection");
+    }
+    reportNetworkSuccess();
 
     if (
       response.status === 401 &&
@@ -145,7 +156,9 @@ class ApiClient {
     return this.request<APIToken[]>("/me/tokens");
   }
 
-  async createMyToken(req: CreateAPITokenRequest): Promise<CreateAPITokenResponse> {
+  async createMyToken(
+    req: CreateAPITokenRequest,
+  ): Promise<CreateAPITokenResponse> {
     return this.request<CreateAPITokenResponse>("/me/tokens", {
       method: "POST",
       body: JSON.stringify(req),
@@ -518,7 +531,9 @@ class ApiClient {
       range: params.range,
       timezone: params.timezone,
     });
-    return this.request(`/projects/${projectId}/analytics?${search.toString()}`);
+    return this.request(
+      `/projects/${projectId}/analytics?${search.toString()}`,
+    );
   }
 
   async verifyProjectAnalytics(
@@ -534,9 +549,12 @@ class ApiClient {
       range: params.range,
       timezone: params.timezone,
     });
-    return this.request(`/projects/${projectId}/analytics/verify?${search.toString()}`, {
-      method: "POST",
-    });
+    return this.request(
+      `/projects/${projectId}/analytics/verify?${search.toString()}`,
+      {
+        method: "POST",
+      },
+    );
   }
 
   async getProjectEmail(projectId: string): Promise<ProjectEmailPayload> {
@@ -618,7 +636,12 @@ class ApiClient {
     projectId: string,
     environment: "preview" | "production",
     options?: { sync?: boolean; force?: boolean },
-  ): Promise<{ status: "ready" | "capturing" | "failed"; deployment_id: string; screenshot_path?: string; error?: string }> {
+  ): Promise<{
+    status: "ready" | "capturing" | "failed";
+    deployment_id: string;
+    screenshot_path?: string;
+    error?: string;
+  }> {
     const params = new URLSearchParams({ environment });
     if (options?.sync) params.set("sync", "1");
     if (options?.force) params.set("force", "1");
@@ -702,10 +725,9 @@ class ApiClient {
   }
 
   async detachService(projectId: string, environment: string): Promise<void> {
-    await this.request<void>(
-      `/projects/${projectId}/services/${environment}`,
-      { method: "DELETE" },
-    );
+    await this.request<void>(`/projects/${projectId}/services/${environment}`, {
+      method: "DELETE",
+    });
   }
 
   async getServiceCredentials(
