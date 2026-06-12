@@ -32,12 +32,7 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
-import {
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -125,7 +120,9 @@ function BuildSettingsSection({
         health_path: buildSettings.healthPath,
       }),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: queryKeys.project(project.id) });
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.project(project.id),
+      });
       toast.success("Settings updated");
     },
     onError: (err) => toast.error(err.message),
@@ -151,13 +148,11 @@ function BuildSettingsSection({
           onChange={(event) => setBranch(event.target.value)}
         />
       </div>
-      <BuildSettingsFields
-        value={buildSettings}
-        onChange={setBuildSettings}
-      />
+      <BuildSettingsFields value={buildSettings} onChange={setBuildSettings} />
       <Button
         onClick={() => updateMutation.mutate()}
         disabled={updateMutation.isPending}
+        className="h-11 w-full md:h-9 md:w-auto"
       >
         {updateMutation.isPending ? "Saving..." : "Save Settings"}
       </Button>
@@ -236,7 +231,10 @@ function AutoBuildSection({
       const msg = err.message || String(err);
       if (msg.includes("insufficient_scope")) {
         setNeedsReauth(true);
-      } else if (msg.includes("no_admin_access") || msg.includes("admin access")) {
+      } else if (
+        msg.includes("no_admin_access") ||
+        msg.includes("admin access")
+      ) {
         setNoAdminAccess(msg);
       } else {
         toast.error(msg);
@@ -308,9 +306,7 @@ function AutoBuildSection({
 
       <div className="flex items-center justify-between gap-4 rounded-lg border p-4">
         <div className="space-y-1">
-          <Label htmlFor="production-auto-deploy">
-            Production auto-deploy
-          </Label>
+          <Label htmlFor="production-auto-deploy">Production auto-deploy</Label>
           <p className="text-xs text-muted-foreground">
             Preview auto-deploy uses the preview branch rules. Enable this only
             when pushes to <span className="font-mono">{sourceBranch}</span>{" "}
@@ -329,7 +325,9 @@ function AutoBuildSection({
         <div className="rounded-lg border border-rose-500/25 bg-rose-500/5 p-4 space-y-2">
           <p className="text-sm font-medium text-rose-200">
             Cannot create webhook on{" "}
-            <span className="font-mono">{githubOwner}/{githubRepo}</span>
+            <span className="break-all font-mono">
+              {githubOwner}/{githubRepo}
+            </span>
           </p>
           <p className="text-sm text-muted-foreground">
             GitHub requires <strong>admin access</strong> to create webhooks.
@@ -349,7 +347,10 @@ function AutoBuildSection({
                 GitHub Settings → Collaborators
               </a>
             </li>
-            <li>Or have the repo owner log into Deployik and enable auto-build themselves</li>
+            <li>
+              Or have the repo owner log into Deployik and enable auto-build
+              themselves
+            </li>
           </ul>
         </div>
       )}
@@ -361,7 +362,8 @@ function AutoBuildSection({
           </p>
           <p className="text-sm text-muted-foreground">
             Your account was authorized before webhook support was added.
-            Re-authorize to grant the <strong>admin:repo_hook</strong> permission.
+            Re-authorize to grant the <strong>admin:repo_hook</strong>{" "}
+            permission.
           </p>
           <Button size="sm" className="mt-3" asChild>
             <a href="/api/auth/github">Re-authorize with GitHub</a>
@@ -403,9 +405,7 @@ function AutoBuildSection({
                   id="preview-all-branches"
                   checked={previewBranches.trim() === "*"}
                   onCheckedChange={(checked) =>
-                    setPreviewBranches(
-                      checked ? "*" : (defaultBranch || "main"),
-                    )
+                    setPreviewBranches(checked ? "*" : defaultBranch || "main")
                   }
                   disabled={updateMutation.isPending}
                 />
@@ -418,8 +418,8 @@ function AutoBuildSection({
                     placeholder="develop,staging"
                   />
                   <p className="text-xs text-muted-foreground">
-                    Comma-separated branch names. Pushes to other branches
-                    won't deploy a preview.
+                    Comma-separated branch names. Pushes to other branches won't
+                    deploy a preview.
                   </p>
                 </>
               )}
@@ -429,8 +429,11 @@ function AutoBuildSection({
             size="sm"
             onClick={handleSave}
             disabled={updateMutation.isPending}
+            className="h-11 w-full md:h-8 md:w-auto"
           >
-            {updateMutation.isPending ? "Saving..." : "Save Auto-Build Settings"}
+            {updateMutation.isPending
+              ? "Saving..."
+              : "Save Auto-Build Settings"}
           </Button>
         </div>
       )}
@@ -462,7 +465,9 @@ function RuntimeSettingsSection({
         data_mount_path: dataMountPath,
       }),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: queryKeys.project(project.id) });
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.project(project.id),
+      });
       toast.success("Runtime settings updated");
     },
     onError: (err) => toast.error(err.message),
@@ -543,6 +548,7 @@ function RuntimeSettingsSection({
       <Button
         onClick={() => updateMutation.mutate()}
         disabled={updateMutation.isPending}
+        className="h-11 w-full md:h-9 md:w-auto"
       >
         {updateMutation.isPending ? "Saving..." : "Save Runtime Settings"}
       </Button>
@@ -598,10 +604,10 @@ function VolumesSection({ projectId }: { projectId: string }) {
       {(volumes ?? []).map((v: VolumeInfo) => (
         <div
           key={v.environment}
-          className="flex items-center justify-between rounded-lg border px-4 py-3"
+          className="flex flex-col gap-3 rounded-lg border px-4 py-3 md:flex-row md:items-center md:justify-between"
         >
-          <div className="space-y-0.5">
-            <div className="flex items-center gap-2">
+          <div className="min-w-0 space-y-0.5">
+            <div className="flex flex-wrap items-center gap-2">
               <Badge
                 variant="outline"
                 className={
@@ -612,7 +618,7 @@ function VolumesSection({ projectId }: { projectId: string }) {
               >
                 {v.environment}
               </Badge>
-              <code className="text-xs font-mono text-muted-foreground">
+              <code className="break-all text-xs font-mono text-muted-foreground">
                 {v.mount_path}
               </code>
             </div>
@@ -633,7 +639,7 @@ function VolumesSection({ projectId }: { projectId: string }) {
             </div>
           </div>
           {v.exists && (
-            <div className="flex items-center gap-1">
+            <div className="flex flex-wrap items-center gap-1">
               <Button
                 variant="ghost"
                 size="sm"
@@ -720,7 +726,10 @@ function DangerZone({
       <CardContent>
         <AlertDialog>
           <AlertDialogTrigger asChild>
-            <Button variant="destructive">
+            <Button
+              variant="destructive"
+              className="h-11 w-full md:h-9 md:w-auto"
+            >
               <Trash2 className="mr-1.5 h-3.5 w-3.5" />
               Delete Project
             </Button>
@@ -745,7 +754,9 @@ function DangerZone({
                       <span className="font-medium">{v.environment}</span>
                       {" — "}
                       {formatVolumeSize(v.size_bytes)} at{" "}
-                      <code className="font-mono text-xs">{v.mount_path}</code>
+                      <code className="break-all font-mono text-xs">
+                        {v.mount_path}
+                      </code>
                     </li>
                   ))}
                 </ul>

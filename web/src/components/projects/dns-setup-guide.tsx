@@ -190,9 +190,9 @@ export function DnsSetupGuide({
                   A record → use this
                 </p>
                 <p className="mt-1">
-                  Points a hostname directly at an IP address (e.g. <Ip />).
-                  Use this for the apex/root and for any subdomain you point at
-                  the VPS.
+                  Points a hostname directly at an IP address (e.g. <Ip />
+                  ). Use this for the apex/root and for any subdomain you point
+                  at the VPS.
                 </p>
               </div>
               <div>
@@ -200,8 +200,8 @@ export function DnsSetupGuide({
                   CNAME → only points to other hostnames
                 </p>
                 <p className="mt-1">
-                  A CNAME can only point to another domain name, never to an
-                  IP. If your provider rejects an IP value with "fully-qualified
+                  A CNAME can only point to another domain name, never to an IP.
+                  If your provider rejects an IP value with "fully-qualified
                   domain name required", you picked CNAME by mistake — switch
                   the record type to A.
                 </p>
@@ -211,7 +211,7 @@ export function DnsSetupGuide({
 
           {target.isApex ? (
             <div className="rounded-xl border bg-muted/30 p-4">
-              <p className="text-sm font-medium">
+              <p className="break-words text-sm font-medium">
                 Root domain ({sampleDomain}) — two records
               </p>
               <div className="mt-3 space-y-3 text-sm text-muted-foreground">
@@ -271,9 +271,9 @@ export function DnsSetupGuide({
                         <CopyChip value={cnameTarget} label="CNAME target" />
                       </div>
                       <p className="mt-1 text-xs">
-                        Note the trailing dot — many providers (Webglobe,
-                        Wedos, BIND-style panels) require it. If the IP ever
-                        changes, you only update the apex A record.
+                        Note the trailing dot — many providers (Webglobe, Wedos,
+                        BIND-style panels) require it. If the IP ever changes,
+                        you only update the apex A record.
                       </p>
                     </li>
                   </ul>
@@ -282,7 +282,7 @@ export function DnsSetupGuide({
             </div>
           ) : (
             <div className="rounded-xl border bg-muted/30 p-4">
-              <p className="text-sm font-medium">
+              <p className="break-words text-sm font-medium">
                 Subdomain ({sampleDomain}) — one record
               </p>
               <ul className="mt-3 space-y-1 pl-5 list-disc marker:text-muted-foreground/60 text-sm text-muted-foreground">
@@ -297,7 +297,7 @@ export function DnsSetupGuide({
                   <CopyChip value={target.host} label="Host" />
                   <span className="text-xs">
                     (just the subdomain part — don't include{" "}
-                    <span className="font-mono">.{target.apex}</span>)
+                    <span className="break-all font-mono">.{target.apex}</span>)
                   </span>
                 </li>
                 <li className="flex flex-wrap items-center gap-2">
@@ -324,14 +324,14 @@ export function DnsSetupGuide({
                 </span>{" "}
                 Some providers require CNAME values to end with a dot —{" "}
                 <CopyChip value={cnameTarget} label="CNAME target" /> not{" "}
-                <span className="font-mono">{sampleDomain}</span>.
+                <span className="break-all font-mono">{sampleDomain}</span>.
               </li>
               <li>
                 <span className="font-medium text-foreground">
                   Conflicting records.
                 </span>{" "}
-                Remove old A, AAAA, ALIAS, or web-forwarding records pointing
-                at a previous host before saving the new one.
+                Remove old A, AAAA, ALIAS, or web-forwarding records pointing at
+                a previous host before saving the new one.
               </li>
               <li>
                 <span className="font-medium text-foreground">TTL.</span>{" "}
@@ -343,9 +343,9 @@ export function DnsSetupGuide({
                   Cloudflare proxy.
                 </span>{" "}
                 If you use Cloudflare, set the record to{" "}
-                <span className="font-medium">DNS-only</span> (grey cloud)
-                until Deployik issues SSL — orange-cloud proxying breaks Let's
-                Encrypt HTTP-01 verification.
+                <span className="font-medium">DNS-only</span> (grey cloud) until
+                Deployik issues SSL — orange-cloud proxying breaks Let's Encrypt
+                HTTP-01 verification.
               </li>
             </ul>
           </div>
@@ -355,9 +355,9 @@ export function DnsSetupGuide({
               DNS changes can take a few minutes (sometimes longer) to
               propagate. Once the record resolves to <Ip />, click Verify —
               Deployik checks the A record, issues an SSL certificate, and
-              activates the domain. For root domains, SSL is also issued for
-              the <span className="font-mono">www</span> variant and redirected
-              to the apex.
+              activates the domain. For root domains, SSL is also issued for the{" "}
+              <span className="font-mono">www</span> variant and redirected to
+              the apex.
             </p>
           </div>
         </div>

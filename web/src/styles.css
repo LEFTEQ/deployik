@@ -148,6 +148,18 @@
   --color-sidebar: var(--sidebar);
 }
 
+/* Safe-area utilities for notched/home-indicator devices (PWA standalone). */
+@utility pt-safe {
+  padding-top: env(safe-area-inset-top);
+}
+@utility pb-safe {
+  padding-bottom: env(safe-area-inset-bottom);
+}
+@utility pb-safe-tabbar {
+  /* Clearance for the fixed MobileTabBar (3.5rem) + home indicator inset. */
+  padding-bottom: calc(3.5rem + env(safe-area-inset-bottom) + 1rem);
+}
+
 @layer components {
   .deployment-domain-text-shimmer {
     background-image: linear-gradient(

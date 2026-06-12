@@ -1,6 +1,12 @@
 import { useQuery } from "@tanstack/react-query";
 import { useParams, Link } from "@tanstack/react-router";
-import { ArrowLeft, Clock, ExternalLink, GitBranch, GitCommit } from "lucide-react";
+import {
+  ArrowLeft,
+  Clock,
+  ExternalLink,
+  GitBranch,
+  GitCommit,
+} from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { api } from "@/lib/api";
 import { queryKeys, staleTimes } from "@/lib/queryKeys";
@@ -124,9 +130,9 @@ export function DeploymentDetail() {
     "truncate",
     isDomainShimmering && "deployment-domain-text-shimmer",
   );
-  const domainLabel = preferredDomain?.domain ?? (
-    isDomainsLoading ? "Loading domain" : "No domain"
-  );
+  const domainLabel =
+    preferredDomain?.domain ??
+    (isDomainsLoading ? "Loading domain" : "No domain");
 
   return (
     <div>
@@ -140,9 +146,9 @@ export function DeploymentDetail() {
       </Link>
 
       {/* Header */}
-      <div className="flex items-start justify-between">
-        <div>
-          <div className="flex items-center gap-3">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-3">
             <div
               className={`h-3 w-3 rounded-full ${statusColor[deployment.status] ?? "bg-muted-foreground"} ${isActive ? "animate-pulse" : ""}`}
             />
@@ -163,8 +169,8 @@ export function DeploymentDetail() {
           </div>
           <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-2 text-sm text-muted-foreground">
             {deployment.commit_sha && (
-              <span className="flex items-center gap-1">
-                <GitCommit className="h-3.5 w-3.5" />
+              <span className="flex min-w-0 max-w-full items-center gap-1">
+                <GitCommit className="h-3.5 w-3.5 shrink-0" />
                 {project ? (
                   <CommitLink
                     owner={project.github_owner}
@@ -174,20 +180,24 @@ export function DeploymentDetail() {
                 ) : (
                   deployment.commit_sha.slice(0, 7)
                 )}{" "}
-                {deployment.commit_message}
+                <span className="min-w-0 truncate">
+                  {deployment.commit_message}
+                </span>
               </span>
             )}
-            <span className="flex items-center gap-1">
-              <GitBranch className="h-3.5 w-3.5" />
-              {project ? (
-                <BranchLink
-                  owner={project.github_owner}
-                  repo={project.github_repo}
-                  branch={deployment.branch}
-                />
-              ) : (
-                deployment.branch
-              )}
+            <span className="flex min-w-0 max-w-full items-center gap-1">
+              <GitBranch className="h-3.5 w-3.5 shrink-0" />
+              <span className="min-w-0 truncate">
+                {project ? (
+                  <BranchLink
+                    owner={project.github_owner}
+                    repo={project.github_repo}
+                    branch={deployment.branch}
+                  />
+                ) : (
+                  deployment.branch
+                )}
+              </span>
             </span>
             <span className="flex items-center gap-1">
               <Clock className="h-3.5 w-3.5" />
@@ -227,7 +237,7 @@ export function DeploymentDetail() {
       </div>
 
       {/* Build Logs */}
-      <Card className="mt-8">
+      <Card className="-mx-4 mt-8 rounded-none border-x-0 md:mx-0 md:rounded-xl md:border-x">
         <CardHeader className="pb-3">
           <CardTitle className="text-base">Build Logs</CardTitle>
         </CardHeader>
@@ -235,7 +245,7 @@ export function DeploymentDetail() {
           <BuildLog
             logs={allLogs}
             isStreaming={isActive}
-            className="max-h-[calc(100vh-320px)] min-h-[400px] rounded-t-none"
+            className="max-h-[calc(100vh-320px)] min-h-[400px] rounded-none md:rounded-md md:rounded-t-none"
           />
         </CardContent>
       </Card>

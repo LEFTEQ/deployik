@@ -76,7 +76,7 @@ export function CommandPalette({ compact = false }: { compact?: boolean }) {
         className={cn(
           compact
             ? "h-9 w-9 shrink-0"
-            : "h-9 w-64 shrink-0 justify-between gap-3 text-muted-foreground",
+            : "h-9 w-9 shrink-0 justify-center gap-3 px-0 text-muted-foreground md:w-64 md:justify-between md:px-3",
         )}
         onClick={() => setOpen(true)}
         aria-label="Open search"
@@ -90,11 +90,11 @@ export function CommandPalette({ compact = false }: { compact?: boolean }) {
           <>
             <span className="inline-flex min-w-0 items-center gap-2">
               <Search className="size-4" />
-              <span className="truncate">
+              <span className="hidden truncate md:inline">
                 Search projects, groups, actions…
               </span>
             </span>
-            <kbd className="hidden rounded-md border bg-muted px-1.5 py-0.5 font-mono text-[11px] text-muted-foreground sm:inline-flex">
+            <kbd className="hidden rounded-md border bg-muted px-1.5 py-0.5 font-mono text-[11px] text-muted-foreground md:inline-flex">
               ⌘K
             </kbd>
           </>

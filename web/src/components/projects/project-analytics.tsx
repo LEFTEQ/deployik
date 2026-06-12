@@ -67,7 +67,12 @@ export function ProjectAnalyticsTab({
     Intl.DateTimeFormat().resolvedOptions().timeZone?.trim() || "UTC";
 
   const { data, isLoading, error } = useQuery({
-    queryKey: queryKeys.projectAnalytics(projectId, environment, range, timezone),
+    queryKey: queryKeys.projectAnalytics(
+      projectId,
+      environment,
+      range,
+      timezone,
+    ),
     queryFn: () =>
       api.getProjectAnalytics(projectId, {
         environment,
@@ -160,7 +165,8 @@ export function ProjectAnalyticsTab({
   }, [data, audienceTab]);
 
   const audienceBreakdownFormatter = (item: AnalyticsBreakdownItem) => {
-    if (audienceTab === "Pages") return formatNumber(item.pageviews ?? item.value);
+    if (audienceTab === "Pages")
+      return formatNumber(item.pageviews ?? item.value);
     return formatNumber(item.visitors ?? item.value);
   };
 
@@ -183,7 +189,7 @@ export function ProjectAnalyticsTab({
           ))}
         </ToggleGroup>
 
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <ToggleGroup
             type="single"
             value={range}
@@ -267,10 +273,13 @@ export function ProjectAnalyticsTab({
                     Use the setup section below to install the tracking snippet.
                   </CardDescription>
                 </div>
-                <CardAction className="flex shrink-0 gap-2">
-                  <Button onClick={onSetupAnalytics}>Setup Analytics</Button>
+                <CardAction className="flex shrink-0 flex-col gap-2 md:flex-row">
+                  <Button className="h-11 md:h-9" onClick={onSetupAnalytics}>
+                    Setup Analytics
+                  </Button>
                   <Button
                     variant="outline"
+                    className="h-11 md:h-9"
                     onClick={() => verifyMutation.mutate()}
                     disabled={verifyMutation.isPending}
                   >
@@ -384,7 +393,9 @@ export function ProjectAnalyticsTab({
                           {AUDIENCE_BREAKDOWN_TABS.map((tab) => (
                             <Button
                               key={tab}
-                              variant={audienceTab === tab ? "secondary" : "ghost"}
+                              variant={
+                                audienceTab === tab ? "secondary" : "ghost"
+                              }
                               size="sm"
                               onClick={() => setAudienceTab(tab)}
                             >
@@ -415,9 +426,11 @@ export function ProjectAnalyticsTab({
                       Runtime
                       {data.runtime.available ? (
                         <span className="ml-3 text-xs font-normal text-muted-foreground">
-                          Bandwidth: {formatBytes(data.runtime.summary.bandwidth_bytes)}
+                          Bandwidth:{" "}
+                          {formatBytes(data.runtime.summary.bandwidth_bytes)}
                           {" \u00B7 "}
-                          P95: {formatDuration(data.runtime.summary.p95_latency_ms)}
+                          P95:{" "}
+                          {formatDuration(data.runtime.summary.p95_latency_ms)}
                         </span>
                       ) : null}
                     </span>

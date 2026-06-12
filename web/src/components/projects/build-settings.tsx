@@ -13,7 +13,12 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 
-export type FrameworkPreset = "nextjs" | "vite" | "astro" | "static" | "node-api";
+export type FrameworkPreset =
+  | "nextjs"
+  | "vite"
+  | "astro"
+  | "static"
+  | "node-api";
 export type PackageManagerPreset = "auto" | "bun" | "pnpm" | "npm" | "yarn";
 
 export interface BuildSettingsValues {
@@ -70,7 +75,8 @@ const FRAMEWORK_OPTIONS: FrameworkOption[] = [
   {
     value: "node-api",
     label: "Node API",
-    description: "NestJS / Express / Hono / Fastify on Node.js with a configurable start command.",
+    description:
+      "NestJS / Express / Hono / Fastify on Node.js with a configurable start command.",
   },
 ];
 
@@ -78,7 +84,8 @@ const PACKAGE_MANAGER_OPTIONS: PackageManagerOption[] = [
   {
     value: "auto",
     label: "Auto Detect",
-    description: "Keep current compatibility behavior and prefer repo lockfiles.",
+    description:
+      "Keep current compatibility behavior and prefer repo lockfiles.",
   },
   {
     value: "bun",
@@ -177,7 +184,8 @@ export function getFrameworkDefaults(
   packageManager?: string | null,
 ): BuildSettingsValues {
   const normalized = normalizeFrameworkPreset(framework);
-  const normalizedPackageManager = normalizePackageManagerPreset(packageManager);
+  const normalizedPackageManager =
+    normalizePackageManagerPreset(packageManager);
 
   return {
     framework: normalized,
@@ -205,7 +213,10 @@ export function syncBuildSettingsWithFramework(
     values.framework,
     values.packageManager,
   );
-  const nextDefaults = getFrameworkDefaults(nextFramework, values.packageManager);
+  const nextDefaults = getFrameworkDefaults(
+    nextFramework,
+    values.packageManager,
+  );
 
   return {
     ...values,
@@ -247,7 +258,8 @@ export function syncBuildSettingsWithFramework(
 function isKnownInstallDefault(command: string): boolean {
   const trimmed = command.trim();
   return PACKAGE_MANAGER_OPTIONS.some(
-    (option) => trimmed === defaultInstallCommandForPackageManager(option.value),
+    (option) =>
+      trimmed === defaultInstallCommandForPackageManager(option.value),
   );
 }
 
@@ -379,7 +391,7 @@ export function BuildSettingsFields({
               onChange(syncBuildSettingsWithFramework(value, nextFramework))
             }
           >
-            <SelectTrigger>
+            <SelectTrigger className="w-full md:w-fit">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -414,7 +426,7 @@ export function BuildSettingsFields({
               )
             }
           >
-            <SelectTrigger>
+            <SelectTrigger className="w-full md:w-fit">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -470,7 +482,7 @@ export function BuildSettingsFields({
             value={value.nodeVersion}
             onValueChange={(nodeVersion) => patch({ nodeVersion })}
           >
-            <SelectTrigger>
+            <SelectTrigger className="w-full md:w-fit">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -491,7 +503,10 @@ export function BuildSettingsFields({
             onChange={(event) => {
               const raw = event.target.value.trim();
               patch({
-                port: raw === "" ? DEFAULT_PROJECT_PORT : Number.parseInt(raw, 10) || DEFAULT_PROJECT_PORT,
+                port:
+                  raw === ""
+                    ? DEFAULT_PROJECT_PORT
+                    : Number.parseInt(raw, 10) || DEFAULT_PROJECT_PORT,
               });
             }}
             placeholder={String(DEFAULT_PROJECT_PORT)}
@@ -528,8 +543,9 @@ export function BuildSettingsFields({
               placeholder={defaults.healthPath}
             />
             <p className="text-xs text-muted-foreground">
-              Path the container's HEALTHCHECK probes. Common: <code>/health</code>,{" "}
-              <code>/healthz</code>, <code>/api/health</code>.
+              Path the container's HEALTHCHECK probes. Common:{" "}
+              <code>/health</code>, <code>/healthz</code>,{" "}
+              <code>/api/health</code>.
             </p>
           </div>
         ) : null}

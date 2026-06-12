@@ -21,7 +21,10 @@ import { toast } from "sonner";
 import { api } from "@/lib/api";
 import { queryKeys, staleTimes } from "@/lib/queryKeys";
 import { ENVIRONMENT_META, isDomainReady } from "@/lib/deployment-helpers";
-import { useDomainVerification, parseStream } from "@/hooks/useDomainVerification";
+import {
+  useDomainVerification,
+  parseStream,
+} from "@/hooks/useDomainVerification";
 import type { VerificationState } from "@/hooks/useDomainVerification";
 import { DnsSetupGuide } from "@/components/projects/dns-setup-guide";
 import { Badge } from "@/components/ui/badge";
@@ -90,15 +93,15 @@ function VerificationLogPanel({
             : "bg-red-500/5 text-red-400 hover:bg-red-500/10",
         )}
       >
-        <span className="flex items-center gap-1.5">
+        <span className="flex min-w-0 items-center gap-1.5">
           {state === "success" ? (
-            <CheckCircle2 className="h-3 w-3" />
+            <CheckCircle2 className="h-3 w-3 shrink-0" />
           ) : (
-            <X className="h-3 w-3" />
+            <X className="h-3 w-3 shrink-0" />
           )}
-          {summary}
+          <span className="truncate text-left">{summary}</span>
         </span>
-        <ChevronDown className="h-3 w-3 text-muted-foreground" />
+        <ChevronDown className="h-3 w-3 shrink-0 text-muted-foreground" />
       </button>
     );
   }
@@ -116,15 +119,15 @@ function VerificationLogPanel({
               : "bg-red-500/5 text-red-400 hover:bg-red-500/10",
           )}
         >
-          <span className="flex items-center gap-1.5">
+          <span className="flex min-w-0 items-center gap-1.5">
             {state === "success" ? (
-              <CheckCircle2 className="h-3 w-3" />
+              <CheckCircle2 className="h-3 w-3 shrink-0" />
             ) : (
-              <X className="h-3 w-3" />
+              <X className="h-3 w-3 shrink-0" />
             )}
-            {summary}
+            <span className="truncate text-left">{summary}</span>
           </span>
-          <ChevronUp className="h-3 w-3 text-muted-foreground" />
+          <ChevronUp className="h-3 w-3 shrink-0 text-muted-foreground" />
         </button>
       )}
       <div
@@ -170,11 +173,20 @@ export function ProjectSettingsDomains() {
   const [newDomainEnvironment, setNewDomainEnvironment] =
     useState<Domain["environment"]>("production");
 
-  const [verifyingDomainId, setVerifyingDomainId] = useState<string | null>(null);
-  const [expandedLogDomainId, setExpandedLogDomainId] = useState<string | null>(null);
+  const [verifyingDomainId, setVerifyingDomainId] = useState<string | null>(
+    null,
+  );
+  const [expandedLogDomainId, setExpandedLogDomainId] = useState<string | null>(
+    null,
+  );
   const [minimized, setMinimized] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<Domain | null>(null);
-  const { logs, state: verifyState, summary, clearLogs } = useDomainVerification(verifyingDomainId);
+  const {
+    logs,
+    state: verifyState,
+    summary,
+    clearLogs,
+  } = useDomainVerification(verifyingDomainId);
   const attemptedRef = useRef<Set<string>>(new Set());
 
   const { data: domains, isLoading } = useQuery({
@@ -269,7 +281,8 @@ export function ProjectSettingsDomains() {
 
   // Auto-fire verify for any pending custom domain on page load (once per session per domain).
   useEffect(() => {
-    if (!domains || verifyingDomainId !== null || verifyMutation.isPending) return;
+    if (!domains || verifyingDomainId !== null || verifyMutation.isPending)
+      return;
     const pending = domains.find(
       (d) => !d.is_auto && !isDomainReady(d) && !attemptedRef.current.has(d.id),
     );
@@ -278,8 +291,10 @@ export function ProjectSettingsDomains() {
     }
   }, [domains, verifyingDomainId, verifyMutation]);
 
-  const productionDomains = domains?.filter((d) => d.environment === "production") ?? [];
-  const previewDomains = domains?.filter((d) => d.environment === "preview") ?? [];
+  const productionDomains =
+    domains?.filter((d) => d.environment === "production") ?? [];
+  const previewDomains =
+    domains?.filter((d) => d.environment === "preview") ?? [];
 
   function handleCancel() {
     setShowAddForm(false);
@@ -289,17 +304,21 @@ export function ProjectSettingsDomains() {
 
   function renderDomainRow(domain: Domain) {
     const ready = isDomainReady(domain);
-    const isVerifying = verifyingDomainId === domain.id && (verifyState === "verifying" || verifyState === "connecting");
-    const showLogPanel = expandedLogDomainId === domain.id && verifyState !== "idle";
-    const allVerifyDisabled = verifyMutation.isPending || verifyingDomainId !== null;
+    const isVerifying =
+      verifyingDomainId === domain.id &&
+      (verifyState === "verifying" || verifyState === "connecting");
+    const showLogPanel =
+      expandedLogDomainId === domain.id && verifyState !== "idle";
+    const allVerifyDisabled =
+      verifyMutation.isPending || verifyingDomainId !== null;
     const canMove = !moveMutation.isPending && verifyingDomainId === null;
 
     return (
       <div key={domain.id}>
         <div className="flex flex-col gap-4 px-4 py-3 md:flex-row md:items-center md:justify-between">
-          <div className="space-y-2">
+          <div className="min-w-0 space-y-2">
             <div className="flex flex-wrap items-center gap-2">
-              <p className="text-sm font-medium">{domain.domain}</p>
+              <p className="break-all text-sm font-medium">{domain.domain}</p>
               <Badge
                 variant="outline"
                 className={ENVIRONMENT_META[domain.environment].badgeClass}
@@ -310,7 +329,10 @@ export function ProjectSettingsDomains() {
                 {domain.is_auto ? "Auto" : "Custom"}
               </Badge>
               {domain.is_primary ? (
-                <Badge variant="outline" className="border-amber-400/40 text-amber-200">
+                <Badge
+                  variant="outline"
+                  className="border-amber-400/40 text-amber-200"
+                >
                   <Star className="mr-1 h-3 w-3" />
                   Primary
                 </Badge>
@@ -340,7 +362,12 @@ export function ProjectSettingsDomains() {
 
           <div className="flex flex-wrap items-center gap-2">
             {ready ? (
-              <Button asChild size="sm" variant="outline">
+              <Button
+                asChild
+                size="sm"
+                variant="outline"
+                className="h-9 md:h-8"
+              >
                 <a
                   href={`https://${domain.domain}`}
                   target="_blank"
@@ -356,6 +383,7 @@ export function ProjectSettingsDomains() {
                 <Button
                   size="sm"
                   variant="outline"
+                  className="h-9 md:h-8"
                   onClick={() => verifyMutation.mutate(domain.id)}
                   disabled={allVerifyDisabled}
                 >
@@ -371,7 +399,7 @@ export function ProjectSettingsDomains() {
                     <Button
                       size="sm"
                       variant="outline"
-                      className="h-8 w-8 px-0"
+                      className="h-9 w-9 px-0 md:h-8 md:w-8"
                       aria-label={`Open actions for ${domain.domain}`}
                     >
                       <MoreHorizontal className="h-4 w-4" />
@@ -392,7 +420,9 @@ export function ProjectSettingsDomains() {
                     >
                       <RefreshCcw className="mr-2 h-4 w-4" />
                       Move to{" "}
-                      {domain.environment === "preview" ? "Production" : "Preview"}
+                      {domain.environment === "preview"
+                        ? "Production"
+                        : "Preview"}
                     </DropdownMenuItem>
                     <DropdownMenuItem
                       onSelect={() => verifyMutation.mutate(domain.id)}
@@ -497,7 +527,8 @@ export function ProjectSettingsDomains() {
                   className="flex-1"
                   autoFocus
                   onKeyDown={(e) => {
-                    if (e.key === "Enter" && newDomain.trim()) addMutation.mutate();
+                    if (e.key === "Enter" && newDomain.trim())
+                      addMutation.mutate();
                     if (e.key === "Escape") handleCancel();
                   }}
                 />
@@ -507,7 +538,7 @@ export function ProjectSettingsDomains() {
                     setNewDomainEnvironment(value as Domain["environment"])
                   }
                 >
-                  <SelectTrigger className="w-[160px]">
+                  <SelectTrigger className="w-full sm:w-[160px]">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
@@ -580,7 +611,9 @@ export function ProjectSettingsDomains() {
       >
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Delete {deleteTarget?.domain}?</AlertDialogTitle>
+            <AlertDialogTitle className="break-all">
+              Delete {deleteTarget?.domain}?
+            </AlertDialogTitle>
             <AlertDialogDescription>
               This removes the proxy config for the domain, so the live URL will
               stop responding. Existing certificate files are left in place and

@@ -1,5 +1,10 @@
 import { Suspense } from "react";
-import { Link, Outlet, useParams, useRouterState } from "@tanstack/react-router";
+import {
+  Link,
+  Outlet,
+  useParams,
+  useRouterState,
+} from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { FolderKanban } from "lucide-react";
 
@@ -7,6 +12,7 @@ import { api } from "@/lib/api";
 import { queryKeys } from "@/lib/queryKeys";
 import { AppSidebar } from "@/components/layout/AppSidebar";
 import { BreadcrumbProjectSwitcher } from "@/components/layout/BreadcrumbProjectSwitcher";
+import { MobileTabBar } from "@/components/layout/MobileTabBar";
 import { CommandPalette } from "@/components/layout/CommandPalette";
 import { ErrorBoundary } from "@/components/layout/ErrorBoundary";
 import { DeployMenu } from "@/components/projects/deploy-menu";
@@ -53,7 +59,8 @@ export function ProjectLayout() {
     currentPage = "Integrations";
   else if (pathname === `${base}/settings/domains`) currentPage = "Domains";
   else if (pathname === `${base}/settings/env`) currentPage = "Environments";
-  else if (pathname === `${base}/settings/protection`) currentPage = "Protection";
+  else if (pathname === `${base}/settings/protection`)
+    currentPage = "Protection";
   else if (pathname === `${base}/settings/resources`) currentPage = "Resources";
   else if (pathname === `${base}/settings`) currentPage = "Build Settings";
 
@@ -61,62 +68,64 @@ export function ProjectLayout() {
     <>
       <AppSidebar context="project" projectId={id} />
       <SidebarInset>
-        <header className="flex h-16 shrink-0 items-center gap-2 border-b px-4">
-          <SidebarTrigger className="-ml-1" />
-          <Separator orientation="vertical" className="mr-2 h-4" />
-          <Link to="/" className="hidden items-center gap-2 md:flex">
-            <FolderKanban className="size-4 text-primary" />
-            <span className="font-mono text-[13px] font-semibold tracking-[0.16em]">
-              /deployik
-            </span>
-          </Link>
-          <Separator orientation="vertical" className="mr-2 hidden h-4 md:block" />
-          <Breadcrumb>
-            <BreadcrumbList>
-              <BreadcrumbItem className="hidden md:block">
-                <BreadcrumbLink asChild>
-                  <Link to="/">{workspace?.name ?? "Group"}</Link>
-                </BreadcrumbLink>
-              </BreadcrumbItem>
-              <BreadcrumbSeparator className="hidden md:block" />
-              <BreadcrumbItem className="hidden md:block">
-                <BreadcrumbProjectSwitcher
-                  currentProjectId={id}
-                  currentProjectName={project?.name ?? "..."}
+        <header className="shrink-0 border-b px-4 pt-safe">
+          <div className="flex h-14 items-center gap-2 md:h-16">
+            <SidebarTrigger className="-ml-1" />
+            <Separator orientation="vertical" className="mr-2 h-4" />
+            <Link to="/" className="hidden items-center gap-2 md:flex">
+              <FolderKanban className="size-4 text-primary" />
+              <span className="font-mono text-[13px] font-semibold tracking-[0.16em]">
+                /deployik
+              </span>
+            </Link>
+            <Separator
+              orientation="vertical"
+              className="mr-2 hidden h-4 md:block"
+            />
+            <Breadcrumb>
+              <BreadcrumbList>
+                <BreadcrumbItem className="hidden md:block">
+                  <BreadcrumbLink asChild>
+                    <Link to="/">{workspace?.name ?? "Group"}</Link>
+                  </BreadcrumbLink>
+                </BreadcrumbItem>
+                <BreadcrumbSeparator className="hidden md:block" />
+                <BreadcrumbItem className="hidden md:block">
+                  <BreadcrumbProjectSwitcher
+                    currentProjectId={id}
+                    currentProjectName={project?.name ?? "..."}
+                  />
+                </BreadcrumbItem>
+                <BreadcrumbSeparator className="hidden md:block" />
+                <BreadcrumbItem>
+                  <BreadcrumbPage>{currentPage}</BreadcrumbPage>
+                </BreadcrumbItem>
+              </BreadcrumbList>
+            </Breadcrumb>
+            <div className="ml-auto flex items-center gap-2">
+              {project ? (
+                <DeployMenu
+                  projectId={id}
+                  productionBranch={project.branch}
+                  defaultBranch={project.branch}
                 />
-              </BreadcrumbItem>
-              <BreadcrumbSeparator className="hidden md:block" />
-              <BreadcrumbItem>
-                <BreadcrumbPage>{currentPage}</BreadcrumbPage>
-              </BreadcrumbItem>
-            </BreadcrumbList>
-          </Breadcrumb>
-          <div className="ml-auto flex items-center gap-2">
-            {project ? (
-              <DeployMenu
-                projectId={id}
-                productionBranch={project.branch}
-                defaultBranch={project.branch}
-              />
-            ) : null}
-            <CommandPalette />
-            <Avatar className="h-7 w-7 rounded-lg">
-              <AvatarImage src={user?.avatar_url} alt={user?.username} />
-              <AvatarFallback className="rounded-lg text-xs">
-                {user?.username?.[0]?.toUpperCase() ?? "D"}
-              </AvatarFallback>
-            </Avatar>
+              ) : null}
+              <CommandPalette />
+              <Avatar className="h-7 w-7 rounded-lg">
+                <AvatarImage src={user?.avatar_url} alt={user?.username} />
+                <AvatarFallback className="rounded-lg text-xs">
+                  {user?.username?.[0]?.toUpperCase() ?? "D"}
+                </AvatarFallback>
+              </Avatar>
+            </div>
           </div>
         </header>
-        <div className="flex min-w-0 flex-1 flex-col gap-4 p-4">
+        <div className="flex min-w-0 flex-1 flex-col gap-4 p-4 pb-safe-tabbar md:pb-4">
           <div className="mx-auto w-full max-w-[1400px]">
             <ErrorBoundary scope="project">
               <Suspense
                 fallback={
-                  <LoadingState
-                    title="Loading…"
-                    className="min-h-[320px]"
-                  />
+                  <LoadingState title="Loading…" className="min-h-[320px]" />
                 }
               >
                 <Outlet />
@@ -124,6 +133,7 @@ export function ProjectLayout() {
             </ErrorBoundary>
           </div>
         </div>
+        <MobileTabBar context="project" projectId={id} />
       </SidebarInset>
     </>
   );

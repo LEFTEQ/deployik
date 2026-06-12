@@ -76,7 +76,7 @@ export function ReleasePanelContent({
             {prodDomains.map((domain) => (
               <div
                 key={domain.id}
-                className="rounded-md border border-white/5 px-3 py-2 font-mono text-sm text-foreground"
+                className="truncate rounded-md border border-white/5 px-3 py-2 font-mono text-sm text-foreground"
               >
                 {domain.domain}
               </div>

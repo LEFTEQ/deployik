@@ -55,9 +55,7 @@ export function AnalyticsStatCard({
         ) : null}
       </CardHeader>
       <CardFooter className="flex-col items-start gap-1.5 text-sm">
-        {subtitle ? (
-          <p className="text-muted-foreground">{subtitle}</p>
-        ) : null}
+        {subtitle ? <p className="text-muted-foreground">{subtitle}</p> : null}
         {hint ? (
           <p className="line-clamp-2 text-muted-foreground">{hint}</p>
         ) : null}

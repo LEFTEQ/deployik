@@ -24,10 +24,12 @@ import {
   formatRelativeDate,
   getEnvironmentDomains,
   getLatestEnvironmentDeployment,
+  getPrimaryEnvironmentUrl,
   isDomainReady,
 } from "@/lib/deployment-helpers";
 import { formatFrameworkLabel } from "@/components/projects/build-settings";
 import { DeployMenu } from "@/components/projects/deploy-menu";
+import { DeploymentCard } from "@/components/projects/deployment-card";
 import { DeploymentThumbnail } from "@/components/projects/deployment-thumbnail";
 import { EditableProjectName } from "@/components/projects/editable-project-name";
 import { Badge } from "@/components/ui/badge";
@@ -151,9 +153,11 @@ export function ProjectOverview() {
             target="_blank"
             rel="noopener noreferrer"
             aria-label={`Open ${project.github_owner}/${project.github_repo} on GitHub`}
-            className="inline-flex min-w-0 items-center gap-1 truncate transition-colors hover:text-foreground hover:underline"
+            className="inline-flex min-w-0 items-center gap-1 transition-colors hover:text-foreground hover:underline"
           >
-            {project.github_owner}/{project.github_repo}
+            <span className="truncate">
+              {project.github_owner}/{project.github_repo}
+            </span>
             <ExternalLink className="h-3 w-3 shrink-0" />
           </a>
           <span className="flex items-center gap-1">
@@ -183,10 +187,10 @@ export function ProjectOverview() {
               href={`https://${d.domain}`}
               target="_blank"
               rel="noopener noreferrer"
-              className="inline-flex items-center gap-1 rounded-md border bg-background px-2 py-1 text-sm text-foreground transition-colors hover:bg-accent"
+              className="inline-flex min-w-0 max-w-full items-center gap-1 rounded-md border bg-background px-2 py-1 text-sm text-foreground transition-colors hover:bg-accent"
             >
-              {d.domain}
-              <ExternalLink className="h-3 w-3 text-muted-foreground" />
+              <span className="truncate">{d.domain}</span>
+              <ExternalLink className="h-3 w-3 shrink-0 text-muted-foreground" />
             </a>
           ))}
           {extraDomainCount > 0 && (
@@ -235,7 +239,9 @@ export function ProjectOverview() {
             projectId={id}
             githubOwner={project.github_owner}
             githubRepo={project.github_repo}
-            envDomainCount={getEnvironmentDomains(allDomains, "production").length}
+            envDomainCount={
+              getEnvironmentDomains(allDomains, "production").length
+            }
             onNavigate={navigate}
           />
         </div>
@@ -268,67 +274,95 @@ export function ProjectOverview() {
             started.
           </div>
         ) : (
-          <div className="divide-y divide-border rounded-lg border">
-            {recentDeployments.map((d) => {
-              const meta = DEPLOYMENT_STATUS_META[d.status];
-              const envMeta = ENVIRONMENT_META[d.environment];
-              const goToDeployment = () =>
-                navigate({
-                  to: "/projects/$id/deployments/$did",
-                  params: { id, did: d.id },
-                });
-              return (
-                <div
-                  key={d.id}
-                  role="button"
-                  tabIndex={0}
-                  className="flex w-full cursor-pointer items-center gap-3 px-4 py-2.5 text-left transition-colors first:rounded-t-lg last:rounded-b-lg hover:bg-accent"
-                  onClick={goToDeployment}
-                  onKeyDown={(event) => {
-                    if (event.key === "Enter" || event.key === " ") {
-                      event.preventDefault();
-                      goToDeployment();
+          <>
+            {/* Phones get tappable cards; the row layout needs more width than 390px. */}
+            <div className="space-y-3 md:hidden">
+              {recentDeployments.map((d) => {
+                const liveUrl =
+                  d.status === "live"
+                    ? getPrimaryEnvironmentUrl(
+                        allDomains,
+                        d.environment,
+                        d.preview_instance_id,
+                      )
+                    : null;
+                return (
+                  <DeploymentCard
+                    key={d.id}
+                    deployment={d}
+                    liveUrl={liveUrl}
+                    onOpen={() =>
+                      navigate({
+                        to: "/projects/$id/deployments/$did",
+                        params: { id, did: d.id },
+                      })
                     }
-                  }}
-                >
-                  <span
-                    className={cn(
-                      "h-2 w-2 shrink-0 rounded-full",
-                      meta?.dotClass ?? "bg-slate-500",
-                    )}
                   />
-                  <GitCommit className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-                  <span className="font-mono text-xs text-foreground">
-                    {d.commit_sha ? (
-                      <CommitLink
-                        owner={project.github_owner}
-                        repo={project.github_repo}
-                        sha={d.commit_sha}
-                      />
-                    ) : (
-                      d.id.slice(0, 7)
-                    )}
-                  </span>
-                  <span className="min-w-0 flex-1 truncate text-sm text-muted-foreground">
-                    {d.commit_message || meta?.label || d.status}
-                  </span>
-                  <Badge
-                    variant="outline"
-                    className={cn("shrink-0 text-xs", envMeta?.badgeClass)}
+                );
+              })}
+            </div>
+            <div className="hidden divide-y divide-border rounded-lg border md:block">
+              {recentDeployments.map((d) => {
+                const meta = DEPLOYMENT_STATUS_META[d.status];
+                const envMeta = ENVIRONMENT_META[d.environment];
+                const goToDeployment = () =>
+                  navigate({
+                    to: "/projects/$id/deployments/$did",
+                    params: { id, did: d.id },
+                  });
+                return (
+                  <div
+                    key={d.id}
+                    role="button"
+                    tabIndex={0}
+                    className="flex w-full cursor-pointer items-center gap-3 px-4 py-2.5 text-left transition-colors first:rounded-t-lg last:rounded-b-lg hover:bg-accent"
+                    onClick={goToDeployment}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter" || event.key === " ") {
+                        event.preventDefault();
+                        goToDeployment();
+                      }
+                    }}
                   >
-                    {envMeta?.label ?? d.environment}
-                  </Badge>
-                  <span className="shrink-0 text-xs text-muted-foreground">
-                    {formatRelativeDate(d.created_at)}
-                  </span>
-                </div>
-              );
-            })}
-          </div>
-	        )}
-	      </div>
-	    </div>
-	  );
+                    <span
+                      className={cn(
+                        "h-2 w-2 shrink-0 rounded-full",
+                        meta?.dotClass ?? "bg-slate-500",
+                      )}
+                    />
+                    <GitCommit className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                    <span className="font-mono text-xs text-foreground">
+                      {d.commit_sha ? (
+                        <CommitLink
+                          owner={project.github_owner}
+                          repo={project.github_repo}
+                          sha={d.commit_sha}
+                        />
+                      ) : (
+                        d.id.slice(0, 7)
+                      )}
+                    </span>
+                    <span className="min-w-0 flex-1 truncate text-sm text-muted-foreground">
+                      {d.commit_message || meta?.label || d.status}
+                    </span>
+                    <Badge
+                      variant="outline"
+                      className={cn("shrink-0 text-xs", envMeta?.badgeClass)}
+                    >
+                      {envMeta?.label ?? d.environment}
+                    </Badge>
+                    <span className="shrink-0 text-xs text-muted-foreground">
+                      {formatRelativeDate(d.created_at)}
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  );
 }
 
 function PreviewInstancesPanel({
@@ -343,7 +377,9 @@ function PreviewInstancesPanel({
   instances: PreviewInstance[];
 }) {
   const queryClient = useQueryClient();
-  const [deleteTarget, setDeleteTarget] = useState<PreviewInstance | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<PreviewInstance | null>(
+    null,
+  );
   const [deleteVolume, setDeleteVolume] = useState(false);
 
   const closeDeleteDialog = () => {
@@ -363,7 +399,9 @@ function PreviewInstancesPanel({
       queryClient.invalidateQueries({
         queryKey: queryKeys.previewInstances(projectId),
       });
-      queryClient.invalidateQueries({ queryKey: queryKeys.deployments(projectId) });
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.deployments(projectId),
+      });
       queryClient.invalidateQueries({ queryKey: queryKeys.domains(projectId) });
       closeDeleteDialog();
       toast.success(
@@ -399,7 +437,7 @@ function PreviewInstancesPanel({
               <GitBranch className="h-4 w-4 shrink-0 text-muted-foreground" />
               <div className="min-w-[180px] flex-1">
                 <div className="flex flex-wrap items-center gap-2">
-                  <span className="font-mono text-sm text-foreground">
+                  <span className="min-w-0 max-w-full truncate font-mono text-sm text-foreground">
                     <BranchLink
                       owner={githubOwner}
                       repo={githubRepo}
@@ -460,8 +498,8 @@ function PreviewInstancesPanel({
           <AlertDialogHeader>
             <AlertDialogTitle>Delete branch preview?</AlertDialogTitle>
             <AlertDialogDescription>
-              This stops the preview container and removes its automatic
-              preview domain. Deployment history remains available.
+              This stops the preview container and removes its automatic preview
+              domain. Deployment history remains available.
             </AlertDialogDescription>
           </AlertDialogHeader>
           {deleteTarget?.volume_exists ? (
@@ -550,7 +588,11 @@ function EnvironmentRow({
   const hasScreenshot = Boolean(deployment?.screenshot_path);
   const isLive = deployment?.status === "live";
   const eligibleForCapture =
-    !!deployment && !isOptimistic && isLive && !hasScreenshot && envDomainCount > 0;
+    !!deployment &&
+    !isOptimistic &&
+    isLive &&
+    !hasScreenshot &&
+    envDomainCount > 0;
 
   const [isCapturing, setIsCapturing] = useState(false);
   const pollTimerRef = useRef<number | null>(null);
@@ -644,10 +686,14 @@ function EnvironmentRow({
     ? async () => {
         setIsRefreshing(true);
         try {
-          const result = await api.captureProjectScreenshot(projectId, environment, {
-            sync: true,
-            force: true,
-          });
+          const result = await api.captureProjectScreenshot(
+            projectId,
+            environment,
+            {
+              sync: true,
+              force: true,
+            },
+          );
           if (result.status === "ready") {
             queryClient.invalidateQueries({
               queryKey: queryKeys.deployments(projectId),
@@ -684,32 +730,33 @@ function EnvironmentRow({
           : undefined
       }
       className={cn(
-        "flex w-full items-center gap-4 px-4 py-3 text-left transition-colors first:rounded-t-lg last:rounded-b-lg",
+        "flex w-full flex-col gap-3 px-4 py-3 text-left transition-colors first:rounded-t-lg last:rounded-b-lg md:flex-row md:items-center md:gap-4",
         isInteractive && "hover:bg-accent cursor-pointer",
         !isInteractive && "cursor-default",
         isProduction && "border-l-2 border-l-amber-500/50",
       )}
     >
-      <DeploymentThumbnail
-        deploymentId={deployment?.id ?? null}
-        hasScreenshot={hasScreenshot}
-        isCapturing={isCapturing}
-        alt={`${envMeta.label} homepage preview`}
-        size="sm"
-        className="shrink-0"
-        onRefresh={handleRefresh}
-        refreshing={isRefreshing}
-      />
+      {/* Phone: thumbnail + badges row; md+: contents flattens back into the single row */}
+      <div className="flex items-center gap-3 md:contents">
+        <DeploymentThumbnail
+          deploymentId={deployment?.id ?? null}
+          hasScreenshot={hasScreenshot}
+          isCapturing={isCapturing}
+          alt={`${envMeta.label} homepage preview`}
+          size="sm"
+          className="shrink-0"
+          onRefresh={handleRefresh}
+          refreshing={isRefreshing}
+        />
 
-      <Badge
-        variant="outline"
-        className={cn("shrink-0 text-xs", envMeta.badgeClass)}
-      >
-        {envMeta.label}
-      </Badge>
+        <Badge
+          variant="outline"
+          className={cn("shrink-0 text-xs", envMeta.badgeClass)}
+        >
+          {envMeta.label}
+        </Badge>
 
-      {deployment ? (
-        <>
+        {deployment ? (
           <span className="flex shrink-0 items-center gap-1.5">
             <span
               className={cn(
@@ -722,47 +769,57 @@ function EnvironmentRow({
               {statusMeta?.label ?? deployment.status}
             </span>
           </span>
+        ) : null}
+      </div>
 
-          <span className="flex shrink-0 items-center gap-1.5 text-muted-foreground">
-            <GitCommit className="h-3.5 w-3.5" />
-            <span className="font-mono text-xs">
-              {deployment.commit_sha ? (
-                <CommitLink
-                  owner={githubOwner}
-                  repo={githubRepo}
-                  sha={deployment.commit_sha}
-                />
-              ) : (
-                "pending"
-              )}
+      {deployment ? (
+        <>
+          {/* Phone: commit row */}
+          <div className="flex min-w-0 items-center gap-2 md:contents">
+            <span className="flex shrink-0 items-center gap-1.5 text-muted-foreground">
+              <GitCommit className="h-3.5 w-3.5" />
+              <span className="font-mono text-xs">
+                {deployment.commit_sha ? (
+                  <CommitLink
+                    owner={githubOwner}
+                    repo={githubRepo}
+                    sha={deployment.commit_sha}
+                  />
+                ) : (
+                  "pending"
+                )}
+              </span>
             </span>
-          </span>
 
-          <span className="min-w-0 flex-1 truncate text-sm text-muted-foreground">
-            {deployment.commit_message ||
-              deployment.error_message ||
-              "Waiting for commit metadata"}
-          </span>
-
-          <span className="hidden shrink-0 items-center gap-1 text-xs text-muted-foreground sm:flex">
-            <GitBranch className="h-3.5 w-3.5" />
-            <BranchLink
-              owner={githubOwner}
-              repo={githubRepo}
-              branch={deployment.branch}
-            />
-          </span>
-
-          {deployment.build_duration > 0 && (
-            <span className="hidden shrink-0 items-center gap-1 text-xs text-muted-foreground md:flex">
-              <Clock className="h-3.5 w-3.5" />
-              {deployment.build_duration}s
+            <span className="min-w-0 flex-1 truncate text-sm text-muted-foreground">
+              {deployment.commit_message ||
+                deployment.error_message ||
+                "Waiting for commit metadata"}
             </span>
-          )}
+          </div>
 
-          <span className="shrink-0 text-xs text-muted-foreground">
-            {formatRelativeDate(deployment.created_at)}
-          </span>
+          {/* Phone: meta row */}
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 md:contents">
+            <span className="hidden shrink-0 items-center gap-1 text-xs text-muted-foreground sm:flex">
+              <GitBranch className="h-3.5 w-3.5" />
+              <BranchLink
+                owner={githubOwner}
+                repo={githubRepo}
+                branch={deployment.branch}
+              />
+            </span>
+
+            {deployment.build_duration > 0 && (
+              <span className="hidden shrink-0 items-center gap-1 text-xs text-muted-foreground md:flex">
+                <Clock className="h-3.5 w-3.5" />
+                {deployment.build_duration}s
+              </span>
+            )}
+
+            <span className="shrink-0 text-xs text-muted-foreground">
+              {formatRelativeDate(deployment.created_at)}
+            </span>
+          </div>
         </>
       ) : (
         <span className="flex-1 text-sm text-muted-foreground">

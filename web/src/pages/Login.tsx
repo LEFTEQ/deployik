@@ -32,7 +32,7 @@ export function Login() {
   };
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-background">
+    <div className="flex min-h-dvh items-center justify-center bg-background">
       <div className="mx-auto flex w-full max-w-sm flex-col items-center gap-6 px-4">
         <div className="text-center">
           <h1 className="text-3xl font-bold tracking-tight">Deployik</h1>
@@ -43,7 +43,7 @@ export function Login() {
 
         <button
           onClick={handleGithubLogin}
-          className="inline-flex w-full items-center justify-center gap-2 rounded-md bg-primary px-4 py-2.5 text-sm font-medium text-primary-foreground shadow-sm transition-colors hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          className="inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-md bg-primary px-4 py-2.5 text-sm font-medium text-primary-foreground shadow-sm transition-colors hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring md:min-h-0"
         >
           <GitBranch className="h-5 w-5" />
           Sign in with GitHub
@@ -53,7 +53,7 @@ export function Login() {
           <button
             onClick={handleDevLogin}
             disabled={devLoading}
-            className="inline-flex w-full items-center justify-center gap-2 rounded-md border border-white/10 bg-white/5 px-4 py-2.5 text-sm font-medium text-foreground transition-colors hover:bg-white/10 disabled:opacity-50"
+            className="inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-md border border-white/10 bg-white/5 px-4 py-2.5 text-sm font-medium text-foreground transition-colors hover:bg-white/10 disabled:opacity-50 md:min-h-0"
           >
             {devLoading ? "Signing in..." : "Dev Login (no GitHub)"}
           </button>

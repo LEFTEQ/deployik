@@ -80,7 +80,8 @@ function ProjectTableRow({ project }: { project: Project }) {
     environmentMeta || statusMeta || deployedAt,
   );
 
-  const open = () => navigate({ to: "/projects/$id", params: { id: project.id } });
+  const open = () =>
+    navigate({ to: "/projects/$id", params: { id: project.id } });
 
   return (
     <TableRow
@@ -164,7 +165,79 @@ function ProjectTableRow({ project }: { project: Project }) {
   );
 }
 
-function invalidateGroupQueries(queryClient: ReturnType<typeof useQueryClient>) {
+function ProjectCard({ project }: { project: Project }) {
+  const navigate = useNavigate();
+  const status = project.latest_deployment_status as DeploymentStatus | null;
+  const statusMeta =
+    status && status in DEPLOYMENT_STATUS_META
+      ? DEPLOYMENT_STATUS_META[status]
+      : null;
+  const environment = project.latest_deployment_environment as
+    | keyof typeof ENVIRONMENT_META
+    | null;
+  const environmentMeta = environment ? ENVIRONMENT_META[environment] : null;
+  const deployedAt = project.latest_deployment_created_at;
+
+  const open = () =>
+    navigate({ to: "/projects/$id", params: { id: project.id } });
+
+  return (
+    <div
+      role="link"
+      tabIndex={0}
+      onClick={open}
+      onKeyDown={(event) => {
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          open();
+        }
+      }}
+      className="cursor-pointer rounded-lg border border-white/8 bg-card p-4 transition-colors active:bg-white/[0.06]"
+    >
+      <div className="flex items-center gap-2">
+        <span
+          className={cn(
+            "h-2 w-2 shrink-0 rounded-full",
+            project.status === "active" ? "bg-emerald-400" : "bg-slate-500",
+          )}
+        />
+        <span className="min-w-0 flex-1 truncate text-sm font-semibold text-foreground">
+          {project.name}
+        </span>
+        <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" />
+      </div>
+      <p className="mt-2 truncate font-mono text-xs text-muted-foreground">
+        {project.github_owner}/{project.github_repo} · {project.branch}
+      </p>
+      <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1.5">
+        {environmentMeta ? (
+          <Badge variant="outline" className={environmentMeta.badgeClass}>
+            {environmentMeta.label}
+          </Badge>
+        ) : null}
+        {statusMeta ? (
+          <Badge variant="outline" className={statusMeta.badgeClass}>
+            {statusMeta.label}
+          </Badge>
+        ) : null}
+        {deployedAt ? (
+          <span
+            className="text-xs text-muted-foreground"
+            title={formatDateTime(deployedAt)}
+          >
+            {formatRelativeDate(deployedAt)}
+          </span>
+        ) : (
+          <span className="text-xs text-muted-foreground">—</span>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function invalidateGroupQueries(
+  queryClient: ReturnType<typeof useQueryClient>,
+) {
   queryClient.invalidateQueries({ queryKey: queryKeys.groups() });
   queryClient.invalidateQueries({ queryKey: queryKeys.organizations() });
   queryClient.invalidateQueries({ queryKey: ["projects"] });
@@ -218,7 +291,8 @@ function ProjectSelectionList({
         {filteredProjects.length ? (
           filteredProjects.map((project) => {
             const alreadyInGroup = alreadyInGroupIds?.has(project.id) ?? false;
-            const checked = selectedProjectIds.has(project.id) || alreadyInGroup;
+            const checked =
+              selectedProjectIds.has(project.id) || alreadyInGroup;
             return (
               <label
                 key={project.id}
@@ -240,7 +314,8 @@ function ProjectSelectionList({
                     {project.name}
                   </span>
                   <span className="block truncate font-mono text-xs text-muted-foreground">
-                    {project.github_owner}/{project.github_repo} · {project.branch}
+                    {project.github_owner}/{project.github_repo} ·{" "}
+                    {project.branch}
                   </span>
                 </span>
                 {alreadyInGroup ? (
@@ -303,7 +378,10 @@ function MembersTab({
           placeholder="GitHub username"
           aria-label="GitHub username"
         />
-        <Select value={role} onValueChange={(value) => setRole(value as GroupRole)}>
+        <Select
+          value={role}
+          onValueChange={(value) => setRole(value as GroupRole)}
+        >
           <SelectTrigger>
             <SelectValue />
           </SelectTrigger>
@@ -327,8 +405,7 @@ function MembersTab({
       ) : (
         <div className="rounded-md border">
           {members.map((member) => {
-            const isLastOwner =
-              member.role === "owner" && ownerCount <= 1;
+            const isLastOwner = member.role === "owner" && ownerCount <= 1;
             return (
               <div
                 key={member.user_id}
@@ -437,7 +514,7 @@ function GroupDialog({
 
   useEffect(() => {
     if (!open) return;
-    setName(mode === "edit" ? group?.name ?? "" : "");
+    setName(mode === "edit" ? (group?.name ?? "") : "");
     setProjectSearch("");
     setSelectedProjectIds(new Set());
   }, [group?.id, group?.name, mode, open]);
@@ -538,7 +615,8 @@ function GroupDialog({
   });
 
   const cancelInviteMutation = useMutation({
-    mutationFn: (invite: GroupInvite) => api.cancelGroupInvite(group!.id, invite.id),
+    mutationFn: (invite: GroupInvite) =>
+      api.cancelGroupInvite(group!.id, invite.id),
     onSuccess: () => {
       queryClient.invalidateQueries({
         queryKey: queryKeys.groupInvites(group!.id),
@@ -550,7 +628,9 @@ function GroupDialog({
 
   const updateMemberMutation = useMutation({
     mutationFn: (input: { member: GroupMember; role: GroupRole }) =>
-      api.updateGroupMember(group!.id, input.member.user_id, { role: input.role }),
+      api.updateGroupMember(group!.id, input.member.user_id, {
+        role: input.role,
+      }),
     onSuccess: () => {
       queryClient.invalidateQueries({
         queryKey: queryKeys.groupMembers(group!.id),
@@ -595,9 +675,11 @@ function GroupDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-3xl">
+      <DialogContent className="max-h-[85dvh] overflow-y-auto sm:max-w-3xl md:max-h-[90vh]">
         <DialogHeader>
-          <DialogTitle>{mode === "create" ? "New group" : "Manage group"}</DialogTitle>
+          <DialogTitle>
+            {mode === "create" ? "New group" : "Manage group"}
+          </DialogTitle>
           <DialogDescription>
             {mode === "create"
               ? "Create a group and move selected projects into it."
@@ -653,11 +735,15 @@ function GroupDialog({
                   onRoleChange={(member, role) =>
                     updateMemberMutation.mutate({ member, role })
                   }
-                  onRemoveMember={(member) => removeMemberMutation.mutate(member)}
+                  onRemoveMember={(member) =>
+                    removeMemberMutation.mutate(member)
+                  }
                   onCreateInvite={(username, role) =>
                     createInviteMutation.mutate({ username, role })
                   }
-                  onCancelInvite={(invite) => cancelInviteMutation.mutate(invite)}
+                  onCancelInvite={(invite) =>
+                    cancelInviteMutation.mutate(invite)
+                  }
                   isMutating={isMemberMutating}
                 />
               ) : null}
@@ -666,14 +752,17 @@ function GroupDialog({
               <div className="rounded-md border border-destructive/30 p-4">
                 <div className="font-medium text-destructive">Delete group</div>
                 <p className="mt-1 text-sm text-muted-foreground">
-                  Projects in this group will move to your default personal group.
+                  Projects in this group will move to your default personal
+                  group.
                 </p>
                 <Button
                   type="button"
                   variant="destructive"
                   className="mt-4"
                   onClick={() => deleteMutation.mutate()}
-                  disabled={!group || group.is_default || deleteMutation.isPending}
+                  disabled={
+                    !group || group.is_default || deleteMutation.isPending
+                  }
                 >
                   <Trash2 className="h-4 w-4" />
                   Delete group
@@ -691,7 +780,11 @@ function GroupDialog({
           >
             Cancel
           </Button>
-          <Button type="button" onClick={submit} disabled={!name.trim() || isSaving}>
+          <Button
+            type="button"
+            onClick={submit}
+            disabled={!name.trim() || isSaving}
+          >
             {isSaving
               ? "Saving..."
               : mode === "create"
@@ -723,14 +816,15 @@ export function Projects() {
   const activeGroup =
     activeView === "all"
       ? null
-      : groups.find((group) => group.id === activeView) ?? selectedGroup;
+      : (groups.find((group) => group.id === activeView) ?? selectedGroup);
 
   const [search, setSearch] = useState("");
   const trimmedSearch = search.trim();
 
   const { data: projects, isLoading } = useQuery({
     queryKey: queryKeys.projects(activeView),
-    queryFn: () => api.listProjects(activeView === "all" ? undefined : activeView),
+    queryFn: () =>
+      api.listProjects(activeView === "all" ? undefined : activeView),
     enabled: !groupsLoading,
   });
 
@@ -769,14 +863,14 @@ export function Projects() {
       : `${activeGroup?.name ?? "Group"} group`;
 
   return (
-    <div className="p-6">
+    <div className="p-0 md:p-6">
       <div className="mb-6 flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
         <div>
           <h1 className="text-2xl font-bold tracking-tight">Projects</h1>
           <p className="text-sm text-muted-foreground">{subtitle}</p>
         </div>
         <Link to="/new">
-          <Button>
+          <Button className="h-11 w-full md:h-9 md:w-auto">
             <Plus className="mr-2 h-4 w-4" />
             New Project
           </Button>
@@ -787,7 +881,10 @@ export function Projects() {
         <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex min-w-0 items-center gap-2">
             <div className="min-w-0 overflow-x-auto pb-2">
-              <Tabs value={activeView} onValueChange={(value) => setGroupsView(value)}>
+              <Tabs
+                value={activeView}
+                onValueChange={(value) => setGroupsView(value)}
+              >
                 <TabsList variant="line" className="min-w-max">
                   <TabsTrigger value="all">All</TabsTrigger>
                   {groups.map((group) => (
@@ -869,7 +966,7 @@ export function Projects() {
               : `Create a project in ${activeGroup?.name ?? "this group"} to get started.`}
           </p>
           <Link to="/new" className="mt-4">
-            <Button>
+            <Button className="h-11 md:h-9">
               <Plus className="mr-2 h-4 w-4" />
               New Project
             </Button>
@@ -879,8 +976,12 @@ export function Projects() {
         <div className="flex flex-col items-center justify-center rounded-lg border border-dashed border-white/10 py-16">
           <p className="text-lg font-medium">No projects match your search</p>
           <p className="mt-1 text-sm text-muted-foreground">
-            Nothing in {activeView === "all" ? "any group" : activeGroup?.name ?? "this group"} matched
-            <span className="mx-1 font-mono">“{trimmedSearch}”</span>.
+            Nothing in{" "}
+            {activeView === "all"
+              ? "any group"
+              : (activeGroup?.name ?? "this group")}{" "}
+            matched
+            <span className="mx-1 break-all font-mono">“{trimmedSearch}”</span>.
           </p>
           <Button
             variant="outline"
@@ -892,26 +993,34 @@ export function Projects() {
           </Button>
         </div>
       ) : (
-        <Card className="overflow-hidden">
-          <CardContent className="p-0">
-            <Table>
-              <TableHeader>
-                <TableRow className="border-white/8 hover:bg-transparent">
-                  <TableHead className="pl-6">Project</TableHead>
-                  <TableHead>Repository</TableHead>
-                  <TableHead>Last Deploy</TableHead>
-                  <TableHead>Updated</TableHead>
-                  <TableHead className="w-10 pr-6" />
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {filteredProjects.map((project) => (
-                  <ProjectTableRow key={project.id} project={project} />
-                ))}
-              </TableBody>
-            </Table>
-          </CardContent>
-        </Card>
+        <>
+          {/* Phones get tappable cards; the table needs more width than 390px. */}
+          <div className="space-y-3 md:hidden">
+            {filteredProjects.map((project) => (
+              <ProjectCard key={project.id} project={project} />
+            ))}
+          </div>
+          <Card className="hidden overflow-hidden md:block">
+            <CardContent className="p-0">
+              <Table>
+                <TableHeader>
+                  <TableRow className="border-white/8 hover:bg-transparent">
+                    <TableHead className="pl-6">Project</TableHead>
+                    <TableHead>Repository</TableHead>
+                    <TableHead>Last Deploy</TableHead>
+                    <TableHead>Updated</TableHead>
+                    <TableHead className="w-10 pr-6" />
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {filteredProjects.map((project) => (
+                    <ProjectTableRow key={project.id} project={project} />
+                  ))}
+                </TableBody>
+              </Table>
+            </CardContent>
+          </Card>
+        </>
       )}
 
       <GroupDialog
