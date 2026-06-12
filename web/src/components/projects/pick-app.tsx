@@ -55,7 +55,7 @@ export function PickApp({
   })();
 
   return (
-    <div className="mx-auto max-w-2xl p-6">
+    <div className="mx-auto max-w-2xl p-6 pb-[calc(1.5rem+env(safe-area-inset-bottom))]">
       {/* Back button */}
       <button
         onClick={onBack}
@@ -78,14 +78,19 @@ export function PickApp({
 
         {/* Tooling + package manager badges */}
         <div className="flex flex-wrap items-center gap-1.5 pt-1">
-          {inspection.package_manager && inspection.package_manager !== "auto" && (
-            <Badge variant="outline" className="gap-1 px-2 py-0.5 text-xs">
-              <Layers className="h-3 w-3" />
-              {inspection.package_manager}
-            </Badge>
-          )}
+          {inspection.package_manager &&
+            inspection.package_manager !== "auto" && (
+              <Badge variant="outline" className="gap-1 px-2 py-0.5 text-xs">
+                <Layers className="h-3 w-3" />
+                {inspection.package_manager}
+              </Badge>
+            )}
           {inspection.tooling.map((t) => (
-            <Badge key={t} variant="secondary" className="gap-1 px-2 py-0.5 text-xs">
+            <Badge
+              key={t}
+              variant="secondary"
+              className="gap-1 px-2 py-0.5 text-xs"
+            >
               <Layers className="h-3 w-3" />
               {TOOLING_LABELS[t] ?? t}
             </Badge>
@@ -164,7 +169,7 @@ export function PickApp({
                     </div>
 
                     {/* Path + output */}
-                    <p className="mt-0.5 font-mono text-xs text-muted-foreground">
+                    <p className="mt-0.5 break-all font-mono text-xs text-muted-foreground">
                       {pathLabel}
                       {outputSuffix}
                     </p>

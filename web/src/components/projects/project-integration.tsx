@@ -196,10 +196,10 @@ export function ProjectIntegrationTab({
                 <Badge
                   key={domain}
                   variant="outline"
-                  className="gap-1.5 border-white/10 bg-white/5 font-mono text-xs text-slate-200"
+                  className="max-w-full gap-1.5 border-white/10 bg-white/5 font-mono text-xs text-slate-200"
                 >
-                  <Check className="h-3 w-3 text-emerald-400" />
-                  {domain}
+                  <Check className="h-3 w-3 shrink-0 text-emerald-400" />
+                  <span className="truncate">{domain}</span>
                 </Badge>
               ))}
             </div>
@@ -215,6 +215,7 @@ export function ProjectIntegrationTab({
           ) : null}
           <Button
             size="sm"
+            className="h-11 md:h-8"
             onClick={() => verifyMutation.mutate()}
             disabled={verifyMutation.isPending}
           >
@@ -261,23 +262,19 @@ function AnalyticsHelpPanel() {
   const items = [
     {
       title: "Where the snippet belongs",
-      body:
-        "For Next.js apps, add the script in the root layout head or via next/script so every public page loads the tracker once.",
+      body: "For Next.js apps, add the script in the root layout head or via next/script so every public page loads the tracker once.",
     },
     {
       title: "How verification works",
-      body:
-        "Deploy the app after installing the snippet, visit the public site, then run Verify. The badge turns live after Umami receives pageview data for the tracked domain.",
+      body: "Deploy the app after installing the snippet, visit the public site, then run Verify. The badge turns live after Umami receives pageview data for the tracked domain.",
     },
     {
       title: "Custom event naming",
-      body:
-        "Use a tiny wrapper for conversion events such as contact_submitted, signup_started, checkout_completed, and plan_upgraded.",
+      body: "Use a tiny wrapper for conversion events such as contact_submitted, signup_started, checkout_completed, and plan_upgraded.",
     },
     {
       title: "When data is missing",
-      body:
-        "Check that the domain is verified in Deployik, the script tag is present in production HTML, browser blockers are not hiding the request, and the app has been redeployed after the change.",
+      body: "Check that the domain is verified in Deployik, the script tag is present in production HTML, browser blockers are not hiding the request, and the app has been redeployed after the change.",
     },
   ];
 

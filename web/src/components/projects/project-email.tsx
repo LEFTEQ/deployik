@@ -36,10 +36,7 @@ import { Separator } from "@/components/ui/separator";
 import { Textarea } from "@/components/ui/textarea";
 import { LoadingState, Spinner } from "@/components/ui/spinner";
 import { api } from "@/lib/api";
-import {
-  getEmailReadiness,
-  getSMTPTestBlocker,
-} from "@/lib/email-readiness";
+import { getEmailReadiness, getSMTPTestBlocker } from "@/lib/email-readiness";
 import { queryKeys } from "@/lib/queryKeys";
 import { cn } from "@/lib/utils";
 import type {
@@ -101,7 +98,9 @@ export function ProjectEmailTab({ projectId }: { projectId: string }) {
       toast.success("SMTP test email sent");
     },
     onError: (err) => {
-      queryClient.invalidateQueries({ queryKey: queryKeys.projectEmail(projectId) });
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.projectEmail(projectId),
+      });
       toast.error(err.message);
     },
   });
@@ -155,8 +154,8 @@ export function ProjectEmailTab({ projectId }: { projectId: string }) {
             Email Support
           </h2>
           <p className="mt-1 max-w-3xl text-sm text-muted-foreground">
-            Configure Webglobe SMTP and reCAPTCHA, then install a secure
-            Next.js contact endpoint with a generated AI prompt.
+            Configure Webglobe SMTP and reCAPTCHA, then install a secure Next.js
+            contact endpoint with a generated AI prompt.
           </p>
         </div>
         <div className="flex shrink-0 flex-col items-start gap-2 sm:items-end">
@@ -164,6 +163,7 @@ export function ProjectEmailTab({ projectId }: { projectId: string }) {
             <Button
               variant="outline"
               size="sm"
+              className="h-11 md:h-8"
               onClick={() => saveMutation.mutate()}
               disabled={isSaving}
             >
@@ -176,6 +176,7 @@ export function ProjectEmailTab({ projectId }: { projectId: string }) {
             </Button>
             <Button
               size="sm"
+              className="h-11 md:h-8"
               onClick={() => testMutation.mutate()}
               disabled={isTesting || Boolean(smtpTestBlocker)}
               title={smtpTestBlocker ?? undefined}
@@ -385,7 +386,7 @@ export function ProjectEmailTab({ projectId }: { projectId: string }) {
             </FormSection>
 
             {data.settings.last_test_error ? (
-              <div className="rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive-foreground">
+              <div className="break-words rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive-foreground">
                 {data.settings.last_test_error}
               </div>
             ) : null}
@@ -420,23 +421,19 @@ function EmailHelpPanel() {
   const items = [
     {
       title: "Webglobe SMTP",
-      body:
-        "Use the mailbox address as SMTP_USER. Webglobe lists mail.webglobe.cz with port 587 for TLS, port 465 for SSL, and authenticated outgoing mail.",
+      body: "Use the mailbox address as SMTP_USER. Webglobe lists mail.webglobe.cz with port 587 for TLS, port 465 for SSL, and authenticated outgoing mail.",
     },
     {
       title: "Google reCAPTCHA v3",
-      body:
-        "Create a v3 key pair, add the production and preview domains, store the site key as NEXT_PUBLIC_RECAPTCHA_SITE_KEY, and keep the secret server-only.",
+      body: "Create a v3 key pair, add the production and preview domains, store the site key as NEXT_PUBLIC_RECAPTCHA_SITE_KEY, and keep the secret server-only.",
     },
     {
       title: "Next.js contact route",
-      body:
-        "Use a Node runtime API route for Nodemailer. Verify reCAPTCHA before validation passes into the mail send, and never accept recipients from the browser.",
+      body: "Use a Node runtime API route for Nodemailer. Verify reCAPTCHA before validation passes into the mail send, and never accept recipients from the browser.",
     },
     {
       title: "Troubleshooting",
-      body:
-        "Authentication failures usually mean a mailbox password mismatch. Missing submissions usually mean the app was not redeployed after env changes or the route is running on Edge.",
+      body: "Authentication failures usually mean a mailbox password mismatch. Missing submissions usually mean the app was not redeployed after env changes or the route is running on Edge.",
     },
   ];
 
@@ -449,7 +446,8 @@ function EmailHelpPanel() {
             <h3 className="font-medium">Help and how-to</h3>
           </div>
           <p className="mt-1 text-sm text-muted-foreground">
-            Operational notes for Webglobe mailboxes, reCAPTCHA, and Next.js contact forms.
+            Operational notes for Webglobe mailboxes, reCAPTCHA, and Next.js
+            contact forms.
           </p>
         </div>
         <Button variant="outline" size="sm" asChild>

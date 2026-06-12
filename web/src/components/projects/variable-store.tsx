@@ -66,11 +66,13 @@ export function VariableStore({ projectId, kind }: VariableStoreProps) {
   // Form state for add/edit dialog
   const [formKey, setFormKey] = useState("");
   const [formValue, setFormValue] = useState("");
-  const [formEnvironment, setFormEnvironment] = useState<VariableScope>("shared");
+  const [formEnvironment, setFormEnvironment] =
+    useState<VariableScope>("shared");
 
   // Import state
   const [importText, setImportText] = useState("");
-  const [importEnvironment, setImportEnvironment] = useState<VariableScope>("shared");
+  const [importEnvironment, setImportEnvironment] =
+    useState<VariableScope>("shared");
 
   const isSecret = kind === "secret";
   const storeTitle = isSecret ? "Secrets" : "Environment Variables";
@@ -99,9 +101,7 @@ export function VariableStore({ projectId, kind }: VariableStoreProps) {
     onSuccess: () => {
       invalidateVariables();
       closeAddDialog();
-      toast.success(
-        editingVariable ? "Variable updated" : "Variable added",
-      );
+      toast.success(editingVariable ? "Variable updated" : "Variable added");
     },
     onError: (err) => toast.error(err.message),
   });
@@ -318,7 +318,7 @@ export function VariableStore({ projectId, kind }: VariableStoreProps) {
                 {/* Key + value */}
                 <div className="min-w-0 flex-1 space-y-1">
                   <div className="flex flex-wrap items-center gap-2">
-                    <span className="font-mono text-sm text-foreground">
+                    <span className="break-all font-mono text-sm text-foreground">
                       {variable.key}
                     </span>
                     <Badge
@@ -339,7 +339,7 @@ export function VariableStore({ projectId, kind }: VariableStoreProps) {
                 <Button
                   variant="ghost"
                   size="icon"
-                  className="h-8 w-8 shrink-0"
+                  className="h-9 w-9 shrink-0 md:h-8 md:w-8"
                   onClick={() => toggleReveal(variable.key)}
                 >
                   {isRevealed ? (
@@ -355,7 +355,7 @@ export function VariableStore({ projectId, kind }: VariableStoreProps) {
                     <Button
                       variant="ghost"
                       size="icon"
-                      className="h-8 w-8 shrink-0"
+                      className="h-9 w-9 shrink-0 md:h-8 md:w-8"
                     >
                       <MoreHorizontal className="h-4 w-4" />
                     </Button>
@@ -441,7 +441,7 @@ export function VariableStore({ projectId, kind }: VariableStoreProps) {
                 onValueChange={(v) => setFormEnvironment(v as VariableScope)}
                 disabled={!!editingVariable}
               >
-                <SelectTrigger>
+                <SelectTrigger className="w-full md:w-fit">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -498,11 +498,9 @@ export function VariableStore({ projectId, kind }: VariableStoreProps) {
               <Label>Environment</Label>
               <Select
                 value={importEnvironment}
-                onValueChange={(v) =>
-                  setImportEnvironment(v as VariableScope)
-                }
+                onValueChange={(v) => setImportEnvironment(v as VariableScope)}
               >
-                <SelectTrigger>
+                <SelectTrigger className="w-full md:w-fit">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>

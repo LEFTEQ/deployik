@@ -21,7 +21,10 @@ function generateSuggestion(): string {
   crypto.getRandomValues(bytes);
   let binary = "";
   for (const b of bytes) binary += String.fromCharCode(b);
-  return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+  return btoa(binary)
+    .replace(/\+/g, "-")
+    .replace(/\//g, "_")
+    .replace(/=+$/, "");
 }
 
 export function ProjectSettingsProtection() {
@@ -103,7 +106,9 @@ function ProtectionRow({
   const [copied, setCopied] = useState(false);
 
   const invalidate = () =>
-    queryClient.invalidateQueries({ queryKey: queryKeys.protection(projectId) });
+    queryClient.invalidateQueries({
+      queryKey: queryKeys.protection(projectId),
+    });
 
   const dirty = savedValue !== null && value !== savedValue;
 
@@ -183,7 +188,7 @@ function ProtectionRow({
 
   return (
     <div className="px-4 py-3">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="flex items-center gap-3">
           <Badge
             variant="outline"
@@ -220,7 +225,7 @@ function ProtectionRow({
 
       {enabled && editing && (
         <div className="mt-3 space-y-2 rounded-md border bg-muted/20 p-3">
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2 sm:flex-nowrap">
             <Input
               type={show ? "text" : "password"}
               value={value}
@@ -229,7 +234,7 @@ function ProtectionRow({
                 revealMutation.isPending ? "Loading…" : "Enter a password"
               }
               disabled={revealMutation.isPending}
-              className="font-mono"
+              className="basis-full font-mono sm:basis-auto"
               autoComplete="off"
               spellCheck={false}
             />

@@ -20,7 +20,10 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 
-function statusOf(token: APIToken): { label: string; tone: "active" | "revoked" | "expired" } {
+function statusOf(token: APIToken): {
+  label: string;
+  tone: "active" | "revoked" | "expired";
+} {
   if (token.revoked_at) return { label: "Revoked", tone: "revoked" };
   if (token.expires_at && new Date(token.expires_at) < new Date()) {
     return { label: "Expired", tone: "expired" };
@@ -62,15 +65,21 @@ export function UserTokens() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Personal access tokens</h1>
+          <h1 className="text-2xl font-semibold tracking-tight">
+            Personal access tokens
+          </h1>
           <p className="text-sm text-muted-foreground">
-            Long-lived bearer tokens for tools and skills that call the Deployik API.
-            Each token has the same permissions as your account. Treat them like passwords.
+            Long-lived bearer tokens for tools and skills that call the Deployik
+            API. Each token has the same permissions as your account. Treat them
+            like passwords.
           </p>
         </div>
-        <Button onClick={() => setCreating(true)}>
+        <Button
+          className="h-11 w-full md:h-9 md:w-auto"
+          onClick={() => setCreating(true)}
+        >
           <KeyRound className="mr-2 h-4 w-4" />
           Create token
         </Button>
@@ -85,7 +94,8 @@ export function UserTokens() {
             <p className="text-sm text-muted-foreground">Loading...</p>
           ) : tokens.length === 0 ? (
             <p className="text-sm text-muted-foreground">
-              No tokens yet. Create one to use the Deployik API from outside the dashboard.
+              No tokens yet. Create one to use the Deployik API from outside the
+              dashboard.
             </p>
           ) : (
             <ul className="divide-y divide-border">
@@ -95,12 +105,19 @@ export function UserTokens() {
                   ? new Date(token.last_used_at).toLocaleString()
                   : "Never used";
                 return (
-                  <li key={token.id} className="flex items-center justify-between py-3">
-                    <div className="space-y-0.5">
+                  <li
+                    key={token.id}
+                    className="flex items-center justify-between gap-3 py-3"
+                  >
+                    <div className="min-w-0 flex-1 space-y-0.5">
                       <div className="flex items-center gap-2">
-                        <span className="font-medium">{token.name}</span>
+                        <span className="min-w-0 truncate font-medium">
+                          {token.name}
+                        </span>
                         <Badge
-                          variant={status.tone === "active" ? "outline" : "secondary"}
+                          variant={
+                            status.tone === "active" ? "outline" : "secondary"
+                          }
                           className={
                             status.tone === "revoked"
                               ? "border-red-500/40 text-red-300"
@@ -113,7 +130,8 @@ export function UserTokens() {
                         </Badge>
                       </div>
                       <p className="text-xs text-muted-foreground">
-                        Created {new Date(token.created_at).toLocaleDateString()} ·{" "}
+                        Created{" "}
+                        {new Date(token.created_at).toLocaleDateString()} ·{" "}
                         {lastUsed}
                       </p>
                     </div>
@@ -150,8 +168,8 @@ export function UserTokens() {
           <DialogHeader>
             <DialogTitle>Create token</DialogTitle>
             <DialogDescription>
-              Give the token a name so you can recognize it later. The token value
-              is shown once and never again.
+              Give the token a name so you can recognize it later. The token
+              value is shown once and never again.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-2">
@@ -192,8 +210,9 @@ export function UserTokens() {
           <DialogHeader>
             <DialogTitle>Token created</DialogTitle>
             <DialogDescription>
-              Copy this token now — it will never be shown again. Store it somewhere
-              safe (e.g. <code>~/.config/deployik/config</code> for the deployik-howto skill).
+              Copy this token now — it will never be shown again. Store it
+              somewhere safe (e.g. <code>~/.config/deployik/config</code> for
+              the deployik-howto skill).
             </DialogDescription>
           </DialogHeader>
           <div className="rounded-md border bg-muted/40 p-3 font-mono text-sm break-all">

@@ -43,7 +43,10 @@ function buildSettingsFromApp(
   inspection: RepoInspection,
   prev: ReturnType<typeof getFrameworkDefaults>,
 ): ReturnType<typeof getFrameworkDefaults> {
-  const seeded = getFrameworkDefaults(app.framework, inspection.package_manager);
+  const seeded = getFrameworkDefaults(
+    app.framework,
+    inspection.package_manager,
+  );
   return {
     ...prev,
     framework: app.framework || prev.framework,
@@ -94,10 +97,7 @@ export function NewProject() {
     staleTime: staleTimes.github,
   });
 
-  const {
-    data: inspection,
-    isLoading: inspectionLoading,
-  } = useQuery({
+  const { data: inspection, isLoading: inspectionLoading } = useQuery({
     queryKey: queryKeys.repoInspection(
       selectedRepo?.owner.login ?? "",
       selectedRepo?.name ?? "",
@@ -119,7 +119,9 @@ export function NewProject() {
     if (!inspection || appPicked || inspection.is_monorepo) return;
     const firstApp = inspection.apps[0];
     if (!firstApp) return;
-    setBuildSettings((prev) => buildSettingsFromApp(firstApp, inspection, prev));
+    setBuildSettings((prev) =>
+      buildSettingsFromApp(firstApp, inspection, prev),
+    );
     setAppPicked(true);
   }, [inspection, appPicked]);
 
@@ -202,7 +204,7 @@ export function NewProject() {
   // State A: No repo selected — show RepoPicker
   if (!selectedRepo) {
     return (
-      <div className="mx-auto max-w-2xl p-6">
+      <div className="mx-auto w-full min-w-0 max-w-2xl p-6 pb-[calc(1.5rem+env(safe-area-inset-bottom))]">
         <Link
           to="/"
           className="mb-4 inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
@@ -245,7 +247,9 @@ export function NewProject() {
                   onClick={() => {
                     setSelectedRepo(repo);
                     setAppPicked(false);
-                    setName(repo.name.toLowerCase().replace(/[^a-z0-9-]/g, "-"));
+                    setName(
+                      repo.name.toLowerCase().replace(/[^a-z0-9-]/g, "-"),
+                    );
                     setBranch(repo.default_branch);
                     setBuildSettings(getFrameworkDefaults("nextjs", "auto"));
                     setAutoBuildEnabled(true);
@@ -291,7 +295,7 @@ export function NewProject() {
 
   if (inspectionLoading && !appPicked) {
     return (
-      <div className="mx-auto max-w-2xl p-6">
+      <div className="mx-auto w-full min-w-0 max-w-2xl p-6">
         <LoadingState
           title="Inspecting repository…"
           description="Detecting groups, frameworks, and build commands."
@@ -308,7 +312,9 @@ export function NewProject() {
         inspection={inspection}
         repoFullName={`${selectedRepo.owner.login}/${selectedRepo.name}`}
         onSelectApp={(app) => {
-          setBuildSettings((prev) => buildSettingsFromApp(app, inspection, prev));
+          setBuildSettings((prev) =>
+            buildSettingsFromApp(app, inspection, prev),
+          );
           setAppPicked(true);
         }}
         onSetManually={() => {
@@ -324,7 +330,7 @@ export function NewProject() {
 
   // State C: Configure (existing step 2, structurally unchanged)
   return (
-    <div className="mx-auto max-w-2xl p-6">
+    <div className="mx-auto w-full min-w-0 max-w-2xl p-6 pb-[calc(1.5rem+env(safe-area-inset-bottom))]">
       <button
         onClick={() => {
           if (inspection?.is_monorepo) {
@@ -367,9 +373,7 @@ export function NewProject() {
               <SelectTrigger id="organization">
                 <SelectValue
                   placeholder={
-                    organizationsLoading
-                      ? "Loading groups..."
-                      : "Select group"
+                    organizationsLoading ? "Loading groups..." : "Select group"
                   }
                 />
               </SelectTrigger>
@@ -502,11 +506,16 @@ export function NewProject() {
           />
         </div>
 
-        <div className="flex justify-end gap-3 border-t border-white/5 pt-6">
-          <Button variant="outline" onClick={() => setSelectedRepo(null)}>
+        <div className="flex flex-col-reverse gap-3 border-t border-white/5 pt-6 md:flex-row md:justify-end">
+          <Button
+            variant="outline"
+            className="h-11 w-full md:h-9 md:w-auto"
+            onClick={() => setSelectedRepo(null)}
+          >
             Cancel
           </Button>
           <Button
+            className="h-11 w-full md:h-9 md:w-auto"
             onClick={() => createMutation.mutate()}
             disabled={
               !name ||
@@ -515,9 +524,7 @@ export function NewProject() {
               organizationsLoading
             }
           >
-            {createMutation.isPending ? (
-              <Spinner className="size-3.5" />
-            ) : null}
+            {createMutation.isPending ? <Spinner className="size-3.5" /> : null}
             {createMutation.isPending ? "Creating…" : "Create Project"}
           </Button>
         </div>

@@ -51,7 +51,11 @@ import {
 } from "@/components/projects/project-multi-locale-utils";
 
 export function ProjectMultiLocaleTab({ projectId }: { projectId: string }) {
-  const { data: project, isLoading, error } = useQuery({
+  const {
+    data: project,
+    isLoading,
+    error,
+  } = useQuery({
     queryKey: queryKeys.project(projectId),
     queryFn: () => api.getProject(projectId),
   });
@@ -302,10 +306,7 @@ function NextLocaleWorkflow({
             <div className="flex flex-col gap-5">
               <div className="flex flex-col gap-2">
                 <Label htmlFor="multi-locale-default">Default locale</Label>
-                <Select
-                  value={defaultLocale}
-                  onValueChange={setDefaultLocale}
-                >
+                <Select value={defaultLocale} onValueChange={setDefaultLocale}>
                   <SelectTrigger
                     id="multi-locale-default"
                     className="w-full"
@@ -348,6 +349,7 @@ function NextLocaleWorkflow({
                   type="submit"
                   variant="outline"
                   size="sm"
+                  className="h-11 md:h-8"
                   data-testid="multi-locale-add-custom"
                 >
                   <Plus data-icon="inline-start" />

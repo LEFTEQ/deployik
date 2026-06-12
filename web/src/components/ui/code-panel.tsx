@@ -49,7 +49,7 @@ export function CodePanel({
             size="sm"
             variant="ghost"
             onClick={onCopy}
-            className="shrink-0"
+            className="h-11 shrink-0 md:h-8"
             data-testid={copyButtonTestId}
           >
             <Copy className="mr-1.5 h-3.5 w-3.5" />
@@ -60,7 +60,7 @@ export function CodePanel({
       <CardContent>
         <div className="overflow-hidden rounded-lg border bg-muted/30">
           <ScrollArea className={heightClassName}>
-            <pre className="min-h-full whitespace-pre-wrap px-4 py-3 font-mono text-[12px] leading-6 text-foreground">
+            <pre className="min-h-full break-words whitespace-pre-wrap px-4 py-3 font-mono text-[12px] leading-6 text-foreground">
               {content || emptyLabel}
             </pre>
           </ScrollArea>
