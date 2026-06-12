@@ -26,6 +26,11 @@ export default defineConfig({
       // Silent shell updates: Deployik deploys often, so new versions must
       // activate on next launch without a prompt to maintain.
       registerType: "autoUpdate",
+      // Custom worker (src/sw.ts): same Workbox precache + nav fallback as
+      // generateSW, plus push/notificationclick handlers for Web Push.
+      strategies: "injectManifest",
+      srcDir: "src",
+      filename: "sw.ts",
       includeAssets: [
         "favicon.svg",
         "favicon.ico",
@@ -50,15 +55,6 @@ export default defineConfig({
             purpose: "maskable",
           },
         ],
-      },
-      workbox: {
-        clientsClaim: true,
-        skipWaiting: true,
-        // Offline shell: navigations fall back to the cached index.html.
-        // The SW must NEVER touch dynamic data — /api and /ws stay network-only
-        // (no runtimeCaching entries) and are excluded from the SPA fallback.
-        navigateFallback: "index.html",
-        navigateFallbackDenylist: [/^\/api\//, /^\/ws\//],
       },
       // Local dev never fights a service-worker cache.
       devOptions: { enabled: false },

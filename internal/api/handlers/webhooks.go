@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"log"
 	"net/http"
@@ -17,6 +18,7 @@ import (
 	"github.com/LEFTEQ/lovinka-deployik/internal/crypto"
 	"github.com/LEFTEQ/lovinka-deployik/internal/db"
 	"github.com/LEFTEQ/lovinka-deployik/internal/domain"
+	"github.com/LEFTEQ/lovinka-deployik/internal/push"
 )
 
 // WebhookHandler processes incoming GitHub webhook events.
@@ -26,6 +28,7 @@ type WebhookHandler struct {
 	Pipeline  *build.Pipeline
 	Docker    *build.DockerClient
 	Manager   *domain.Manager
+	Notifier  *push.Notifier
 }
 
 type githubPushPayload struct {
@@ -212,6 +215,13 @@ func (h *WebhookHandler) HandleGithub(w http.ResponseWriter, r *http.Request) {
 
 			h.Pipeline.Dispatch(project, deployment, githubToken, func(line string, stream string) {
 				log.Printf("[webhook-deploy:%s] %s", deployment.ID[:8], line)
+			})
+
+			h.Notifier.Notify(project.ID, push.EventBuildStart, push.Message{
+				Title: fmt.Sprintf("%s: %s build started", project.Name, environment),
+				Body:  fmt.Sprintf("%s pushed to %s", payload.Pusher.Name, branch),
+				URL:   fmt.Sprintf("/projects/%s/deployments/%s", project.ID, deployment.ID),
+				Tag:   "deploy-" + deployment.ID,
 			})
 		}
 	}

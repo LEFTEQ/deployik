@@ -4,6 +4,7 @@ import { Link, useRouterState } from "@tanstack/react-router";
 import {
   ArrowLeft,
   BarChart3,
+  BellRing,
   Building2,
   ChevronRight,
   Cpu,
@@ -108,6 +109,12 @@ function getWorkspaceItems(): NavItem[] {
       icon: KeyRound,
       to: "/account/tokens",
       matchPath: (p) => p === "/account/tokens",
+    },
+    {
+      label: "Notifications",
+      icon: BellRing,
+      to: "/account/notifications",
+      matchPath: (p) => p === "/account/notifications",
     },
   ];
 }
@@ -225,11 +232,8 @@ export function AppSidebar({ context, projectId, ...props }: AppSidebarProps) {
   const { user, clearAuth } = useAuthStore();
   const queryClient = useQueryClient();
   const [invitesOpen, setInvitesOpen] = useState(false);
-  const {
-    organizations,
-    selectedOrganizationId,
-    setSelectedOrganizationId,
-  } = useOrganizations();
+  const { organizations, selectedOrganizationId, setSelectedOrganizationId } =
+    useOrganizations();
   const invitesQuery = useQuery({
     queryKey: queryKeys.myGroupInvites(),
     queryFn: () => api.listMyGroupInvites(),
@@ -327,7 +331,10 @@ export function AppSidebar({ context, projectId, ...props }: AppSidebarProps) {
                             const subActive = sub.matchPath(pathname);
                             return (
                               <SidebarMenuSubItem key={sub.label}>
-                                <SidebarMenuSubButton asChild isActive={subActive}>
+                                <SidebarMenuSubButton
+                                  asChild
+                                  isActive={subActive}
+                                >
                                   <Link
                                     to={sub.to}
                                     params={sub.params ?? {}}
@@ -400,10 +407,7 @@ export function AppSidebar({ context, projectId, ...props }: AppSidebarProps) {
                   className="data-[state=open]:bg-sidebar-accent data-[state=open]:text-sidebar-accent-foreground"
                 >
                   <Avatar className="h-8 w-8 rounded-lg">
-                    <AvatarImage
-                      src={user?.avatar_url}
-                      alt={user?.username}
-                    />
+                    <AvatarImage src={user?.avatar_url} alt={user?.username} />
                     <AvatarFallback className="rounded-lg">
                       {user?.username?.[0]?.toUpperCase() ?? "D"}
                     </AvatarFallback>

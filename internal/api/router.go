@@ -19,6 +19,7 @@ import (
 	"github.com/LEFTEQ/lovinka-deployik/internal/domain"
 	projectemail "github.com/LEFTEQ/lovinka-deployik/internal/email"
 	"github.com/LEFTEQ/lovinka-deployik/internal/github"
+	"github.com/LEFTEQ/lovinka-deployik/internal/push"
 	"github.com/LEFTEQ/lovinka-deployik/internal/services"
 	"github.com/LEFTEQ/lovinka-deployik/internal/version"
 	"github.com/LEFTEQ/lovinka-deployik/internal/ws"
@@ -46,6 +47,10 @@ type RouterConfig struct {
 	MonitoringToken string
 	DevMode         bool
 	Version         *version.Info
+	// PushKeys is the VAPID key pair for Web Push; nil disables the push
+	// endpoints (503). Notifier fans project events out to subscribed devices.
+	PushKeys *push.VAPIDKeys
+	Notifier *push.Notifier
 }
 
 func NewRouter(cfg *RouterConfig) *chi.Mux {
@@ -116,6 +121,7 @@ func NewRouter(cfg *RouterConfig) *chi.Mux {
 			Encryptor: cfg.Encryptor,
 			Pipeline:  cfg.Pipeline,
 			Manager:   cfg.DomainManager,
+			Notifier:  cfg.Notifier,
 		}
 		if cfg.Pipeline != nil {
 			webhookHandler.Docker = cfg.Pipeline.Docker
@@ -135,6 +141,14 @@ func NewRouter(cfg *RouterConfig) *chi.Mux {
 			r.Get("/me/tokens", tokenHandler.List)
 			r.With(mutationLimiter.Middleware("token_create")).Post("/me/tokens", tokenHandler.Create)
 			r.With(mutationLimiter.Middleware("token_revoke")).Delete("/me/tokens/{id}", tokenHandler.Revoke)
+
+			// Web Push subscriptions (per-device, per-user)
+			pushHandler := &handlers.PushHandler{DB: cfg.DB, Keys: cfg.PushKeys, Audit: auditRecorder}
+			r.Get("/push/vapid-key", pushHandler.VAPIDKey)
+			r.Get("/push/subscriptions", pushHandler.List)
+			r.With(mutationLimiter.Middleware("push_subscribe")).Post("/push/subscriptions", pushHandler.Subscribe)
+			r.With(mutationLimiter.Middleware("push_update")).Patch("/push/subscriptions/{sid}", pushHandler.UpdatePreferences)
+			r.With(mutationLimiter.Middleware("push_unsubscribe")).Delete("/push/subscriptions/{sid}", pushHandler.Unsubscribe)
 
 			// GitHub
 			var dockerClient *build.DockerClient
@@ -278,7 +292,7 @@ func NewRouter(cfg *RouterConfig) *chi.Mux {
 			}
 
 			// Domains
-			domainHandler := &handlers.DomainHandler{DB: cfg.DB, Manager: cfg.DomainManager, Hub: cfg.WSHub, Audit: auditRecorder}
+			domainHandler := &handlers.DomainHandler{DB: cfg.DB, Manager: cfg.DomainManager, Hub: cfg.WSHub, Audit: auditRecorder, Notifier: cfg.Notifier}
 			r.Get("/projects/{id}/domains", domainHandler.List)
 			r.With(mutationLimiter.Middleware("domain_add")).Post("/projects/{id}/domains", domainHandler.Add)
 			r.With(mutationLimiter.Middleware("domain_update")).Patch("/projects/{id}/domains/{did}", domainHandler.Update)

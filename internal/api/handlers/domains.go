@@ -15,14 +15,16 @@ import (
 	"github.com/LEFTEQ/lovinka-deployik/internal/auth"
 	"github.com/LEFTEQ/lovinka-deployik/internal/db"
 	"github.com/LEFTEQ/lovinka-deployik/internal/domain"
+	"github.com/LEFTEQ/lovinka-deployik/internal/push"
 	"github.com/LEFTEQ/lovinka-deployik/internal/ws"
 )
 
 type DomainHandler struct {
-	DB      *db.DB
-	Manager *domain.Manager
-	Hub     *ws.Hub
-	Audit   *audit.Recorder
+	DB       *db.DB
+	Manager  *domain.Manager
+	Hub      *ws.Hub
+	Audit    *audit.Recorder
+	Notifier *push.Notifier
 	// verifying tracks in-flight domain verifications per project to prevent concurrent runs.
 	verifying sync.Map // map[projectID]domainID
 }
@@ -445,6 +447,12 @@ func (h *DomainHandler) Verify(w http.ResponseWriter, r *http.Request) {
 				UserID: claims.UserID, Action: "domain.verify", ResourceType: "domain",
 				ResourceID: domainID, ProjectID: projectID,
 				Metadata: map[string]any{"domain": target.DomainName, "dns_verified": true, "ssl_status": "error"},
+			})
+			h.Notifier.Notify(project.ID, push.EventSSLIssue, push.Message{
+				Title: fmt.Sprintf("%s: SSL provisioning failed", project.Name),
+				Body:  target.DomainName,
+				URL:   fmt.Sprintf("/projects/%s/settings/domains", project.ID),
+				Tag:   "ssl-" + domainID,
 			})
 			return
 		}
