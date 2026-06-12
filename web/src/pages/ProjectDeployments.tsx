@@ -1,12 +1,7 @@
 import { useOptimistic, useState, useTransition } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate, useParams } from "@tanstack/react-router";
-import {
-  ExternalLink,
-  GitCommit,
-  GlobeLock,
-  Rocket,
-} from "lucide-react";
+import { ExternalLink, GitCommit, GlobeLock, Rocket } from "lucide-react";
 import { toast } from "sonner";
 
 import { api } from "@/lib/api";
@@ -20,13 +15,11 @@ import {
   formatRelativeDate,
   getPrimaryEnvironmentUrl,
 } from "@/lib/deployment-helpers";
+import { DeploymentCard } from "@/components/projects/deployment-card";
 import { ReleasePanelContent } from "@/components/projects/release-panel";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import {
-  Card,
-  CardContent,
-} from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import {
   Dialog,
   DialogContent,
@@ -220,170 +213,205 @@ export function ProjectDeployments() {
           </CardContent>
         </Card>
       ) : (
-        <Card className="overflow-hidden">
-          <CardContent className="p-0">
-            <Table>
-              <TableHeader>
-                <TableRow className="border-white/8 hover:bg-transparent">
-                  <TableHead className="pl-6">Environment</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead>Commit</TableHead>
-                  <TableHead>Branch</TableHead>
-                  <TableHead>Started</TableHead>
-                  <TableHead>Duration</TableHead>
-                  <TableHead className="text-right">Open</TableHead>
-                  <TableHead className="pr-6 text-right">Logs</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {optimisticDeployments.map((deployment) => {
-                  const liveUrl =
-                    deployment.status === "live"
+        <>
+          {/* Phones get tappable cards; the table needs more width than 390px. */}
+          <div className="space-y-3 md:hidden">
+            {optimisticDeployments.map((deployment) => {
+              const liveUrl =
+                deployment.status === "live"
+                  ? getPrimaryEnvironmentUrl(
+                      domains,
+                      deployment.environment,
+                      deployment.preview_instance_id,
+                    )
+                  : null;
+              return (
+                <DeploymentCard
+                  key={deployment.id}
+                  deployment={deployment}
+                  liveUrl={liveUrl}
+                  onOpen={() => openDeploymentDetails(deployment.id)}
+                  action={
+                    <Button asChild size="sm" variant="outline" className="h-9">
+                      <Link
+                        to="/projects/$id/deployments/$did"
+                        params={{ id, did: deployment.id }}
+                        onClick={(event) => event.stopPropagation()}
+                      >
+                        Logs
+                      </Link>
+                    </Button>
+                  }
+                />
+              );
+            })}
+          </div>
+          <Card className="hidden overflow-hidden md:block">
+            <CardContent className="p-0">
+              <Table>
+                <TableHeader>
+                  <TableRow className="border-white/8 hover:bg-transparent">
+                    <TableHead className="pl-6">Environment</TableHead>
+                    <TableHead>Status</TableHead>
+                    <TableHead>Commit</TableHead>
+                    <TableHead>Branch</TableHead>
+                    <TableHead>Started</TableHead>
+                    <TableHead>Duration</TableHead>
+                    <TableHead className="text-right">Open</TableHead>
+                    <TableHead className="pr-6 text-right">Logs</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {optimisticDeployments.map((deployment) => {
+                    const liveUrl =
+                      deployment.status === "live"
                         ? getPrimaryEnvironmentUrl(
                             domains,
                             deployment.environment,
                             deployment.preview_instance_id,
                           )
-                      : null;
-                  const statusMeta = DEPLOYMENT_STATUS_META[deployment.status];
+                        : null;
+                    const statusMeta =
+                      DEPLOYMENT_STATUS_META[deployment.status];
 
-                  return (
-                    <TableRow
-                      key={deployment.id}
-                      className={cn(
-                        "cursor-pointer border-white/8 transition-colors hover:bg-white/[0.04] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary/40",
-                        deployment.status === "live" && "bg-white/[0.03]",
-                      )}
-                      role="link"
-                      tabIndex={0}
-                      onClick={() => openDeploymentDetails(deployment.id)}
-                      onKeyDown={(event) => {
-                        if (event.key === "Enter" || event.key === " ") {
-                          event.preventDefault();
-                          openDeploymentDetails(deployment.id);
-                        }
-                      }}
-                    >
-                      <TableCell className="pl-6">
-                        <div className="flex items-center gap-3">
-                          <span
-                            className={cn(
-                              "h-2.5 w-2.5 rounded-full",
-                              statusMeta.dotClass,
-                              ACTIVE_DEPLOYMENT_STATUSES.has(
-                                deployment.status,
-                              ) && "animate-pulse",
-                            )}
-                          />
-                          <div>
-                            <Badge
-                              variant="outline"
-                              className={
-                                ENVIRONMENT_META[deployment.environment]
-                                  .badgeClass
+                    return (
+                      <TableRow
+                        key={deployment.id}
+                        className={cn(
+                          "cursor-pointer border-white/8 transition-colors hover:bg-white/[0.04] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary/40",
+                          deployment.status === "live" && "bg-white/[0.03]",
+                        )}
+                        role="link"
+                        tabIndex={0}
+                        onClick={() => openDeploymentDetails(deployment.id)}
+                        onKeyDown={(event) => {
+                          if (event.key === "Enter" || event.key === " ") {
+                            event.preventDefault();
+                            openDeploymentDetails(deployment.id);
+                          }
+                        }}
+                      >
+                        <TableCell className="pl-6">
+                          <div className="flex items-center gap-3">
+                            <span
+                              className={cn(
+                                "h-2.5 w-2.5 rounded-full",
+                                statusMeta.dotClass,
+                                ACTIVE_DEPLOYMENT_STATUSES.has(
+                                  deployment.status,
+                                ) && "animate-pulse",
+                              )}
+                            />
+                            <div>
+                              <Badge
+                                variant="outline"
+                                className={
+                                  ENVIRONMENT_META[deployment.environment]
+                                    .badgeClass
+                                }
+                              >
+                                {ENVIRONMENT_META[deployment.environment].label}
+                              </Badge>
+                              <p className="mt-1 text-xs text-muted-foreground">
+                                {deployment.id.slice(0, 8)}
+                              </p>
+                            </div>
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          <Badge
+                            variant="outline"
+                            className={statusMeta.badgeClass}
+                          >
+                            {statusMeta.label}
+                          </Badge>
+                        </TableCell>
+                        <TableCell className="max-w-[340px]">
+                          <div className="space-y-1">
+                            <div className="flex items-center gap-2 text-sm font-medium text-foreground">
+                              <GitCommit className="h-3.5 w-3.5 text-muted-foreground" />
+                              {deployment.commit_sha && project ? (
+                                <CommitLink
+                                  owner={project.github_owner}
+                                  repo={project.github_repo}
+                                  sha={deployment.commit_sha}
+                                />
+                              ) : deployment.commit_sha ? (
+                                deployment.commit_sha.slice(0, 7)
+                              ) : (
+                                "pending"
+                              )}
+                            </div>
+                            <p
+                              className="truncate text-xs text-muted-foreground"
+                              title={
+                                deployment.commit_message ||
+                                deployment.error_message
                               }
                             >
-                              {ENVIRONMENT_META[deployment.environment].label}
-                            </Badge>
-                            <p className="mt-1 text-xs text-muted-foreground">
-                              {deployment.id.slice(0, 8)}
+                              {deployment.commit_message ||
+                                deployment.error_message ||
+                                statusMeta.label}
                             </p>
                           </div>
-                        </div>
-                      </TableCell>
-                      <TableCell>
-                        <Badge
-                          variant="outline"
-                          className={statusMeta.badgeClass}
-                        >
-                          {statusMeta.label}
-                        </Badge>
-                      </TableCell>
-                      <TableCell className="max-w-[340px]">
-                        <div className="space-y-1">
-                          <div className="flex items-center gap-2 text-sm font-medium text-foreground">
-                            <GitCommit className="h-3.5 w-3.5 text-muted-foreground" />
-                            {deployment.commit_sha && project ? (
-                              <CommitLink
-                                owner={project.github_owner}
-                                repo={project.github_repo}
-                                sha={deployment.commit_sha}
-                              />
-                            ) : deployment.commit_sha ? (
-                              deployment.commit_sha.slice(0, 7)
-                            ) : (
-                              "pending"
-                            )}
-                          </div>
-                          <p
-                            className="truncate text-xs text-muted-foreground"
-                            title={
-                              deployment.commit_message ||
-                              deployment.error_message
-                            }
-                          >
-                            {deployment.commit_message ||
-                              deployment.error_message ||
-                              statusMeta.label}
-                          </p>
-                        </div>
-                      </TableCell>
-                      <TableCell className="text-sm text-muted-foreground">
-                        {project ? (
-                          <BranchLink
-                            owner={project.github_owner}
-                            repo={project.github_repo}
-                            branch={deployment.branch}
-                          />
-                        ) : (
-                          deployment.branch
-                        )}
-                      </TableCell>
-                      <TableCell className="text-sm text-muted-foreground">
-                        {formatRelativeDate(deployment.created_at)}
-                      </TableCell>
-                      <TableCell className="text-sm text-muted-foreground">
-                        {deployment.build_duration > 0
-                          ? `${deployment.build_duration}s`
-                          : "--"}
-                      </TableCell>
-                      <TableCell className="text-right">
-                        {liveUrl ? (
+                        </TableCell>
+                        <TableCell className="text-sm text-muted-foreground">
+                          {project ? (
+                            <BranchLink
+                              owner={project.github_owner}
+                              repo={project.github_repo}
+                              branch={deployment.branch}
+                            />
+                          ) : (
+                            deployment.branch
+                          )}
+                        </TableCell>
+                        <TableCell className="text-sm text-muted-foreground">
+                          {formatRelativeDate(deployment.created_at)}
+                        </TableCell>
+                        <TableCell className="text-sm text-muted-foreground">
+                          {deployment.build_duration > 0
+                            ? `${deployment.build_duration}s`
+                            : "--"}
+                        </TableCell>
+                        <TableCell className="text-right">
+                          {liveUrl ? (
+                            <Button asChild size="sm" variant="ghost">
+                              <a
+                                href={liveUrl}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                onClick={(event) => event.stopPropagation()}
+                              >
+                                <ExternalLink className="mr-1.5 h-3.5 w-3.5" />
+                                Open
+                              </a>
+                            </Button>
+                          ) : (
+                            <span className="text-xs text-muted-foreground">
+                              --
+                            </span>
+                          )}
+                        </TableCell>
+                        <TableCell className="pr-6 text-right">
                           <Button asChild size="sm" variant="ghost">
-                            <a
-                              href={liveUrl}
-                              target="_blank"
-                              rel="noopener noreferrer"
+                            <Link
+                              to="/projects/$id/deployments/$did"
+                              params={{ id, did: deployment.id }}
                               onClick={(event) => event.stopPropagation()}
                             >
-                              <ExternalLink className="mr-1.5 h-3.5 w-3.5" />
-                              Open
-                            </a>
+                              Logs
+                            </Link>
                           </Button>
-                        ) : (
-                          <span className="text-xs text-muted-foreground">
-                            --
-                          </span>
-                        )}
-                      </TableCell>
-                      <TableCell className="pr-6 text-right">
-                        <Button asChild size="sm" variant="ghost">
-                          <Link
-                            to="/projects/$id/deployments/$did"
-                            params={{ id, did: deployment.id }}
-                            onClick={(event) => event.stopPropagation()}
-                          >
-                            Logs
-                          </Link>
-                        </Button>
-                      </TableCell>
-                    </TableRow>
-                  );
-                })}
-              </TableBody>
-            </Table>
-          </CardContent>
-        </Card>
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
+                </TableBody>
+              </Table>
+            </CardContent>
+          </Card>
+        </>
       )}
 
       {/* Release dialog */}
@@ -430,9 +458,7 @@ export function ProjectDeployments() {
                 }
               >
                 <GlobeLock className="mr-1.5 h-3.5 w-3.5" />
-                {deploymentMutation.isPending
-                  ? "Releasing..."
-                  : "Release"}
+                {deploymentMutation.isPending ? "Releasing..." : "Release"}
               </Button>
             </DialogFooter>
           </DialogContent>
