@@ -124,6 +124,22 @@ type APIToken struct {
 	CreatedAt  time.Time    `json:"created_at"`
 }
 
+// PushSubscription is one Web Push target (browser/device) for a user.
+// The endpoint is returned to the owning client so it can recognize "this
+// device"; p256dh/auth are crypto material and never serialized.
+type PushSubscription struct {
+	ID                   string    `json:"id"`
+	UserID               string    `json:"user_id"`
+	Endpoint             string    `json:"endpoint"`
+	P256dh               string    `json:"-"`
+	Auth                 string    `json:"-"`
+	DeviceLabel          string    `json:"device_label"`
+	NotifyDeployOutcomes bool      `json:"notify_deploy_outcomes"`
+	NotifyBuildStarts    bool      `json:"notify_build_starts"`
+	NotifySSLIssues      bool      `json:"notify_ssl_issues"`
+	CreatedAt            time.Time `json:"created_at"`
+}
+
 type Project struct {
 	ID                string `json:"id"`
 	Name              string `json:"name"`

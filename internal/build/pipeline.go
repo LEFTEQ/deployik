@@ -14,6 +14,7 @@ import (
 	"github.com/LEFTEQ/lovinka-deployik/internal/db"
 	"github.com/LEFTEQ/lovinka-deployik/internal/domain"
 	"github.com/LEFTEQ/lovinka-deployik/internal/projectconfig"
+	"github.com/LEFTEQ/lovinka-deployik/internal/push"
 	"github.com/LEFTEQ/lovinka-deployik/internal/ws"
 )
 
@@ -52,6 +53,10 @@ type Pipeline struct {
 	// screenshot capture can render password-protected homepages without going
 	// through the human-facing login form. Empty string disables bypass minting.
 	JWTSecret string
+
+	// Notifier sends Web Push notifications for deploy outcomes. Nil-safe:
+	// nil disables push without branching at call sites.
+	Notifier *push.Notifier
 
 	// Ctx is the pipeline-level parent context. When cancelled, in-flight deploys
 	// abort cleanly. Handler goroutines derive per-deploy contexts from this.
@@ -138,6 +143,12 @@ func (p *Pipeline) Deploy(ctx context.Context, project *db.Project, deployment *
 		emitErr(errMsg)
 		p.DB.UpdateDeploymentStatus(deployment.ID, "failed", errMsg)
 		p.DB.UpdateDeploymentDuration(deployment.ID, int(time.Since(startTime).Seconds()))
+		p.Notifier.Notify(project.ID, push.EventDeployOutcome, push.Message{
+			Title: fmt.Sprintf("%s: %s deploy failed", project.Name, deployment.Environment),
+			Body:  msg,
+			URL:   fmt.Sprintf("/projects/%s/deployments/%s", project.ID, deployment.ID),
+			Tag:   "deploy-" + deployment.ID,
+		})
 	}
 
 	// Acquire build slot
@@ -430,6 +441,17 @@ func (p *Pipeline) Deploy(ctx context.Context, project *db.Project, deployment *
 	p.DB.UpdateDeploymentStatus(deployment.ID, "live", "")
 
 	emit(fmt.Sprintf("Deployment live! (%ds)", duration))
+
+	notifyBody := deployment.CommitMessage
+	if notifyBody == "" {
+		notifyBody = fmt.Sprintf("Build finished in %ds", duration)
+	}
+	p.Notifier.Notify(project.ID, push.EventDeployOutcome, push.Message{
+		Title: fmt.Sprintf("%s: %s is live", project.Name, deployment.Environment),
+		Body:  notifyBody,
+		URL:   fmt.Sprintf("/projects/%s/deployments/%s", project.ID, deployment.ID),
+		Tag:   "deploy-" + deployment.ID,
+	})
 
 	// Step 10b: Prune images beyond the retention window for this target.
 	// Best-effort, runs on its own goroutine so it never blocks the response

@@ -17,6 +17,9 @@ export const queryKeys = {
   // Personal Access Tokens (account-scoped, not project-scoped)
   myTokens: () => ["me", "tokens"] as const,
 
+  // Web Push subscriptions (account-scoped)
+  pushSubscriptions: () => ["me", "push-subscriptions"] as const,
+
   // Projects
   projects: (organizationId: string | null | undefined) =>
     ["projects", organizationId ?? "all"] as const,
@@ -64,8 +67,7 @@ export const queryKeys = {
     environment?: string,
     range?: string,
     timezone?: string,
-  ) =>
-    ["project-analytics", projectId, environment, range, timezone] as const,
+  ) => ["project-analytics", projectId, environment, range, timezone] as const,
   projectAnalyticsIntegration: (projectId: string, timezone?: string) =>
     ["project-analytics-integration", projectId, timezone] as const,
 

@@ -23,6 +23,7 @@ import (
 	"github.com/LEFTEQ/lovinka-deployik/internal/domain"
 	projectemail "github.com/LEFTEQ/lovinka-deployik/internal/email"
 	"github.com/LEFTEQ/lovinka-deployik/internal/github"
+	"github.com/LEFTEQ/lovinka-deployik/internal/push"
 	"github.com/LEFTEQ/lovinka-deployik/internal/services"
 	"github.com/LEFTEQ/lovinka-deployik/internal/version"
 	"github.com/LEFTEQ/lovinka-deployik/internal/ws"
@@ -157,6 +158,17 @@ func main() {
 		ProxyNetwork: "proxy",
 	}
 
+	// Web Push: VAPID keys are generated on first boot and persisted next to
+	// the database. Failure disables push (handlers answer 503) but never
+	// blocks startup — push is an optional affordance.
+	var notifier *push.Notifier
+	vapidKeys, err := push.LoadOrCreateVAPIDKeys(cfg.DataDir)
+	if err != nil {
+		log.Printf("Warning: push notifications disabled: %v", err)
+	} else {
+		notifier = push.NewNotifier(database, vapidKeys, "mailto:"+cfg.SSLEmail, &pipelineWg)
+	}
+
 	maxBuilds := 1
 	pipeline := &build.Pipeline{
 		DB:                database,
@@ -174,6 +186,7 @@ func main() {
 		Ctx:               pipelineCtx,
 		Wg:                &pipelineWg,
 		MaxBuildDuration:  15 * time.Minute,
+		Notifier:          notifier,
 	}
 
 	// Bridge the pipeline's function-pointer hook to the typed services.Manager
@@ -232,6 +245,8 @@ func main() {
 		MonitoringToken: cfg.MonitoringToken,
 		DevMode:         os.Getenv("DEV_MODE") == "true",
 		Version:         versionInfo,
+		PushKeys:        vapidKeys,
+		Notifier:        notifier,
 	})
 
 	addr := fmt.Sprintf(":%s", cfg.Port)

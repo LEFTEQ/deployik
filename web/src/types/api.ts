@@ -566,3 +566,26 @@ export interface RepoInspection {
   apps: MonorepoApp[];
   truncated: boolean;
 }
+
+export interface PushSubscriptionInfo {
+  id: string;
+  user_id: string;
+  endpoint: string;
+  device_label: string;
+  notify_deploy_outcomes: boolean;
+  notify_build_starts: boolean;
+  notify_ssl_issues: boolean;
+  created_at: string;
+}
+
+export interface PushPreferencesUpdate {
+  notify_deploy_outcomes?: boolean;
+  notify_build_starts?: boolean;
+  notify_ssl_issues?: boolean;
+}
+
+export interface PushSubscribePayload {
+  endpoint: string;
+  keys: { p256dh: string; auth: string };
+  device_label?: string;
+}

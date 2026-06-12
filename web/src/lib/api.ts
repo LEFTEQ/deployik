@@ -40,6 +40,9 @@ import type {
   ProjectService,
   ServiceCredentials,
   AttachServiceRequest,
+  PushSubscriptionInfo,
+  PushPreferencesUpdate,
+  PushSubscribePayload,
 } from "@/types/api";
 
 const API_URL = import.meta.env.VITE_API_URL || "/api";
@@ -167,6 +170,40 @@ class ApiClient {
 
   async revokeMyToken(id: string): Promise<void> {
     await this.request<void>(`/me/tokens/${id}`, { method: "DELETE" });
+  }
+
+  // Web Push
+  async getPushVapidKey(): Promise<{ public_key: string }> {
+    return this.request("/push/vapid-key");
+  }
+
+  async listPushSubscriptions(): Promise<PushSubscriptionInfo[]> {
+    return this.request("/push/subscriptions");
+  }
+
+  async subscribePush(
+    payload: PushSubscribePayload,
+  ): Promise<PushSubscriptionInfo> {
+    return this.request("/push/subscriptions", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    });
+  }
+
+  async updatePushSubscription(
+    id: string,
+    prefs: PushPreferencesUpdate,
+  ): Promise<PushSubscriptionInfo> {
+    return this.request(`/push/subscriptions/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify(prefs),
+    });
+  }
+
+  async deletePushSubscription(id: string): Promise<void> {
+    await this.request<void>(`/push/subscriptions/${id}`, {
+      method: "DELETE",
+    });
   }
 
   private normalizeAutoBuildConfig(
