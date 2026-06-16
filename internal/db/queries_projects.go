@@ -266,13 +266,21 @@ func (db *DB) ListProjectsWithLatestDeployment(userID, orgID string) ([]ProjectW
 		FROM projects p
 		LEFT JOIN organizations o ON o.id = p.organization_id
 		LEFT JOIN (
-		    SELECT d1.*
-		    FROM deployments d1
-		    INNER JOIN (
-		        SELECT project_id, MAX(created_at) AS max_created
-		        FROM deployments
-		        GROUP BY project_id
-		    ) d2 ON d1.project_id = d2.project_id AND d1.created_at = d2.max_created
+		    -- Exactly one latest deployment per project. created_at is
+		    -- second-resolution (datetime('now')) so a webhook fan-out can write
+		    -- preview + production rows with an identical timestamp; a plain
+		    -- MAX(created_at) join would then emit one duplicate project row per
+		    -- tied deployment. ROW_NUMBER with id (a time-ordered ULID) as the
+		    -- tiebreaker collapses ties deterministically to the newest row.
+		    SELECT * FROM (
+		        SELECT d.*,
+		               ROW_NUMBER() OVER (
+		                   PARTITION BY d.project_id
+		                   ORDER BY d.created_at DESC, d.id DESC
+		               ) AS rn
+		        FROM deployments d
+		    ) ranked
+		    WHERE ranked.rn = 1
 		) ld ON ld.project_id = p.id
 		WHERE p.status != 'deleted'
 		  AND (

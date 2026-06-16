@@ -1489,6 +1489,68 @@ func TestProjectLatestPerEnvDeployTimestamps(t *testing.T) {
 	}
 }
 
+// A webhook push fans out to preview + production deployments created in the
+// same second. created_at is second-resolution (datetime('now')), so both rows
+// share the maximum created_at. The latest-deployment join must still return
+// exactly one row per project (deterministically tie-broken by id), otherwise a
+// project renders multiple times and its duplicate React key breaks list
+// reconciliation when switching groups.
+func TestListProjectsWithLatestDeploymentDedupesTiedTimestamps(t *testing.T) {
+	db := newTestDB(t)
+
+	user := &User{ID: NewID(), GithubID: 4242, Username: "tieduser", Role: "user"}
+	if err := db.UpsertUser(user); err != nil {
+		t.Fatalf("UpsertUser: %v", err)
+	}
+
+	project := &Project{Name: "tied-deploys", GithubRepo: "r", GithubOwner: "o", Branch: "main",
+		UserID: user.ID, Framework: "nextjs", PackageManager: "auto", Status: "active"}
+	if err := db.CreateProject(project); err != nil {
+		t.Fatalf("CreateProject: %v", err)
+	}
+
+	const ts = "2026-04-26 12:00:00"
+	insert := func(id, env string) {
+		t.Helper()
+		if _, err := db.Exec(
+			`INSERT INTO deployments (id, project_id, environment, status, branch, triggered_by, created_at)
+			 VALUES (?, ?, ?, 'live', 'main', ?, ?)`,
+			id, project.ID, env, user.ID, ts,
+		); err != nil {
+			t.Fatalf("insert deployment %s: %v", env, err)
+		}
+	}
+	// Identical created_at; id is the deterministic tiebreaker so the higher
+	// ULID (production, inserted "second") must win.
+	const lowID = "00000000000000000000000001"
+	const highID = "00000000000000000000000002"
+	insert(lowID, "preview")
+	insert(highID, "production")
+
+	listed, err := db.ListProjectsWithLatestDeployment(user.ID, "")
+	if err != nil {
+		t.Fatalf("ListProjectsWithLatestDeployment: %v", err)
+	}
+
+	matches := 0
+	var pw *ProjectWithLatestDeployment
+	for i := range listed {
+		if listed[i].ID == project.ID {
+			matches++
+			pw = &listed[i]
+		}
+	}
+	if matches != 1 {
+		t.Fatalf("project returned %d times, want exactly 1 (duplicate rows from tied created_at)", matches)
+	}
+	if pw.LatestDeploymentID == nil || *pw.LatestDeploymentID != highID {
+		t.Fatalf("latest deployment id = %v, want %q (highest ULID wins the tie)", pw.LatestDeploymentID, highID)
+	}
+	if pw.LatestDeploymentEnvironment == nil || *pw.LatestDeploymentEnvironment != "production" {
+		t.Fatalf("latest deployment environment = %v, want production", pw.LatestDeploymentEnvironment)
+	}
+}
+
 func TestAPITokenCRUD(t *testing.T) {
 	database := newTestDB(t)
 
