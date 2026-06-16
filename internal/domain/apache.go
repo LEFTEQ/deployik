@@ -49,6 +49,10 @@ const apacheProjectTemplate = `# Managed by Deployik - do not edit manually
 
     RequestHeader set X-Forwarded-Proto "https"
     RequestHeader set X-Forwarded-Host "{{.Domain}}"
+{{- if .NoIndex }}
+
+    Header always set X-Robots-Tag "noindex, nofollow"
+{{- end }}
 
     CustomLog "/var/log/apache2/deployik-{{.ProjectID}}-{{.ProjectName}}-{{.Environment}}.log" combined
     ErrorLog "/var/log/apache2/deployik-{{.ProjectID}}-{{.ProjectName}}-{{.Environment}}_error.log"
@@ -67,6 +71,7 @@ func GenerateApacheConfig(confDir string, cfg ApacheConfig) (string, error) {
 	if cfg.ContainerUpstream == "" {
 		cfg.ContainerUpstream = cfg.ContainerName + ":3000"
 	}
+	cfg.NoIndex = shouldNoIndex(cfg.Environment)
 
 	tmpl, err := template.New("apache").Parse(apacheProjectTemplate)
 	if err != nil {
