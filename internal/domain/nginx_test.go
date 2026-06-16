@@ -72,6 +72,65 @@ func TestGenerateNginxConfig_StripsAcceptEncodingTowardUpstream(t *testing.T) {
 	}
 }
 
+// Non-production environments (preview, and any future non-"production" env)
+// must carry X-Robots-Tag: noindex so search engines never index staging URLs
+// and flag them as duplicate content against the real production domain. The
+// header sits at the server level so every location (static + dynamic)
+// inherits it; production stays fully indexable.
+func TestGenerateNginxConfig_NoindexOnNonProduction(t *testing.T) {
+	gen := func(environment string) string {
+		t.Helper()
+		dir := t.TempDir()
+		path, err := GenerateNginxConfig(dir, NginxConfig{
+			ProjectID:     "proj-1",
+			ProjectName:   "demo",
+			Domain:        "demo.preview.example.com",
+			Environment:   environment,
+			SSLDomain:     "demo.preview.example.com",
+			ContainerName: "deployik-demo-" + environment,
+		})
+		if err != nil {
+			t.Fatalf("GenerateNginxConfig: %v", err)
+		}
+		content, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatalf("ReadFile: %v", err)
+		}
+		return string(content)
+	}
+
+	const directive = `add_header X-Robots-Tag "noindex, nofollow" always;`
+
+	preview := gen("preview")
+	if !strings.Contains(preview, directive) {
+		t.Fatalf("preview vhost must emit noindex X-Robots-Tag:\n%s", preview)
+	}
+
+	// Case-insensitive: a "Production" domain (any casing) must stay indexable.
+	for _, prod := range []string{"production", "Production", "PRODUCTION"} {
+		content := gen(prod)
+		if strings.Contains(content, "X-Robots-Tag") {
+			t.Fatalf("environment %q must NOT emit X-Robots-Tag (production stays indexable):\n%s", prod, content)
+		}
+	}
+}
+
+// nginx's add_header inheritance rule: a location that declares ANY add_header
+// drops all server-level add_headers. The protected auth page re-declares the
+// security headers for exactly this reason, so it must also re-declare noindex
+// on non-production sites — otherwise the 401 login page on a preview domain
+// would silently lose the header the rest of the site has.
+func TestGenerateNginxConfig_NoindexReDeclaredOnProtectedAuthPage(t *testing.T) {
+	full := generateProtectedConfig(t)
+
+	authLoc := full[strings.Index(full, "location = /_deployik/auth.html"):]
+	authLoc = authLoc[:strings.Index(authLoc, "}")+1]
+
+	if !strings.Contains(authLoc, `add_header X-Robots-Tag "noindex, nofollow" always;`) {
+		t.Fatalf("auth page location must re-declare noindex on non-production:\n%s", authLoc)
+	}
+}
+
 // HTTP/3 is opt-in per instance (PROXY_HTTP3): when enabled the template adds
 // QUIC listeners + the Alt-Svc discovery header to every 443 server block, but
 // must never emit `reuseport` — nginx allows it once per address:port and it

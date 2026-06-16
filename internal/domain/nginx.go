@@ -90,6 +90,9 @@ server {
 {{- if .HTTP3 }}
     add_header Alt-Svc $h3_alt_svc always;
 {{- end }}
+{{- if .NoIndex }}
+    add_header X-Robots-Tag "noindex, nofollow" always;
+{{- end }}
     access_log /var/log/nginx/deployik-{{.ProjectID}}-{{.ProjectName}}-{{.Environment}}.json deployik_json;
 {{- if .PasswordProtected }}
 
@@ -124,6 +127,9 @@ server {
         add_header Strict-Transport-Security "max-age=31536000" always;
         add_header X-Frame-Options "DENY" always;
         add_header X-Content-Type-Options "nosniff" always;
+{{- if .NoIndex }}
+        add_header X-Robots-Tag "noindex, nofollow" always;
+{{- end }}
     }
 
     location = /_deployik/verify {
@@ -218,9 +224,25 @@ type NginxConfig struct {
 	// undefined variable, so the policy file must exist before any vhost
 	// generated with HTTP3=true is loaded.
 	HTTP3             bool
+	// NoIndex emits `X-Robots-Tag: noindex, nofollow` so search engines never
+	// index this vhost. Computed (not caller-set) in the Generate* functions
+	// from Environment: true for everything except production, so preview /
+	// staging domains can't be flagged as duplicate content against the real
+	// production domain. Lives at the server level so every location inherits
+	// it; the protected auth-page location re-declares it because nginx drops
+	// inherited add_headers wherever a location sets its own.
+	NoIndex           bool
 	RateLimitBurst    int // burst for dynamic requests; defaults via defaultRateLimitBurst
 	StaticBurst       int // burst for static-asset requests; defaults via defaultStaticBurst
 	MaxConnPerIP      int // concurrent connections per IP cap; defaults to 50
+}
+
+// shouldNoIndex reports whether a vhost for the given environment should carry
+// a noindex header. Everything that isn't production is treated as
+// non-indexable (case-insensitive) — erring toward "don't index" for any
+// unexpected environment value is the safe default for staging surfaces.
+func shouldNoIndex(environment string) bool {
+	return !strings.EqualFold(strings.TrimSpace(environment), "production")
 }
 
 // defaultRateLimitBurst returns the per-vhost limit_req burst for dynamic
@@ -258,6 +280,7 @@ func GenerateNginxConfig(confDir string, cfg NginxConfig) (string, error) {
 	if cfg.MaxConnPerIP <= 0 {
 		cfg.MaxConnPerIP = 50
 	}
+	cfg.NoIndex = shouldNoIndex(cfg.Environment)
 
 	tmpl, err := template.New("nginx").Parse(nginxProjectTemplate)
 	if err != nil {
