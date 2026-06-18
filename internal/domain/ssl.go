@@ -280,6 +280,7 @@ func (m *Manager) WriteNginxConfig(cfg ProvisionConfig) (string, error) {
 		}
 		upstream = fmt.Sprintf("%s:%d", cfg.ContainerName, port)
 	}
+	certFile, keyFile := m.certPathsFor(cfg.sslDomain())
 	return GenerateNginxConfig(m.NginxConfDir, NginxConfig{
 		ProjectID:         cfg.ProjectID,
 		ProjectName:       cfg.ProjectName,
@@ -287,6 +288,8 @@ func (m *Manager) WriteNginxConfig(cfg ProvisionConfig) (string, error) {
 		RedirectDomain:    cfg.RedirectDomain,
 		Environment:       cfg.Environment,
 		SSLDomain:         cfg.sslDomain(),
+		CertFile:          certFile,
+		KeyFile:           keyFile,
 		ContainerName:     cfg.ContainerName,
 		ContainerUpstream: upstream,
 		PasswordProtected: cfg.PasswordProtected,

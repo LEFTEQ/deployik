@@ -373,3 +373,79 @@ func TestNewManagerThreadsWildcardDomains(t *testing.T) {
 		t.Fatal("expected NewManager to thread WildcardDomains through to the matcher")
 	}
 }
+
+func TestWriteNginxConfigUsesWildcardCertWhenCovered(t *testing.T) {
+	t.Parallel()
+
+	confDir := t.TempDir()
+	manager := &Manager{
+		NginxConfDir:    confDir,
+		ProxySSLCert:    "/etc/nginx/certs/live/wildcard.preview.example.com/fullchain.pem",
+		ProxySSLKey:     "/etc/nginx/certs/live/wildcard.preview.example.com/privkey.pem",
+		WildcardDomains: []string{"preview.example.com"},
+	}
+
+	confPath, err := manager.WriteNginxConfig(ProvisionConfig{
+		ProjectID:     "01KNTESTPROJECT",
+		ProjectName:   "acme-app-api",
+		Domain:        "acme-app-api.preview.example.com",
+		Environment:   "preview",
+		ContainerName: "deployik-acme-app-api-preview",
+	})
+	if err != nil {
+		t.Fatalf("WriteNginxConfig returned error: %v", err)
+	}
+
+	content, err := os.ReadFile(confPath)
+	if err != nil {
+		t.Fatalf("read nginx config: %v", err)
+	}
+	got := string(content)
+
+	if !strings.Contains(got, "ssl_certificate /etc/nginx/certs/live/wildcard.preview.example.com/fullchain.pem;") {
+		t.Fatalf("expected wildcard cert path, got:\n%s", got)
+	}
+	if !strings.Contains(got, "ssl_certificate_key /etc/nginx/certs/live/wildcard.preview.example.com/privkey.pem;") {
+		t.Fatalf("expected wildcard key path, got:\n%s", got)
+	}
+	if strings.Contains(got, "/etc/nginx/certs/live/acme-app-api.preview.example.com/") {
+		t.Fatalf("did not expect per-domain cert path for a wildcard-covered host, got:\n%s", got)
+	}
+}
+
+func TestWriteNginxConfigUsesPerDomainCertForCustomDomain(t *testing.T) {
+	t.Parallel()
+
+	confDir := t.TempDir()
+	// Wildcard configured, but acme.example.org is NOT under it → per-domain path.
+	manager := &Manager{
+		NginxConfDir:    confDir,
+		ProxySSLCert:    "/etc/nginx/certs/live/wildcard.preview.example.com/fullchain.pem",
+		ProxySSLKey:     "/etc/nginx/certs/live/wildcard.preview.example.com/privkey.pem",
+		WildcardDomains: []string{"preview.example.com"},
+	}
+
+	confPath, err := manager.WriteNginxConfig(ProvisionConfig{
+		ProjectID:     "01KNTESTPROJECT",
+		ProjectName:   "acme",
+		Domain:        "acme.example.org",
+		Environment:   "production",
+		ContainerName: "deployik-acme-production",
+	})
+	if err != nil {
+		t.Fatalf("WriteNginxConfig returned error: %v", err)
+	}
+
+	content, err := os.ReadFile(confPath)
+	if err != nil {
+		t.Fatalf("read nginx config: %v", err)
+	}
+	got := string(content)
+
+	if !strings.Contains(got, "ssl_certificate /etc/nginx/certs/live/acme.example.org/fullchain.pem;") {
+		t.Fatalf("expected per-domain cert path, got:\n%s", got)
+	}
+	if strings.Contains(got, "wildcard.preview.example.com") {
+		t.Fatalf("did not expect the wildcard cert for a custom domain, got:\n%s", got)
+	}
+}

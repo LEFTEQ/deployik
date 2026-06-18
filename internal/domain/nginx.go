@@ -47,8 +47,8 @@ server {
 {{- end }}
     server_name {{.RedirectDomain}};
 
-    ssl_certificate /etc/nginx/certs/live/{{.SSLDomain}}/fullchain.pem;
-    ssl_certificate_key /etc/nginx/certs/live/{{.SSLDomain}}/privkey.pem;
+    ssl_certificate {{.CertFile}};
+    ssl_certificate_key {{.KeyFile}};
 
     ssl_protocols TLSv1.2 TLSv1.3;
     ssl_session_cache shared:SSL:10m;
@@ -77,8 +77,8 @@ server {
 {{- end }}
     server_name {{.Domain}};
 
-    ssl_certificate /etc/nginx/certs/live/{{.SSLDomain}}/fullchain.pem;
-    ssl_certificate_key /etc/nginx/certs/live/{{.SSLDomain}}/privkey.pem;
+    ssl_certificate {{.CertFile}};
+    ssl_certificate_key {{.KeyFile}};
 
     ssl_protocols TLSv1.2 TLSv1.3;
     ssl_session_cache shared:SSL:10m;
@@ -202,12 +202,18 @@ server {
 
 // NginxConfig holds data for generating an nginx config.
 type NginxConfig struct {
-	ProjectID         string
-	ProjectName       string
-	Domain            string
-	RedirectDomain    string
-	Environment       string
-	SSLDomain         string // may differ for wildcard certs
+	ProjectID      string
+	ProjectName    string
+	Domain         string
+	RedirectDomain string
+	Environment    string
+	SSLDomain      string // legacy default source for CertFile/KeyFile
+	// CertFile/KeyFile are the cert+key paths the vhost references. Set by the
+	// caller (WriteNginxConfig resolves wildcard-vs-per-domain via certPathsFor).
+	// When empty, GenerateNginxConfig defaults them to the per-domain path built
+	// from SSLDomain, preserving the pre-wildcard behavior for direct callers.
+	CertFile          string
+	KeyFile           string
 	ContainerName     string
 	ContainerUpstream string // "host:port" — preferred; falls back to ContainerName:3000
 	PasswordProtected bool
@@ -223,7 +229,7 @@ type NginxConfig struct {
 	// advertisement for everyone else. nginx fails the config test on an
 	// undefined variable, so the policy file must exist before any vhost
 	// generated with HTTP3=true is loaded.
-	HTTP3             bool
+	HTTP3 bool
 	// NoIndex emits `X-Robots-Tag: noindex, nofollow` so search engines never
 	// index this vhost. Computed (not caller-set) in the Generate* functions
 	// from Environment: true for everything except production, so preview /
@@ -231,10 +237,10 @@ type NginxConfig struct {
 	// production domain. Lives at the server level so every location inherits
 	// it; the protected auth-page location re-declares it because nginx drops
 	// inherited add_headers wherever a location sets its own.
-	NoIndex           bool
-	RateLimitBurst    int // burst for dynamic requests; defaults via defaultRateLimitBurst
-	StaticBurst       int // burst for static-asset requests; defaults via defaultStaticBurst
-	MaxConnPerIP      int // concurrent connections per IP cap; defaults to 50
+	NoIndex        bool
+	RateLimitBurst int // burst for dynamic requests; defaults via defaultRateLimitBurst
+	StaticBurst    int // burst for static-asset requests; defaults via defaultStaticBurst
+	MaxConnPerIP   int // concurrent connections per IP cap; defaults to 50
 }
 
 // shouldNoIndex reports whether a vhost for the given environment should carry
@@ -268,6 +274,12 @@ func defaultStaticBurst(environment string) int {
 
 // GenerateNginxConfig creates an nginx config file for a domain.
 func GenerateNginxConfig(confDir string, cfg NginxConfig) (string, error) {
+	if cfg.CertFile == "" {
+		cfg.CertFile = fmt.Sprintf("/etc/nginx/certs/live/%s/fullchain.pem", cfg.SSLDomain)
+	}
+	if cfg.KeyFile == "" {
+		cfg.KeyFile = fmt.Sprintf("/etc/nginx/certs/live/%s/privkey.pem", cfg.SSLDomain)
+	}
 	if cfg.ContainerUpstream == "" {
 		cfg.ContainerUpstream = cfg.ContainerName + ":3000"
 	}
