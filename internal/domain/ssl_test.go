@@ -284,3 +284,79 @@ func TestWriteNginxConfigAddsWWWRedirectWhenConfigured(t *testing.T) {
 		}
 	}
 }
+
+func TestWildcardCoversMatchesSingleLabelPreviewSubdomains(t *testing.T) {
+	t.Parallel()
+
+	m := &Manager{
+		ProxySSLCert:    "/etc/nginx/certs/live/wildcard.preview.example.com/fullchain.pem",
+		ProxySSLKey:     "/etc/nginx/certs/live/wildcard.preview.example.com/privkey.pem",
+		WildcardDomains: []string{"preview.example.com"},
+	}
+
+	covered := []string{
+		"acme-app-api.preview.example.com",
+		"acme-app.preview.example.com",
+	}
+	for _, host := range covered {
+		if !m.wildcardCovers(host) {
+			t.Fatalf("expected %s to be wildcard-covered", host)
+		}
+	}
+
+	notCovered := []string{
+		"preview.example.com",         // apex, not a subdomain
+		"a.b.preview.example.com",     // two labels — *.preview.example.com covers one
+		"acme-app.preview.example.org", // custom domain, different base
+		"acme-app.example.com",      // different base
+	}
+	for _, host := range notCovered {
+		if m.wildcardCovers(host) {
+			t.Fatalf("expected %s NOT to be wildcard-covered", host)
+		}
+	}
+}
+
+func TestWildcardCoversRequiresConfiguredCert(t *testing.T) {
+	t.Parallel()
+
+	// Wildcard base configured but no PROXY_SSL_CERT → never matches.
+	m := &Manager{WildcardDomains: []string{"preview.example.com"}}
+	if m.wildcardCovers("acme-app-api.preview.example.com") {
+		t.Fatal("expected no wildcard match when ProxySSLCert is empty")
+	}
+}
+
+func TestCertPathsForReturnsWildcardOrPerDomain(t *testing.T) {
+	t.Parallel()
+
+	m := &Manager{
+		ProxySSLCert:    "/etc/nginx/certs/live/wildcard.preview.example.com/fullchain.pem",
+		ProxySSLKey:     "/etc/nginx/certs/live/wildcard.preview.example.com/privkey.pem",
+		WildcardDomains: []string{"preview.example.com"},
+	}
+
+	cert, key := m.certPathsFor("acme-app-api.preview.example.com")
+	if cert != m.ProxySSLCert || key != m.ProxySSLKey {
+		t.Fatalf("expected wildcard pair, got cert=%s key=%s", cert, key)
+	}
+
+	// Non-wildcard nginx domain → per-domain path under /etc/nginx/certs.
+	cert, key = m.certPathsFor("acme.example.org")
+	if cert != "/etc/nginx/certs/live/acme.example.org/fullchain.pem" {
+		t.Fatalf("unexpected nginx per-domain cert: %s", cert)
+	}
+	if key != "/etc/nginx/certs/live/acme.example.org/privkey.pem" {
+		t.Fatalf("unexpected nginx per-domain key: %s", key)
+	}
+
+	// Apache mode → per-domain path under /etc/letsencrypt.
+	ma := &Manager{ProxyConfigFormat: "apache"}
+	cert, key = ma.certPathsFor("acme.example.org")
+	if cert != "/etc/letsencrypt/live/acme.example.org/fullchain.pem" {
+		t.Fatalf("unexpected apache per-domain cert: %s", cert)
+	}
+	if key != "/etc/letsencrypt/live/acme.example.org/privkey.pem" {
+		t.Fatalf("unexpected apache per-domain key: %s", key)
+	}
+}

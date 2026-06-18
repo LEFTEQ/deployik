@@ -38,19 +38,23 @@ type Manager struct {
 	ProxyReloadCmd    string
 	ProxySSLCert      string
 	ProxySSLKey       string
-	HTTP3             bool
-	runner            commandRunner
+	// WildcardDomains are the base domains a configured PROXY_SSL_CERT covers,
+	// e.g. ["preview.example.com"]. A single-label subdomain of one of these is
+	// served the wildcard cert and skips certbot. Empty → matcher never matches.
+	WildcardDomains []string
+	HTTP3           bool
+	runner          commandRunner
 }
 
 type ProvisionConfig struct {
-	ProjectID         string
-	ProjectName       string
-	Domain            string
-	Environment       string
-	SSLDomain         string
-	SSLDomains        []string
-	RedirectDomain    string
-	ContainerName     string
+	ProjectID      string
+	ProjectName    string
+	Domain         string
+	Environment    string
+	SSLDomain      string
+	SSLDomains     []string
+	RedirectDomain string
+	ContainerName  string
 	// ContainerUpstream is "host:port" — preferred. When set, it's written
 	// verbatim. The deploy + reconcile paths build it explicitly because they
 	// may point at 127.0.0.1:<random> in host-port mode.
@@ -319,6 +323,49 @@ func (cfg ProvisionConfig) sslDomain() string {
 		return cfg.SSLDomain
 	}
 	return cfg.Domain
+}
+
+// hostUnderWildcard reports whether host is a single-label subdomain of base
+// (e.g. "api.preview.example.com" under "preview.example.com"), the only shape a
+// "*.base" wildcard cert covers. Multi-label hosts and the base apex are not.
+func hostUnderWildcard(host, base string) bool {
+	suffix := "." + base
+	if !strings.HasSuffix(host, suffix) {
+		return false
+	}
+	label := strings.TrimSuffix(host, suffix)
+	return label != "" && !strings.Contains(label, ".")
+}
+
+// wildcardCovers reports whether host should be served by the configured
+// wildcard cert (and therefore skip certbot): a wildcard cert must be configured
+// AND host must be a single-label subdomain of one of the WildcardDomains bases.
+func (m *Manager) wildcardCovers(host string) bool {
+	if m.ProxySSLCert == "" {
+		return false
+	}
+	for _, base := range m.WildcardDomains {
+		if hostUnderWildcard(host, base) {
+			return true
+		}
+	}
+	return false
+}
+
+// certPathsFor returns the cert + key paths a vhost should reference for host:
+// the configured wildcard pair when host is wildcard-covered, otherwise the
+// per-domain Let's Encrypt live paths. The per-domain mount root differs by
+// proxy format (nginx reads /etc/nginx/certs, apache reads /etc/letsencrypt).
+func (m *Manager) certPathsFor(host string) (certFile, keyFile string) {
+	if m.wildcardCovers(host) {
+		return m.ProxySSLCert, m.ProxySSLKey
+	}
+	base := "/etc/nginx/certs"
+	if m.ProxyConfigFormat == "apache" {
+		base = "/etc/letsencrypt"
+	}
+	return fmt.Sprintf("%s/live/%s/fullchain.pem", base, host),
+		fmt.Sprintf("%s/live/%s/privkey.pem", base, host)
 }
 
 func (cfg ProvisionConfig) requestSSLDomains() []string {
