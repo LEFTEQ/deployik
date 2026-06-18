@@ -39,6 +39,7 @@ type Config struct {
 	ProxyReloadCmd          string
 	ProxySSLCert            string
 	ProxySSLKey             string
+	ProxySSLWildcardDomains []string
 	WebhookURL              string
 	ScreenshotDir           string
 	MonitoringToken         string
@@ -75,6 +76,7 @@ func Load() (*Config, error) {
 		ProxyReloadCmd:          os.Getenv("PROXY_RELOAD_CMD"),
 		ProxySSLCert:            os.Getenv("PROXY_SSL_CERT"),
 		ProxySSLKey:             os.Getenv("PROXY_SSL_KEY"),
+		ProxySSLWildcardDomains: splitCSV(os.Getenv("PROXY_SSL_WILDCARD_DOMAINS")),
 		MonitoringToken:         os.Getenv("MONITORING_TOKEN"),
 	}
 

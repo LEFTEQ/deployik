@@ -23,7 +23,8 @@ type ManagerConfig struct {
 	ProxyReloadCmd    string
 	ProxySSLCert      string
 	ProxySSLKey       string
-	HTTP3             bool // nginx format only — see NginxConfig.HTTP3
+	WildcardDomains   []string // bases a configured PROXY_SSL_CERT covers
+	HTTP3             bool     // nginx format only — see NginxConfig.HTTP3
 }
 
 type Manager struct {
@@ -94,6 +95,7 @@ func NewManager(cfg ManagerConfig) *Manager {
 		ProxyReloadCmd:    cfg.ProxyReloadCmd,
 		ProxySSLCert:      cfg.ProxySSLCert,
 		ProxySSLKey:       cfg.ProxySSLKey,
+		WildcardDomains:   cfg.WildcardDomains,
 		HTTP3:             cfg.HTTP3,
 		runner:            execRunner{},
 	}

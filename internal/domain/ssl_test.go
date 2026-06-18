@@ -360,3 +360,16 @@ func TestCertPathsForReturnsWildcardOrPerDomain(t *testing.T) {
 		t.Fatalf("unexpected apache per-domain key: %s", key)
 	}
 }
+
+func TestNewManagerThreadsWildcardDomains(t *testing.T) {
+	t.Parallel()
+
+	m := NewManager(ManagerConfig{
+		ProxySSLCert:    "/etc/nginx/certs/live/wildcard.preview.example.com/fullchain.pem",
+		ProxySSLKey:     "/etc/nginx/certs/live/wildcard.preview.example.com/privkey.pem",
+		WildcardDomains: []string{"preview.example.com"},
+	})
+	if !m.wildcardCovers("acme-app-api.preview.example.com") {
+		t.Fatal("expected NewManager to thread WildcardDomains through to the matcher")
+	}
+}
