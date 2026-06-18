@@ -33,8 +33,9 @@ func ReconcileActiveConfigs(manager *Manager, targets []db.DomainProvisionTarget
 	for _, target := range targets {
 		plan := ResolveVariantPlan(target.DomainName, target.Environment)
 
-		// Skip certbot if we have a wildcard cert configured
-		if manager.ProxySSLCert == "" && plan.RedirectDomain != "" {
+		// Skip certbot for wildcard-covered domains; otherwise keep the existing
+		// behavior (request a multi-domain cert only when there's a www redirect).
+		if !manager.wildcardCovers(plan.CanonicalDomain) && plan.RedirectDomain != "" {
 			if err := manager.RequestSSLCert(plan.AllDomains()...); err != nil {
 				errs = append(errs, fmt.Sprintf("ensure ssl for %s: %v", target.DomainName, err))
 				continue
@@ -88,14 +89,7 @@ func ReconcileActiveConfigs(manager *Manager, targets []db.DomainProvisionTarget
 		}
 
 		if manager.ProxyConfigFormat == "apache" {
-			certFile := manager.ProxySSLCert
-			if certFile == "" {
-				certFile = fmt.Sprintf("/etc/letsencrypt/live/%s/fullchain.pem", cfg.sslDomain())
-			}
-			keyFile := manager.ProxySSLKey
-			if keyFile == "" {
-				keyFile = fmt.Sprintf("/etc/letsencrypt/live/%s/privkey.pem", cfg.sslDomain())
-			}
+			certFile, keyFile := manager.certPathsFor(cfg.sslDomain())
 			if _, err := GenerateApacheConfig(manager.NginxConfDir, ApacheConfig{
 				NginxConfig: NginxConfig{
 					ProjectID:         cfg.ProjectID,

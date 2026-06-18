@@ -449,3 +449,77 @@ func TestWriteNginxConfigUsesPerDomainCertForCustomDomain(t *testing.T) {
 		t.Fatalf("did not expect the wildcard cert for a custom domain, got:\n%s", got)
 	}
 }
+
+func TestProvisionDomainSkipsCertbotForWildcardCoveredDomain(t *testing.T) {
+	t.Parallel()
+
+	confDir := t.TempDir()
+	runner := &fakeRunner{}
+	manager := &Manager{
+		NginxConfDir:    confDir,
+		ProxyContainer:  "nginx-proxy",
+		ProxyCertsDir:   "/opt/nginx-proxy/certs",
+		ProxyHTMLDir:    "/opt/nginx-proxy/html",
+		SSLEmail:        "admin@example.com",
+		ProxySSLCert:    "/etc/nginx/certs/live/wildcard.preview.example.com/fullchain.pem",
+		ProxySSLKey:     "/etc/nginx/certs/live/wildcard.preview.example.com/privkey.pem",
+		WildcardDomains: []string{"preview.example.com"},
+		runner:          runner,
+	}
+
+	err := manager.ProvisionDomain(ProvisionConfig{
+		ProjectID:     "01KNTESTPROJECT",
+		ProjectName:   "acme-app-api",
+		Domain:        "acme-app-api.preview.example.com",
+		Environment:   "preview",
+		ContainerName: "deployik-acme-app-api-preview",
+	}, false, nil)
+	if err != nil {
+		t.Fatalf("ProvisionDomain returned error: %v", err)
+	}
+
+	for _, call := range runner.calls {
+		if strings.Contains(strings.Join(call, " "), "certbot/certbot certonly") {
+			t.Fatalf("did not expect certbot for a wildcard-covered domain, got %s", strings.Join(call, " "))
+		}
+	}
+}
+
+func TestProvisionDomainRunsCertbotForCustomDomain(t *testing.T) {
+	t.Parallel()
+
+	confDir := t.TempDir()
+	runner := &fakeRunner{}
+	manager := &Manager{
+		NginxConfDir:    confDir,
+		ProxyContainer:  "nginx-proxy",
+		ProxyCertsDir:   "/opt/nginx-proxy/certs",
+		ProxyHTMLDir:    "/opt/nginx-proxy/html",
+		SSLEmail:        "admin@example.com",
+		ProxySSLCert:    "/etc/nginx/certs/live/wildcard.preview.example.com/fullchain.pem",
+		ProxySSLKey:     "/etc/nginx/certs/live/wildcard.preview.example.com/privkey.pem",
+		WildcardDomains: []string{"preview.example.com"},
+		runner:          runner,
+	}
+
+	err := manager.ProvisionDomain(ProvisionConfig{
+		ProjectID:     "01KNTESTPROJECT",
+		ProjectName:   "acme",
+		Domain:        "acme.example.org",
+		Environment:   "production",
+		ContainerName: "deployik-acme-production",
+	}, false, nil)
+	if err != nil {
+		t.Fatalf("ProvisionDomain returned error: %v", err)
+	}
+
+	ranCertbot := false
+	for _, call := range runner.calls {
+		if strings.Contains(strings.Join(call, " "), "certbot/certbot certonly") {
+			ranCertbot = true
+		}
+	}
+	if !ranCertbot {
+		t.Fatal("expected certbot to run for a custom (non-wildcard) domain")
+	}
+}

@@ -132,9 +132,9 @@ func (m *Manager) ProvisionDomain(cfg ProvisionConfig, requireDNS bool, logger P
 		}
 	}
 
-	// Skip certbot when a wildcard cert is configured — we'll reuse it for
-	// every vhost and don't need a per-domain Let's Encrypt challenge.
-	if m.ProxySSLCert == "" {
+	// Skip certbot only for domains the configured wildcard cert covers;
+	// everything else still gets its own per-domain Let's Encrypt challenge.
+	if !m.wildcardCovers(cfg.sslDomain()) {
 		sslDomains := cfg.requestSSLDomains()
 		emit("ssl", "running", fmt.Sprintf("Requesting SSL certificate for %s...", strings.Join(sslDomains, ", ")))
 		if err := m.RequestSSLCert(sslDomains...); err != nil {
@@ -143,7 +143,7 @@ func (m *Manager) ProvisionDomain(cfg ProvisionConfig, requireDNS bool, logger P
 		}
 		emit("ssl", "success", "SSL certificate issued successfully")
 	} else {
-		emit("ssl", "success", "Using configured wildcard certificate")
+		emit("ssl", "success", fmt.Sprintf("Using wildcard certificate for %s", cfg.sslDomain()))
 	}
 
 	// Write the proxy config in whichever format the operator chose. The
@@ -152,14 +152,7 @@ func (m *Manager) ProvisionDomain(cfg ProvisionConfig, requireDNS bool, logger P
 	proxyStep := "nginx"
 	if m.ProxyConfigFormat == "apache" {
 		proxyStep = "apache"
-		certFile := m.ProxySSLCert
-		if certFile == "" {
-			certFile = fmt.Sprintf("/etc/letsencrypt/live/%s/fullchain.pem", cfg.sslDomain())
-		}
-		keyFile := m.ProxySSLKey
-		if keyFile == "" {
-			keyFile = fmt.Sprintf("/etc/letsencrypt/live/%s/privkey.pem", cfg.sslDomain())
-		}
+		certFile, keyFile := m.certPathsFor(cfg.sslDomain())
 		emit(proxyStep, "running", fmt.Sprintf("Writing Apache vhost for %s...", cfg.Domain))
 		if _, err := GenerateApacheConfig(m.NginxConfDir, ApacheConfig{
 			NginxConfig: NginxConfig{
