@@ -15,6 +15,7 @@ import (
 	"strings"
 
 	"github.com/LEFTEQ/lovinka-deployik/internal/build"
+	"github.com/LEFTEQ/lovinka-deployik/internal/buildfilter"
 	"github.com/LEFTEQ/lovinka-deployik/internal/crypto"
 	"github.com/LEFTEQ/lovinka-deployik/internal/db"
 	"github.com/LEFTEQ/lovinka-deployik/internal/domain"
@@ -44,6 +45,50 @@ type githubPushPayload struct {
 	HeadCommit *struct {
 		Message string `json:"message"`
 	} `json:"head_commit"`
+	// Commits carries per-commit changed-file lists, used by path-based build
+	// filtering. GitHub caps this at 2048 commits / 3000 files per push; beyond
+	// that the lists are truncated and we fail safe to "build" (see
+	// changedPathsFromPush).
+	Commits []struct {
+		Added    []string `json:"added"`
+		Modified []string `json:"modified"`
+		Removed  []string `json:"removed"`
+	} `json:"commits"`
+}
+
+// changedPathsFromPush returns the union of changed paths across a push's
+// commits, plus whether that file list is trustworthy. Returns available=false
+// when no commits carry a usable file list (truncated huge push, synthetic/
+// branch-create event) so the caller fails safe to "build".
+func changedPathsFromPush(payload githubPushPayload) ([]string, bool) {
+	if len(payload.Commits) == 0 {
+		return nil, false
+	}
+	seen := make(map[string]struct{})
+	var paths []string
+	add := func(list []string) {
+		for _, p := range list {
+			if p == "" {
+				continue
+			}
+			if _, ok := seen[p]; ok {
+				continue
+			}
+			seen[p] = struct{}{}
+			paths = append(paths, p)
+		}
+	}
+	for _, c := range payload.Commits {
+		add(c.Added)
+		add(c.Modified)
+		add(c.Removed)
+	}
+	if len(paths) == 0 {
+		// Commits present but no file lists (e.g. merge-only payload) — ambiguous,
+		// so fail safe to build rather than risk a wrong skip.
+		return nil, false
+	}
+	return paths, true
 }
 
 // HandleGithub processes GitHub webhook push events and triggers deployments.
@@ -121,6 +166,8 @@ func (h *WebhookHandler) HandleGithub(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	changedPaths, fileListAvailable := changedPathsFromPush(payload)
+
 	for _, config := range configs {
 		targets := webhookTargetEnvironments(branch, config)
 
@@ -149,6 +196,21 @@ func (h *WebhookHandler) HandleGithub(w http.ResponseWriter, r *http.Request) {
 		project, err := h.DB.GetProject(config.ProjectID)
 		if err != nil || project == nil {
 			log.Printf("Webhook: project %s not found: %v", config.ProjectID, err)
+			continue
+		}
+
+		// Path-based build filtering (opt-in). A project with build_filter_enabled
+		// only rebuilds when a changed path is under its root_directory or matches
+		// a watch_paths glob. Fail-safe = build. The skip is recorded per target
+		// environment as an "ignored" webhook event for observability.
+		if shouldBuild, reason := buildfilter.ShouldBuild(project.BuildFilterEnabled, project.RootDirectory, project.WatchPaths, changedPaths, fileListAvailable); !shouldBuild {
+			log.Printf("Webhook: skipping build for project %s (%s): %s", project.Name, config.ProjectID, reason)
+			skipMsg := "build skipped: " + reason
+			for _, environment := range targets {
+				if _, err := claimWebhookEvent(h.DB, webhookEventPayload(config, deliveryID, environment, "", branch, payload, "ignored", "", &skipMsg)); err != nil {
+					log.Printf("Webhook: failed to record skipped %s event for project %s: %v", environment, config.ProjectID, err)
+				}
+			}
 			continue
 		}
 

@@ -16,6 +16,8 @@ import { useAuthStore } from "@/store/auth";
 import { Login } from "@/pages/Login";
 import { AuthCallback } from "@/pages/AuthCallback";
 import { Projects } from "@/pages/Projects";
+import { Apps } from "@/pages/Apps";
+import { AppDetail } from "@/pages/AppDetail";
 import { ProjectOverview } from "@/pages/ProjectOverview";
 import { ProjectDeployments } from "@/pages/ProjectDeployments";
 // Heavy or less-visited routes are code-split so charts, form primitives,
@@ -194,6 +196,18 @@ const notificationSettingsRoute = createRoute({
   component: NotificationSettings,
 });
 
+const appsRoute = createRoute({
+  getParentRoute: () => workspaceLayoutRoute,
+  path: "/apps",
+  component: Apps,
+});
+
+const appDetailRoute = createRoute({
+  getParentRoute: () => workspaceLayoutRoute,
+  path: "/apps/$appId",
+  component: AppDetail,
+});
+
 // New project (no sidebar context needed, uses workspace layout)
 const newProjectRoute = createRoute({
   getParentRoute: () => protectedRoute,
@@ -289,6 +303,8 @@ const routeTree = rootRoute.addChildren([
       indexRoute,
       userTokensRoute,
       notificationSettingsRoute,
+      appsRoute,
+      appDetailRoute,
     ]),
     newProjectRoute,
     projectLayoutRoute.addChildren([

@@ -215,12 +215,14 @@ func (p *Pipeline) Deploy(ctx context.Context, project *db.Project, deployment *
 		}
 	}
 
-	// Step 4: Get project variables
-	envVars, err := p.DB.ListResolvedEnvVars(project.ID, deployment.Environment)
+	// Step 4: Get project variables. ListResolvedDeploy* layers app-bundle
+	// variables underneath the project's own (app shared → app env → project
+	// shared → project env). Inert for standalone projects (AppID == "").
+	envVars, err := p.DB.ListResolvedDeployEnvVars(project, deployment.Environment)
 	if err != nil {
 		log.Printf("Warning: could not load env vars: %v", err)
 	}
-	secretVars, err := p.DB.ListResolvedSecrets(project.ID, deployment.Environment)
+	secretVars, err := p.DB.ListResolvedDeploySecrets(project, deployment.Environment)
 	if err != nil {
 		log.Printf("Warning: could not load secrets: %v", err)
 	}
@@ -253,6 +255,19 @@ func (p *Pipeline) Deploy(ctx context.Context, project *db.Project, deployment *
 
 	buildEnvVars, runtimeEnvVars := resolveDeploymentVariables(decryptedEnvVars, decryptedSecrets)
 	buildSecrets := resolveBuildSecrets(decryptedEnvVars, decryptedSecrets)
+
+	// App-bundle service discovery: inject sibling internal URLs so members reach
+	// each other by name over the app network (P3). Lowest precedence — prepended
+	// so any user-set app/project var of the same key overrides (Docker takes the
+	// last occurrence of a key). Inert for standalone projects.
+	if project.AppID != "" {
+		if siblings, err := p.DB.ListProjectsByApp(project.AppID); err != nil {
+			log.Printf("Warning: could not load app siblings for discovery env: %v", err)
+		} else if discovery := AppSiblingEnv(project.ID, siblings, deployment.Environment); len(discovery) > 0 {
+			runtimeEnvVars = append(discovery, runtimeEnvVars...)
+			emit(fmt.Sprintf("Injected service-discovery env for %d sibling(s)", len(discovery)/3))
+		}
+	}
 
 	// Step 4b: Ensure sidecar services (postgres) before building the image.
 	// If a service is attached and pg fails to come up we want to abort BEFORE
@@ -365,6 +380,20 @@ func (p *Pipeline) Deploy(ctx context.Context, project *db.Project, deployment *
 		}
 	}
 
+	// App-bundle members join a per-app private network so they reach each other
+	// by container hostname (no public/CORS hop). Ensured idempotently here, then
+	// connected alongside the proxy network in RunContainer.
+	var appNetwork string
+	if project.AppID != "" {
+		appNetwork = AppNetworkName(project.AppID, deployment.Environment)
+		if err := p.Docker.NetworkEnsure(ctx, appNetwork); err != nil {
+			emitErr(fmt.Sprintf("Warning: could not ensure app network %s: %v", appNetwork, err))
+			appNetwork = ""
+		} else {
+			emit(fmt.Sprintf("Joined app network %s", appNetwork))
+		}
+	}
+
 	// Start new container with temporary name
 	tempName := containerName + "-" + deployment.ID[:8]
 	opts := RunContainerOptions{
@@ -373,6 +402,7 @@ func (p *Pipeline) Deploy(ctx context.Context, project *db.Project, deployment *
 		VolumeBinds:  volumeBinds,
 		Port:         project.Port,
 		Tier:         tier,
+		AppNetwork:   appNetwork,
 	}
 	newContainerID, err := p.Docker.RunContainer(ctx, tempName, imageTag, runtimeEnvVars, p.ProxyNetwork, opts)
 	if err != nil {

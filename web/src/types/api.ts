@@ -84,6 +84,47 @@ export interface PlatformInfo {
   dns_target_ip: string;
 }
 
+// An App bundles several projects (each its own container/build/domain) into one
+// cohesive unit — shared network, app-level env, coordinated deploys.
+export interface App {
+  id: string;
+  organization_id: string;
+  name: string;
+  slug: string;
+  deploy_ordered: boolean;
+  display_order: number;
+  project_count: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface AppHealthMember {
+  project: Project;
+  latest_preview_deploy_at?: string | null;
+  latest_production_deploy_at?: string | null;
+}
+
+export interface AppHealth {
+  app: App;
+  members: AppHealthMember[];
+}
+
+export interface AppReleaseMember {
+  release_id: string;
+  project_id: string;
+  deployment_id: string;
+}
+
+export interface AppRelease {
+  id: string;
+  app_id: string;
+  environment: "preview" | "production";
+  status: "pending" | "succeeded" | "failed" | "rolled_back";
+  created_at: string;
+  updated_at: string;
+  members?: AppReleaseMember[];
+}
+
 /**
  * Resource tier identifiers — mirrors `internal/build/tiers.go`. Backend is the
  * source of truth; the table in `lib/deployment-helpers.ts` carries the
@@ -100,6 +141,10 @@ export interface Project {
   user_id: string;
   organization_id: string;
   organization_name?: string;
+  app_id?: string; // empty/undefined = not in an app
+  build_filter_enabled: boolean;
+  watch_paths: string[] | null;
+  deploy_order: number;
   framework: string;
   package_manager: string;
   root_directory: string;

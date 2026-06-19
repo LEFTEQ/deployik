@@ -61,6 +61,48 @@ type GroupCreate struct {
 	ProjectIDs []string
 }
 
+// App is a bundle of projects inside a workspace (organization). Projects link
+// to it via projects.app_id (nullable; NULL = standalone). DeployOrdered is an
+// attribute of the entity, consumed only by the coordinated-deploy phase.
+type App struct {
+	ID             string    `json:"id"`
+	OrganizationID string    `json:"organization_id"`
+	Name           string    `json:"name"`
+	Slug           string    `json:"slug"`
+	DeployOrdered  bool      `json:"deploy_ordered"`
+	DisplayOrder   int       `json:"display_order"`
+	ProjectCount   int       `json:"project_count"`
+	CreatedAt      time.Time `json:"created_at"`
+	UpdatedAt      time.Time `json:"updated_at"`
+}
+
+// AppCreate is the input to CreateApp.
+type AppCreate struct {
+	OrganizationID string
+	Name           string
+	ProjectIDs     []string
+}
+
+// AppRelease is a snapshot of one coordinated app deploy for an environment —
+// which deployment each member ran — so a single rollback can redeploy the
+// whole set to a known-good point.
+type AppRelease struct {
+	ID          string             `json:"id"`
+	AppID       string             `json:"app_id"`
+	Environment string             `json:"environment"`
+	Status      string             `json:"status"` // pending|succeeded|failed|rolled_back
+	CreatedAt   time.Time          `json:"created_at"`
+	UpdatedAt   time.Time          `json:"updated_at"`
+	Members     []AppReleaseMember `json:"members,omitempty"`
+}
+
+// AppReleaseMember records the exact deployment a member project ran in a release.
+type AppReleaseMember struct {
+	ReleaseID    string `json:"release_id"`
+	ProjectID    string `json:"project_id"`
+	DeploymentID string `json:"deployment_id"`
+}
+
 type GroupMember struct {
 	GroupID   string    `json:"group_id"`
 	UserID    string    `json:"user_id"`
@@ -149,6 +191,7 @@ type Project struct {
 	UserID            string `json:"user_id"`
 	OrganizationID    string `json:"organization_id"`
 	OrganizationName  string `json:"organization_name,omitempty"`
+	AppID             string `json:"app_id,omitempty"` // empty = not in an app
 	Framework         string `json:"framework"`
 	PackageManager    string `json:"package_manager"`
 	RootDirectory     string `json:"root_directory"`
@@ -164,8 +207,16 @@ type Project struct {
 	// StartCommand and HealthPath drive the generated node-api Dockerfile's
 	// CMD and HEALTHCHECK. Empty values mean "use the runtime default" — see
 	// projectconfig.DefaultStartCommand and DefaultHealthPath.
-	StartCommand       string    `json:"start_command"`
-	HealthPath         string    `json:"health_path"`
+	StartCommand string `json:"start_command"`
+	HealthPath   string `json:"health_path"`
+	// BuildFilterEnabled opts a project into changed-path build filtering (the
+	// monorepo fan-out fix). WatchPaths is a JSON-encoded list of globs for
+	// shared dependencies outside RootDirectory. Both inert when filtering is off.
+	BuildFilterEnabled bool     `json:"build_filter_enabled"`
+	WatchPaths         []string `json:"watch_paths"`
+	// DeployOrder positions this member in a coordinated app deploy; honored only
+	// when its app's DeployOrdered = 1 (low deploys first, equal = parallel).
+	DeployOrder        int       `json:"deploy_order"`
 	Status             string    `json:"status"`
 	PreviewPassword    string    `json:"-"` // encrypted, never expose in JSON
 	ProductionPassword string    `json:"-"` // encrypted, never expose in JSON
@@ -214,6 +265,7 @@ const (
 type ProjectService struct {
 	ID                  string        `json:"id"`
 	ProjectID           string        `json:"project_id"`
+	AppID               string        `json:"app_id,omitempty"` // set when the service is associated with an app
 	Environment         string        `json:"environment"`
 	ServiceType         ServiceType   `json:"service_type"`
 	Image               string        `json:"image"`
@@ -406,6 +458,20 @@ type ProjectVariable struct {
 	Kind        VariableKind `json:"kind"`
 	Key         string       `json:"key"`
 	Value       string       `json:"value"` // encrypted at rest, masked in API responses
+	CreatedAt   time.Time    `json:"created_at"`
+	UpdatedAt   time.Time    `json:"updated_at"`
+}
+
+// AppVariable is an app-scoped env var or secret (mirrors ProjectVariable but
+// owned by an app). Layered underneath each member's project variables at
+// deploy time. Value is encrypted at rest and masked in API responses.
+type AppVariable struct {
+	ID          string       `json:"id"`
+	AppID       string       `json:"app_id"`
+	Environment string       `json:"environment"`
+	Kind        VariableKind `json:"kind"`
+	Key         string       `json:"key"`
+	Value       string       `json:"value"`
 	CreatedAt   time.Time    `json:"created_at"`
 	UpdatedAt   time.Time    `json:"updated_at"`
 }

@@ -308,6 +308,39 @@ type RunContainerOptions struct {
 	// Zero value falls back to the Small tier so a partially-populated caller
 	// never accidentally launches an uncapped container.
 	Tier ResourceTier
+	// AppNetwork, when set, is a second Docker network the container joins (in
+	// addition to networkName/proxy) so app-bundle members reach each other by
+	// container hostname without a public hop. Empty for standalone projects.
+	AppNetwork string
+}
+
+// AppNetworkName is the per-app, per-environment private network name shared by
+// an app bundle's member containers, e.g. deployik-app-<appID>-preview.
+func AppNetworkName(appID, environment string) string {
+	return fmt.Sprintf("deployik-app-%s-%s", appID, environment)
+}
+
+// NetworkEnsure creates the named bridge network if it does not already exist.
+// Idempotent: an existing network is a no-op. Safe to call before every member
+// deploy in an app.
+func (d *DockerClient) NetworkEnsure(ctx context.Context, name string) error {
+	if name == "" {
+		return fmt.Errorf("network ensure: empty name")
+	}
+	if _, err := d.cli.NetworkInspect(ctx, name, network.InspectOptions{}); err == nil {
+		return nil
+	} else if !errdefs.IsNotFound(err) {
+		return fmt.Errorf("inspect network %s: %w", name, err)
+	}
+	if _, err := d.cli.NetworkCreate(ctx, name, network.CreateOptions{Driver: "bridge"}); err != nil {
+		// A concurrent member deploy may have created it between our inspect and
+		// create — treat an already-exists race as success.
+		if errdefs.IsConflict(err) {
+			return nil
+		}
+		return fmt.Errorf("create network %s: %w", name, err)
+	}
+	return nil
 }
 
 // ptrInt64 returns a pointer to v. Used for *int64 fields like PidsLimit.
@@ -375,6 +408,13 @@ func (d *DockerClient) RunContainer(ctx context.Context, name, imageTag string, 
 	if networkName != "" {
 		if err := d.cli.NetworkConnect(ctx, networkName, resp.ID, nil); err != nil {
 			log.Printf("Warning: failed to connect to network %s: %v", networkName, err)
+		}
+	}
+
+	// Connect to the app-bundle private network too (sibling comms), when set.
+	if opts.AppNetwork != "" {
+		if err := d.cli.NetworkConnect(ctx, opts.AppNetwork, resp.ID, nil); err != nil {
+			log.Printf("Warning: failed to connect to app network %s: %v", opts.AppNetwork, err)
 		}
 	}
 

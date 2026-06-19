@@ -10,6 +10,7 @@ import { registerVolumeTools } from "./volumes.js";
 import { registerServiceTools } from "./services.js";
 import { registerGithubTools } from "./github.js";
 import { registerGroupTools } from "./groups.js";
+import { registerAppTools } from "./apps.js";
 import { registerWorkspaceTools } from "./workspaces.js";
 import { registerAnalyticsTools } from "./analytics.js";
 import { registerEmailTools } from "./email.js";
@@ -30,6 +31,7 @@ export function registerAllTools(server: McpServer, ctx: ToolContext): void {
   registerServiceTools(server, ctx);
   registerGithubTools(server, ctx);
   registerGroupTools(server, ctx);
+  registerAppTools(server, ctx);
   registerWorkspaceTools(server, ctx);
   registerAnalyticsTools(server, ctx);
   registerEmailTools(server, ctx);
