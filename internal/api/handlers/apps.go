@@ -29,7 +29,8 @@ type createAppRequest struct {
 }
 
 type updateAppRequest struct {
-	Name string `json:"name"`
+	Name          *string `json:"name,omitempty"`
+	DeployOrdered *bool   `json:"deploy_ordered,omitempty"`
 }
 
 type appProjectsRequest struct {
@@ -114,14 +115,28 @@ func (h *AppHandler) Update(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request body"})
 		return
 	}
-	if strings.TrimSpace(req.Name) == "" {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "name is required"})
+	if req.Name == nil && req.DeployOrdered == nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "nothing to update"})
 		return
 	}
-	updated, err := h.DB.UpdateAppName(app.ID, req.Name)
-	if err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to update app"})
-		return
+	updated := app
+	if req.Name != nil {
+		if strings.TrimSpace(*req.Name) == "" {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "name cannot be empty"})
+			return
+		}
+		var err error
+		if updated, err = h.DB.UpdateAppName(app.ID, *req.Name); err != nil {
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to update app"})
+			return
+		}
+	}
+	if req.DeployOrdered != nil {
+		var err error
+		if updated, err = h.DB.SetAppDeployOrdered(app.ID, *req.DeployOrdered); err != nil {
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to update app"})
+			return
+		}
 	}
 	writeJSON(w, http.StatusOK, updated)
 }

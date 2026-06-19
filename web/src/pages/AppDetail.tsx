@@ -51,6 +51,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
+import { Switch } from "@/components/ui/switch";
 import { Spinner } from "@/components/ui/spinner";
 
 type Environment = "preview" | "production";
@@ -134,6 +135,13 @@ export function AppDetail() {
   const deleteMutation = useMutation({
     mutationFn: () => api.deleteApp(appId),
     onError: (e) => toast.error(e instanceof Error ? e.message : "Failed to delete app"),
+  });
+  const orderedMutation = useMutation({
+    mutationFn: (deployOrdered: boolean) => api.updateApp(appId, { deploy_ordered: deployOrdered }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.appHealth(appId) });
+    },
+    onError: (e) => toast.error(e instanceof Error ? e.message : "Failed to update app"),
   });
 
   if (isLoading) {
@@ -221,9 +229,18 @@ export function AppDetail() {
               {app?.deploy_ordered ? " · deployed in deploy_order" : " · deployed in parallel"}
             </CardDescription>
           </div>
-          <Button variant="outline" size="sm" onClick={() => setAddOpen(true)}>
-            <Plus className="h-4 w-4" /> Add projects
-          </Button>
+          <div className="flex items-center gap-4">
+            <label className="flex items-center gap-2 text-sm text-muted-foreground">
+              <Switch
+                checked={!!app?.deploy_ordered}
+                onCheckedChange={(v) => orderedMutation.mutate(v)}
+              />
+              Ordered deploy
+            </label>
+            <Button variant="outline" size="sm" onClick={() => setAddOpen(true)}>
+              <Plus className="h-4 w-4" /> Add projects
+            </Button>
+          </div>
         </CardHeader>
         <CardContent className="space-y-2">
           {members.length === 0 ? (

@@ -192,6 +192,18 @@ func (db *DB) UpdateAppName(appID, name string) (*App, error) {
 	return db.GetApp(appID)
 }
 
+// SetAppDeployOrdered toggles whether an app honors member deploy_order during a
+// coordinated deploy (true) or deploys all members in parallel (false).
+func (db *DB) SetAppDeployOrdered(appID string, ordered bool) (*App, error) {
+	if _, err := db.Exec(
+		`UPDATE apps SET deploy_ordered = ?, updated_at = datetime('now') WHERE id = ?`,
+		ordered, appID,
+	); err != nil {
+		return nil, fmt.Errorf("set app deploy_ordered: %w", err)
+	}
+	return db.GetApp(appID)
+}
+
 // DeleteApp deletes an app. Member projects survive: projects.app_id is set NULL
 // by the ON DELETE SET NULL foreign key.
 func (db *DB) DeleteApp(appID string) error {

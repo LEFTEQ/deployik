@@ -82,15 +82,19 @@ export function registerAppTools(server: McpServer, ctx: ToolContext): void {
 
   registerTool(server, ctx, {
     name: "update_app",
-    description: "Rename an app bundle.",
-    inputSchema: { app_id: z.string(), name: z.string() },
+    description: "Update an app bundle: rename it and/or toggle deploy_ordered (true = deploy members in deploy_order, false = parallel).",
+    inputSchema: {
+      app_id: z.string(),
+      name: z.string().optional(),
+      deploy_ordered: z.boolean().optional().describe("true honors member deploy_order during deploy_app; false deploys all members in parallel."),
+    },
     annotations: { title: "Update app" },
     handler: async (args) => {
-      const app = await ctx.client.request<App>(`/apps/${args.app_id}`, {
-        method: "PATCH",
-        body: { name: args.name },
-      });
-      return { text: `Renamed app to '${app.name}' (id: ${app.id}).`, data: app };
+      const body: Record<string, unknown> = {};
+      if (args.name !== undefined) body.name = args.name;
+      if (args.deploy_ordered !== undefined) body.deploy_ordered = args.deploy_ordered;
+      const app = await ctx.client.request<App>(`/apps/${args.app_id}`, { method: "PATCH", body });
+      return { text: `Updated app '${app.name}' (id: ${app.id}).`, data: app };
     },
   });
 

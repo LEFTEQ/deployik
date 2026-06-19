@@ -334,7 +334,10 @@ class ApiClient {
     });
   }
 
-  async updateApp(id: string, data: { name: string }): Promise<App> {
+  async updateApp(
+    id: string,
+    data: { name?: string; deploy_ordered?: boolean },
+  ): Promise<App> {
     return this.request(`/apps/${id}`, {
       method: "PATCH",
       body: JSON.stringify(data),
