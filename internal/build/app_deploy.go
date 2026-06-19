@@ -1,10 +1,64 @@
 package build
 
 import (
+	"fmt"
 	"sort"
+	"strings"
 
 	"github.com/LEFTEQ/lovinka-deployik/internal/db"
 )
+
+// AppSiblingEnv returns runtime env vars that expose each sibling member's
+// internal base URL + host on the app's private network, so a member reaches
+// its siblings by container name without hardcoding. For a sibling "acme-api"
+// (port 4000) on production it emits:
+//
+//	acme_API_URL=http://deployik-acme-api-production:4000
+//	acme_API_HOST=deployik-acme-api-production
+//	acme_API_PORT=4000
+//
+// selfID is excluded. Names are upper-snaked (hyphens → underscores). These are
+// injected at the LOWEST precedence so a user-set app/project var of the same
+// key always wins. Uses the canonical (production / default-preview) container
+// name — cross-member discovery targets that naming, not per-branch preview
+// instances.
+func AppSiblingEnv(selfID string, members []db.Project, environment string) []string {
+	var out []string
+	for _, sibling := range members {
+		if sibling.ID == selfID || sibling.Status == "deleted" {
+			continue
+		}
+		prefix := envVarPrefix(sibling.Name)
+		if prefix == "" {
+			continue
+		}
+		host := db.DeploymentContainerName(sibling.Name, environment, nil)
+		port := sibling.Port
+		if port <= 0 {
+			port = 3000
+		}
+		out = append(out,
+			fmt.Sprintf("%s_URL=http://%s:%d", prefix, host, port),
+			fmt.Sprintf("%s_HOST=%s", prefix, host),
+			fmt.Sprintf("%s_PORT=%d", prefix, port),
+		)
+	}
+	return out
+}
+
+// envVarPrefix upper-snakes a project name for use as an env var prefix.
+func envVarPrefix(name string) string {
+	var b strings.Builder
+	for _, r := range strings.ToUpper(strings.TrimSpace(name)) {
+		switch {
+		case r >= 'A' && r <= 'Z', r >= '0' && r <= '9':
+			b.WriteRune(r)
+		default:
+			b.WriteByte('_')
+		}
+	}
+	return b.String()
+}
 
 // OrderAppMembers groups an app's member projects into the batches a coordinated
 // deploy rolls out in sequence. Members within a batch deploy in parallel;

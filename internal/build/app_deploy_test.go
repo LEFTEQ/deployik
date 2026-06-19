@@ -1,6 +1,7 @@
 package build
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/LEFTEQ/lovinka-deployik/internal/db"
@@ -89,6 +90,38 @@ func TestRunRolloutAllHealthy(t *testing.T) {
 	}
 	if res.Deployed[0].DeploymentID != "deploy-p-db" {
 		t.Fatalf("recorded deployment id = %q", res.Deployed[0].DeploymentID)
+	}
+}
+
+func TestAppSiblingEnv(t *testing.T) {
+	members := []db.Project{
+		{ID: "p-web", Name: "acme-web", Port: 3000},
+		{ID: "p-api", Name: "acme-api", Port: 4000},
+		{ID: "p-gone", Name: "dead", Port: 3000, Status: "deleted"},
+	}
+	env := AppSiblingEnv("p-web", members, "production")
+
+	got := map[string]bool{}
+	for _, e := range env {
+		got[e] = true
+	}
+	// web sees api (not itself, not the deleted one).
+	if !got["acme_API_URL=http://deployik-acme-api-production:4000"] {
+		t.Fatalf("missing api URL; got %v", env)
+	}
+	if !got["acme_API_HOST=deployik-acme-api-production"] {
+		t.Fatalf("missing api HOST; got %v", env)
+	}
+	if !got["acme_API_PORT=4000"] {
+		t.Fatalf("missing api PORT; got %v", env)
+	}
+	for _, e := range env {
+		if strings.HasPrefix(e, "acme_WEB_") {
+			t.Fatalf("self must be excluded, got %q", e)
+		}
+		if strings.HasPrefix(e, "DEAD_") {
+			t.Fatalf("deleted sibling must be excluded, got %q", e)
+		}
 	}
 }
 
