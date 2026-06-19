@@ -51,3 +51,49 @@ func OrderAppMembers(members []db.Project, deployOrdered bool) [][]db.Project {
 	}
 	return batches
 }
+
+// MemberDeployResult is one member's outcome in a coordinated rollout.
+type MemberDeployResult struct {
+	ProjectID    string
+	DeploymentID string
+	Healthy      bool
+}
+
+// RolloutResult is the outcome of a coordinated app rollout.
+type RolloutResult struct {
+	Succeeded bool
+	// Deployed lists every member that ran and reached healthy/live, in rollout
+	// order — these are the ones swapped in (and the set to roll back on failure).
+	Deployed []MemberDeployResult
+	// FailedProjectID is the first member that failed (empty when Succeeded).
+	FailedProjectID string
+}
+
+// RunRollout deploys batches in order, halting at the first unhealthy member.
+// deployFn deploys one member and reports the deployment it created and whether
+// that member reached healthy/live (blue-green only swaps on health, so an
+// unhealthy member leaves the prior container serving). Members in a batch are
+// deployed in slice order; a failure stops the remaining members and batches.
+//
+// The Docker-dependent work lives in deployFn; this coordination is pure and
+// unit-tested with a fake deployFn (mirrors the codebase's fakeRunner pattern).
+func RunRollout(batches [][]db.Project, deployFn func(p db.Project) (deploymentID string, healthy bool)) RolloutResult {
+	var res RolloutResult
+	for _, batch := range batches {
+		for _, member := range batch {
+			deploymentID, healthy := deployFn(member)
+			if !healthy {
+				res.FailedProjectID = member.ID
+				res.Succeeded = false
+				return res
+			}
+			res.Deployed = append(res.Deployed, MemberDeployResult{
+				ProjectID:    member.ID,
+				DeploymentID: deploymentID,
+				Healthy:      true,
+			})
+		}
+	}
+	res.Succeeded = true
+	return res
+}

@@ -9,12 +9,16 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	"github.com/LEFTEQ/lovinka-deployik/internal/auth"
+	"github.com/LEFTEQ/lovinka-deployik/internal/build"
+	"github.com/LEFTEQ/lovinka-deployik/internal/crypto"
 	"github.com/LEFTEQ/lovinka-deployik/internal/db"
 )
 
 // AppHandler serves /apps — bundles of projects within a workspace.
 type AppHandler struct {
-	DB *db.DB
+	DB        *db.DB
+	Pipeline  *build.Pipeline   // coordinated app deploys (P4); nil disables deploy/rollback
+	Encryptor *crypto.Encryptor // decrypts the caller's GitHub token for deploys
 }
 
 type createAppRequest struct {

@@ -86,3 +86,71 @@ func TestAppHandlerCreateAndList(t *testing.T) {
 		t.Fatalf("GetHealth status = %d, want 200 (body: %s)", healthRec.Code, healthRec.Body.String())
 	}
 }
+
+func TestAppHandlerDeployDisabledWithoutPipeline(t *testing.T) {
+	database := appTestDB(t)
+	user := &db.User{ID: db.NewID(), GithubID: 1, Username: "owner", Role: "user"}
+	if err := database.UpsertUser(user); err != nil {
+		t.Fatalf("UpsertUser: %v", err)
+	}
+	org, err := database.EnsurePersonalOrganization(user)
+	if err != nil {
+		t.Fatalf("EnsurePersonalOrganization: %v", err)
+	}
+	app, err := database.CreateApp(&db.AppCreate{OrganizationID: org.ID, Name: "Bundle"})
+	if err != nil {
+		t.Fatalf("CreateApp: %v", err)
+	}
+
+	h := &AppHandler{DB: database} // no Pipeline
+	claims := &auth.Claims{UserID: user.ID, Role: "user"}
+	rctx := chi.NewRouteContext()
+	rctx.URLParams.Add("id", app.ID)
+	req := httptest.NewRequest(http.MethodPost, "/apps/"+app.ID+"/deploy", bytes.NewReader([]byte(`{"environment":"production"}`)))
+	req = req.WithContext(context.WithValue(req.Context(), chi.RouteCtxKey, rctx))
+	req = req.WithContext(auth.WithClaims(req.Context(), claims))
+	rec := httptest.NewRecorder()
+	h.Deploy(rec, req)
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("Deploy without pipeline = %d, want 503", rec.Code)
+	}
+}
+
+func TestAppHandlerListReleases(t *testing.T) {
+	database := appTestDB(t)
+	user := &db.User{ID: db.NewID(), GithubID: 1, Username: "owner", Role: "user"}
+	if err := database.UpsertUser(user); err != nil {
+		t.Fatalf("UpsertUser: %v", err)
+	}
+	org, err := database.EnsurePersonalOrganization(user)
+	if err != nil {
+		t.Fatalf("EnsurePersonalOrganization: %v", err)
+	}
+	app, err := database.CreateApp(&db.AppCreate{OrganizationID: org.ID, Name: "Bundle"})
+	if err != nil {
+		t.Fatalf("CreateApp: %v", err)
+	}
+	if _, err := database.CreateAppRelease(&db.AppRelease{AppID: app.ID, Environment: "production", Status: "succeeded"}, nil); err != nil {
+		t.Fatalf("CreateAppRelease: %v", err)
+	}
+
+	h := &AppHandler{DB: database}
+	claims := &auth.Claims{UserID: user.ID, Role: "user"}
+	rctx := chi.NewRouteContext()
+	rctx.URLParams.Add("id", app.ID)
+	req := httptest.NewRequest(http.MethodGet, "/apps/"+app.ID+"/releases?environment=production", nil)
+	req = req.WithContext(context.WithValue(req.Context(), chi.RouteCtxKey, rctx))
+	req = req.WithContext(auth.WithClaims(req.Context(), claims))
+	rec := httptest.NewRecorder()
+	h.ListReleases(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("ListReleases status = %d, want 200 (body %s)", rec.Code, rec.Body.String())
+	}
+	var releases []db.AppRelease
+	if err := json.Unmarshal(rec.Body.Bytes(), &releases); err != nil {
+		t.Fatalf("decode releases: %v", err)
+	}
+	if len(releases) != 1 || releases[0].Status != "succeeded" {
+		t.Fatalf("releases = %+v, want one succeeded", releases)
+	}
+}

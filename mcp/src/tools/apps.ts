@@ -133,6 +133,64 @@ export function registerAppTools(server: McpServer, ctx: ToolContext): void {
     },
   });
 
+  registerTool(server, ctx, {
+    name: "deploy_app",
+    description: "Coordinated deploy of every member of an app bundle for one environment: ordered (by deploy_order when the app is deploy-ordered), health-gated, with best-effort rollback to the last good release on failure. Returns immediately; the rollout runs in the background.",
+    inputSchema: {
+      app_id: z.string(),
+      environment: z.enum(["preview", "production"]).default("production"),
+    },
+    annotations: { title: "Deploy app" },
+    handler: async (args) => {
+      const res = await ctx.client.request<{ member_count: number; deploy_ordered: boolean }>(`/apps/${args.app_id}/deploy`, {
+        method: "POST",
+        body: { environment: args.environment },
+      });
+      return {
+        text: `Started ${args.environment} deploy of app ${args.app_id} (${res.member_count} member(s)${res.deploy_ordered ? ", ordered" : ""}). Watch member deployments or list_app_releases for the outcome.`,
+        data: res,
+      };
+    },
+  });
+
+  registerTool(server, ctx, {
+    name: "list_app_releases",
+    description: "List an app's coordinated-deploy release history for an environment (newest first). Use a release id with rollback_app.",
+    inputSchema: {
+      app_id: z.string(),
+      environment: z.enum(["preview", "production"]).default("production"),
+    },
+    annotations: { readOnlyHint: true, title: "List app releases" },
+    handler: async (args) => {
+      const releases = await ctx.client.request<Array<{ id: string; status: string; created_at: string }>>(`/apps/${args.app_id}/releases?environment=${args.environment}`);
+      const text = releases.length
+        ? releases.map((r) => `${r.id} [${r.status}] ${r.created_at}`).join("\n")
+        : "(no releases yet)";
+      return { text, data: releases };
+    },
+  });
+
+  registerTool(server, ctx, {
+    name: "rollback_app",
+    description: "Roll an app's members back to a prior release: redeploys each member to the exact deployment it ran in that release. Returns immediately; the rollback runs in the background.",
+    inputSchema: {
+      app_id: z.string(),
+      release_id: z.string(),
+      environment: z.enum(["preview", "production"]).default("production"),
+    },
+    annotations: { title: "Rollback app" },
+    handler: async (args) => {
+      await ctx.client.request(`/apps/${args.app_id}/rollback`, {
+        method: "POST",
+        body: { environment: args.environment, release_id: args.release_id },
+      });
+      return {
+        text: `Started rollback of app ${args.app_id} (${args.environment}) to release ${args.release_id}.`,
+        data: { app_id: args.app_id, release_id: args.release_id, environment: args.environment },
+      };
+    },
+  });
+
   // App-level env vars / secrets. These are layered UNDERNEATH each member
   // project's own variables at deploy time (app shared → app env → project
   // shared → project env). Set once on the app, inherited by every member.

@@ -67,3 +67,56 @@ func TestOrderAppMembersEmpty(t *testing.T) {
 		t.Fatalf("empty members should yield nil, got %v", got)
 	}
 }
+
+func TestRunRolloutAllHealthy(t *testing.T) {
+	batches := [][]db.Project{
+		{{ID: "p-db", Name: "db"}},
+		{{ID: "p-api", Name: "api"}, {ID: "p-web", Name: "web"}},
+	}
+	var order []string
+	res := RunRollout(batches, func(p db.Project) (string, bool) {
+		order = append(order, p.ID)
+		return "deploy-" + p.ID, true
+	})
+	if !res.Succeeded {
+		t.Fatalf("expected success, got %+v", res)
+	}
+	if len(res.Deployed) != 3 {
+		t.Fatalf("deployed = %d, want 3", len(res.Deployed))
+	}
+	if order[0] != "p-db" {
+		t.Fatalf("db must deploy first, order = %v", order)
+	}
+	if res.Deployed[0].DeploymentID != "deploy-p-db" {
+		t.Fatalf("recorded deployment id = %q", res.Deployed[0].DeploymentID)
+	}
+}
+
+func TestRunRolloutHaltsOnFailure(t *testing.T) {
+	batches := [][]db.Project{
+		{{ID: "p-db", Name: "db"}},
+		{{ID: "p-api", Name: "api"}},
+		{{ID: "p-web", Name: "web"}},
+	}
+	var deployed []string
+	res := RunRollout(batches, func(p db.Project) (string, bool) {
+		deployed = append(deployed, p.ID)
+		return "deploy-" + p.ID, p.ID != "p-api" // api fails
+	})
+	if res.Succeeded {
+		t.Fatal("expected failure")
+	}
+	if res.FailedProjectID != "p-api" {
+		t.Fatalf("failed project = %q, want p-api", res.FailedProjectID)
+	}
+	// web (after the failed api) must NOT have been deployed.
+	for _, id := range deployed {
+		if id == "p-web" {
+			t.Fatal("rollout must halt before deploying web")
+		}
+	}
+	// db (before api) is the already-swapped set to roll back.
+	if len(res.Deployed) != 1 || res.Deployed[0].ProjectID != "p-db" {
+		t.Fatalf("already-deployed set = %+v, want [p-db]", res.Deployed)
+	}
+}
