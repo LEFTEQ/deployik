@@ -61,6 +61,28 @@ type GroupCreate struct {
 	ProjectIDs []string
 }
 
+// App is a bundle of projects inside a workspace (organization). Projects link
+// to it via projects.app_id (nullable; NULL = standalone). DeployOrdered is an
+// attribute of the entity, consumed only by the coordinated-deploy phase.
+type App struct {
+	ID             string    `json:"id"`
+	OrganizationID string    `json:"organization_id"`
+	Name           string    `json:"name"`
+	Slug           string    `json:"slug"`
+	DeployOrdered  bool      `json:"deploy_ordered"`
+	DisplayOrder   int       `json:"display_order"`
+	ProjectCount   int       `json:"project_count"`
+	CreatedAt      time.Time `json:"created_at"`
+	UpdatedAt      time.Time `json:"updated_at"`
+}
+
+// AppCreate is the input to CreateApp.
+type AppCreate struct {
+	OrganizationID string
+	Name           string
+	ProjectIDs     []string
+}
+
 type GroupMember struct {
 	GroupID   string    `json:"group_id"`
 	UserID    string    `json:"user_id"`
@@ -149,6 +171,7 @@ type Project struct {
 	UserID            string `json:"user_id"`
 	OrganizationID    string `json:"organization_id"`
 	OrganizationName  string `json:"organization_name,omitempty"`
+	AppID             string `json:"app_id,omitempty"` // empty = not in an app
 	Framework         string `json:"framework"`
 	PackageManager    string `json:"package_manager"`
 	RootDirectory     string `json:"root_directory"`
