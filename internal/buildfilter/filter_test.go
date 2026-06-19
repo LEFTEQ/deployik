@@ -111,6 +111,15 @@ func TestShouldBuild(t *testing.T) {
 			listAvailable: true,
 			wantBuild:     true,
 		},
+		{
+			name:          "leading-slash watch glob is normalized to match changed paths",
+			filterEnabled: true,
+			rootDir:       "apps/web",
+			watchPaths:    []string{"/packages/shared/**"},
+			changed:       []string{"packages/shared/util.ts"},
+			listAvailable: true,
+			wantBuild:     true,
+		},
 	}
 
 	for _, tc := range tests {

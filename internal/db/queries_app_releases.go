@@ -8,6 +8,9 @@ import (
 // CreateAppRelease records a coordinated app deploy and its per-member
 // deployment snapshot in one transaction. The release id is generated here.
 func (db *DB) CreateAppRelease(release *AppRelease, members []AppReleaseMember) (*AppRelease, error) {
+	if release == nil {
+		return nil, fmt.Errorf("create app release: release is nil")
+	}
 	if release.AppID == "" {
 		return nil, fmt.Errorf("create app release: app_id is required")
 	}

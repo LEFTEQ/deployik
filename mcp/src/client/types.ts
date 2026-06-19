@@ -89,6 +89,7 @@ export interface Project {
   user_id: string;
   organization_id: string;
   organization_name?: string;
+  app_id?: string;
   framework: string;
   package_manager: string;
   root_directory: string;
@@ -103,6 +104,9 @@ export interface Project {
   resource_tier: ResourceTier;
   start_command: string;
   health_path: string;
+  build_filter_enabled: boolean;
+  watch_paths: string[] | null;
+  deploy_order: number;
   status: "active" | "paused" | "deleted";
   latest_deployment_id: string | null;
   latest_deployment_status: string | null;

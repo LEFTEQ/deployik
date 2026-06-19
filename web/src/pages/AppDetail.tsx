@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { Link, useParams } from "@tanstack/react-router";
+import { Link, useNavigate, useParams } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import {
@@ -65,6 +65,7 @@ const RELEASE_BADGE: Record<AppRelease["status"], string> = {
 
 export function AppDetail() {
   const { appId } = useParams({ strict: false }) as { appId: string };
+  const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [environment, setEnvironment] = useState<Environment>("production");
   const [addOpen, setAddOpen] = useState(false);
@@ -205,7 +206,7 @@ export function AppDetail() {
                         onSuccess: () => {
                           toast.success("App deleted");
                           queryClient.invalidateQueries({ queryKey: queryKeys.apps() });
-                          window.history.back();
+                          navigate({ to: "/apps" });
                         },
                       })
                     }
