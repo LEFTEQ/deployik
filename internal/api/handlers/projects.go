@@ -63,6 +63,7 @@ type createProjectRequest struct {
 	ResourceTier          string   `json:"resource_tier"`
 	BuildFilterEnabled    bool     `json:"build_filter_enabled"`
 	WatchPaths            []string `json:"watch_paths"`
+	DeployOrder           int      `json:"deploy_order"`
 	AutoBuildEnabled      *bool    `json:"auto_build_enabled"`
 	AutoProductionEnabled bool     `json:"auto_production_enabled"`
 }
@@ -86,6 +87,7 @@ type updateProjectRequest struct {
 	ResourceTier       *string   `json:"resource_tier,omitempty"`
 	BuildFilterEnabled *bool     `json:"build_filter_enabled,omitempty"`
 	WatchPaths         *[]string `json:"watch_paths,omitempty"`
+	DeployOrder        *int      `json:"deploy_order,omitempty"`
 }
 
 // validateProjectPort rejects obviously-invalid ports. 0 is treated as "unset"
@@ -203,6 +205,7 @@ func (h *ProjectHandler) Create(w http.ResponseWriter, r *http.Request) {
 		ResourceTier:       resourceTier,
 		BuildFilterEnabled: req.BuildFilterEnabled,
 		WatchPaths:         req.WatchPaths,
+		DeployOrder:        req.DeployOrder,
 		Status:             "active",
 	}
 	if project.DataMountPath == "" {
@@ -383,6 +386,9 @@ func (h *ProjectHandler) Update(w http.ResponseWriter, r *http.Request) {
 	}
 	if req.WatchPaths != nil {
 		project.WatchPaths = *req.WatchPaths
+	}
+	if req.DeployOrder != nil {
+		project.DeployOrder = *req.DeployOrder
 	}
 	if err := projectconfig.ApplyProjectDefaults(project); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})

@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"strings"
 	"time"
@@ -76,20 +77,23 @@ func (h *AppHandler) Create(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "name is required"})
 		return
 	}
-	if strings.TrimSpace(req.OrganizationID) == "" {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "organization_id is required"})
+	// Default to the caller's personal workspace when no org is given, matching
+	// project creation (resolveCreateOrganizationID).
+	organizationID, err := h.resolveCreateOrganizationID(claims.UserID, strings.TrimSpace(req.OrganizationID))
+	if err != nil {
+		status := http.StatusInternalServerError
+		if strings.Contains(err.Error(), "organization not found") {
+			status = http.StatusNotFound
+		}
+		writeJSON(w, status, map[string]string{"error": err.Error()})
 		return
 	}
-	if !h.canManageOrg(claims, req.OrganizationID) {
-		writeJSON(w, http.StatusNotFound, map[string]string{"error": "organization not found"})
-		return
-	}
-	if !h.canAttachProjects(claims, req.OrganizationID, req.ProjectIDs) {
+	if !h.canAttachProjects(claims, organizationID, req.ProjectIDs) {
 		writeJSON(w, http.StatusNotFound, map[string]string{"error": "project not found"})
 		return
 	}
 	app, err := h.DB.CreateApp(&db.AppCreate{
-		OrganizationID: req.OrganizationID,
+		OrganizationID: organizationID,
 		Name:           req.Name,
 		ProjectIDs:     req.ProjectIDs,
 	})
@@ -218,6 +222,33 @@ func (h *AppHandler) GetHealth(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 	writeJSON(w, http.StatusOK, out)
+}
+
+// resolveCreateOrganizationID validates an explicit workspace id or defaults to
+// the caller's personal workspace, matching ProjectHandler.resolveCreateOrganizationID.
+func (h *AppHandler) resolveCreateOrganizationID(userID, organizationID string) (string, error) {
+	if organizationID != "" {
+		organization, err := h.DB.GetOrganizationForUser(organizationID, userID)
+		if err != nil {
+			return "", err
+		}
+		if organization == nil {
+			return "", fmt.Errorf("organization not found")
+		}
+		return organization.ID, nil
+	}
+	user, err := h.DB.GetUserByID(userID)
+	if err != nil {
+		return "", fmt.Errorf("failed to load user: %w", err)
+	}
+	if user == nil {
+		return "", fmt.Errorf("user not found")
+	}
+	organization, err := h.DB.EnsurePersonalOrganization(user)
+	if err != nil {
+		return "", fmt.Errorf("failed to prepare personal organization: %w", err)
+	}
+	return organization.ID, nil
 }
 
 // canManageOrg reports whether the caller is a member of the organization.

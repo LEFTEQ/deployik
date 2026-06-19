@@ -40,7 +40,7 @@ export function registerAppTools(server: McpServer, ctx: ToolContext): void {
     description: "Create an app bundle inside a workspace. Optionally move existing projects into it by id.",
     inputSchema: {
       name: z.string(),
-      organization_id: z.string().describe("Workspace/group id the app belongs to."),
+      organization_id: z.string().optional().describe("Workspace/group id. Defaults to your personal workspace when omitted."),
       project_ids: z.array(z.string()).default([]),
     },
     annotations: { title: "Create app bundle" },

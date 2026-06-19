@@ -140,6 +140,7 @@ export interface CreateProjectPayload {
   resource_tier?: ResourceTier;
   build_filter_enabled?: boolean;
   watch_paths?: string[];
+  deploy_order?: number;
   auto_build_enabled?: boolean;
   auto_production_enabled?: boolean;
 }

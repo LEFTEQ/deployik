@@ -33,6 +33,7 @@ export interface CreateProjectToolArgs {
   health_path?: string;
   build_filter_enabled?: boolean;
   watch_paths?: string[];
+  deploy_order?: number;
 }
 
 export function buildCreateProjectPayload(
@@ -65,6 +66,7 @@ export function buildCreateProjectPayload(
   if (args.health_path) payload.health_path = args.health_path;
   if (args.build_filter_enabled !== undefined) payload.build_filter_enabled = args.build_filter_enabled;
   if (args.watch_paths) payload.watch_paths = args.watch_paths;
+  if (args.deploy_order !== undefined) payload.deploy_order = args.deploy_order;
   return payload;
 }
 
@@ -173,6 +175,7 @@ export function registerProjectTools(server: McpServer, ctx: ToolContext): void 
       health_path: z.string().optional(),
       build_filter_enabled: z.boolean().optional().describe("Opt into changed-path build filtering (the monorepo fan-out fix): only rebuild when a changed path is under root_directory or matches a watch_paths glob."),
       watch_paths: z.array(z.string()).optional().describe("Globs for shared deps outside root_directory that should also trigger a rebuild, e.g. [\"packages/shared/**\",\"bun.lock\"]. Supports ** and *."),
+      deploy_order: z.number().int().optional().describe("Position in a coordinated app deploy (lower deploys first; equal = parallel). Honored only when the app is deploy-ordered."),
     },
     annotations: { title: "Create project" },
     handler: async (args) => {
@@ -213,6 +216,7 @@ export function registerProjectTools(server: McpServer, ctx: ToolContext): void 
           resource_tier: z.enum(["nano", "small", "medium", "large"]).optional(),
           build_filter_enabled: z.boolean().optional(),
           watch_paths: z.array(z.string()).optional(),
+          deploy_order: z.number().int().optional(),
         })
         .describe("Fields to update. Server validates."),
     },
