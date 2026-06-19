@@ -194,7 +194,7 @@ func NewRouter(cfg *RouterConfig) *chi.Mux {
 			r.With(mutationLimiter.Middleware("group_invite_create")).Post("/groups/{id}/invites", groupHandler.CreateInvite)
 			r.With(mutationLimiter.Middleware("group_invite_cancel")).Delete("/groups/{id}/invites/{iid}", groupHandler.CancelInvite)
 
-			appHandler := &handlers.AppHandler{DB: cfg.DB, Pipeline: cfg.Pipeline, Encryptor: cfg.Encryptor}
+			appHandler := &handlers.AppHandler{DB: cfg.DB, Pipeline: cfg.Pipeline, Encryptor: cfg.Encryptor, Audit: auditRecorder}
 			r.Get("/apps", appHandler.List)
 			r.With(mutationLimiter.Middleware("app_create")).Post("/apps", appHandler.Create)
 			r.Get("/apps/{id}/health", appHandler.GetHealth)

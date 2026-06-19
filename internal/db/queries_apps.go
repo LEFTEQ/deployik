@@ -89,12 +89,16 @@ func reserveUniqueAppSlug(tx *sql.Tx, orgID, base string) (string, error) {
 	}
 }
 
-// moveProjectToAppTx sets a project's app_id within a transaction.
+// moveProjectToAppTx sets a project's app_id within a transaction. The project
+// must live in the same organization as the app — enforced here (not just in the
+// handler) so the workspace boundary can't be crossed via this path. A project
+// in a different org (or missing/deleted) matches zero rows → ErrProjectNotMovable.
 func moveProjectToAppTx(tx *sql.Tx, appID, projectID string) error {
 	res, err := tx.Exec(
 		`UPDATE projects SET app_id = ?, updated_at = datetime('now')
-		 WHERE id = ? AND status != 'deleted'`,
-		appID, projectID,
+		 WHERE id = ? AND status != 'deleted'
+		   AND organization_id = (SELECT organization_id FROM apps WHERE id = ?)`,
+		appID, projectID, appID,
 	)
 	if err != nil {
 		return fmt.Errorf("move project to app: %w", err)

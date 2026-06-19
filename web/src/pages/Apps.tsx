@@ -116,7 +116,9 @@ export function Apps() {
             value={name}
             onChange={(e) => setName(e.target.value)}
             onKeyDown={(e) => {
-              if (e.key === "Enter" && name.trim()) createMutation.mutate();
+              if (e.key === "Enter" && name.trim() && !createMutation.isPending) {
+                createMutation.mutate();
+              }
             }}
           />
           <DialogFooter>

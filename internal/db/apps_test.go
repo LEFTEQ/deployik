@@ -1,6 +1,9 @@
 package db
 
-import "testing"
+import (
+	"database/sql"
+	"testing"
+)
 
 func TestMigration026CreatesAppsSchema(t *testing.T) {
 	database := newTestDB(t)
@@ -168,6 +171,56 @@ func TestAddRemoveProjectAndListByApp(t *testing.T) {
 	}
 	if len(after) != 0 {
 		t.Fatalf("expected 0 members after remove, got %d", len(after))
+	}
+}
+
+func TestDeleteAppDetachesServicesNotDestroys(t *testing.T) {
+	database := newTestDB(t)
+	user := createAppTestUser(t, database, "owner", 1)
+	org, err := database.EnsurePersonalOrganization(user)
+	if err != nil {
+		t.Fatalf("EnsurePersonalOrganization: %v", err)
+	}
+	app, err := database.CreateApp(&AppCreate{OrganizationID: org.ID, Name: "Bundle"})
+	if err != nil {
+		t.Fatalf("CreateApp: %v", err)
+	}
+	project := &Project{
+		Name: "api", GithubRepo: "r", GithubOwner: "o", Branch: "main",
+		UserID: user.ID, OrganizationID: org.ID, Framework: "static",
+		PackageManager: "auto", Status: "active",
+	}
+	if err := database.CreateProject(project); err != nil {
+		t.Fatalf("CreateProject: %v", err)
+	}
+	// A project-owned service associated with the app (app_id set).
+	if _, err := database.Exec(
+		`INSERT INTO project_services
+		   (id, project_id, app_id, environment, service_type, db_name, db_user, db_password_encrypted)
+		 VALUES (?, ?, ?, 'production', 'postgres', 'db', 'u', 'enc')`,
+		NewID(), project.ID, app.ID,
+	); err != nil {
+		t.Fatalf("insert service: %v", err)
+	}
+
+	if err := database.DeleteApp(app.ID); err != nil {
+		t.Fatalf("DeleteApp: %v", err)
+	}
+
+	// Service must SURVIVE the app deletion (detached, not destroyed).
+	var count int
+	var appID sql.NullString
+	if err := database.QueryRow(
+		`SELECT COUNT(*), MAX(app_id) FROM project_services WHERE project_id = ?`,
+		project.ID,
+	).Scan(&count, &appID); err != nil {
+		t.Fatalf("query service: %v", err)
+	}
+	if count != 1 {
+		t.Fatalf("service count = %d, want 1 (app delete must not destroy services)", count)
+	}
+	if appID.Valid {
+		t.Fatalf("service app_id = %q, want NULL after app delete", appID.String)
 	}
 }
 

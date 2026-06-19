@@ -3,6 +3,8 @@ package handlers
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"io"
 	"log"
 	"net/http"
 	"sync"
@@ -13,6 +15,20 @@ import (
 )
 
 const appDeployMemberTimeout = 20 * time.Minute
+
+// inflightRollouts guards against overlapping coordinated deploy/rollback jobs
+// for the same (app, environment). Deployik is single-process, so an in-memory
+// set is sufficient; a second request gets 409 until the first finishes.
+var inflightRollouts sync.Map // key "appID:env" -> struct{}
+
+func acquireRollout(appID, environment string) bool {
+	_, loaded := inflightRollouts.LoadOrStore(appID+":"+environment, struct{}{})
+	return !loaded
+}
+
+func releaseRollout(appID, environment string) {
+	inflightRollouts.Delete(appID + ":" + environment)
+}
 
 type appDeployRequest struct {
 	Environment string `json:"environment"`
@@ -62,8 +78,11 @@ func (h *AppHandler) Deploy(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var req appDeployRequest
-	if r.Body != nil {
-		_ = json.NewDecoder(r.Body).Decode(&req) // body optional; defaults below
+	// Body is optional (empty → production default), but a malformed body must be
+	// rejected — silently defaulting could trigger an unintended production deploy.
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil && !errors.Is(err, io.EOF) {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request body"})
+		return
 	}
 	environment, valid := normalizeAppEnvironment(req.Environment)
 	if !valid {
@@ -86,8 +105,16 @@ func (h *AppHandler) Deploy(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	go h.runAppDeploy(app, environment, members, claims.UserID, username, token)
+	if !acquireRollout(app.ID, environment) {
+		writeJSON(w, http.StatusConflict, map[string]string{"error": "a deploy or rollback is already in progress for this app + environment"})
+		return
+	}
+	go func() {
+		defer releaseRollout(app.ID, environment)
+		h.runAppDeploy(app, environment, members, claims.UserID, username, token)
+	}()
 
+	h.recordAudit(claims.UserID, "app.deploy", app.ID, map[string]any{"environment": environment, "member_count": len(members)})
 	writeJSON(w, http.StatusAccepted, map[string]any{
 		"app_id":         app.ID,
 		"environment":    environment,
@@ -227,8 +254,16 @@ func (h *AppHandler) Rollback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	go h.redeployRelease(app, environment, release.ID, claims.UserID, username, token)
+	if !acquireRollout(app.ID, environment) {
+		writeJSON(w, http.StatusConflict, map[string]string{"error": "a deploy or rollback is already in progress for this app + environment"})
+		return
+	}
+	go func() {
+		defer releaseRollout(app.ID, environment)
+		h.redeployRelease(app, environment, release.ID, claims.UserID, username, token)
+	}()
 
+	h.recordAudit(claims.UserID, "app.rollback", app.ID, map[string]any{"environment": environment, "release_id": release.ID})
 	writeJSON(w, http.StatusAccepted, map[string]any{
 		"app_id":      app.ID,
 		"environment": environment,

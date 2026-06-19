@@ -61,14 +61,15 @@ func envVarPrefix(name string) string {
 }
 
 // OrderAppMembers groups an app's member projects into the batches a coordinated
-// deploy rolls out in sequence. Members within a batch deploy in parallel;
-// batches run one after another, each gated on the previous batch's health.
+// deploy rolls out. RunRollout deploys members within a batch one after another
+// (the build semaphore serializes builds anyway), and batches act as health
+// barriers — every member of batch N must come up healthy before batch N+1 starts.
 //
-//   - deployOrdered = false → one batch with every member (fully parallel,
-//     today's per-project behavior, just fanned out).
+//   - deployOrdered = false → one batch with every member (no inter-member
+//     ordering, today's per-project behavior, just fanned out under one release).
 //   - deployOrdered = true  → batches grouped by ascending DeployOrder; members
-//     sharing an order land in the same (parallel) batch. A DB/api member with a
-//     lower order thus comes up before the web member that depends on it.
+//     sharing an order land in the same batch. A db/api member with a lower order
+//     thus comes up (and is health-gated) before the web member that depends on it.
 //
 // Stable within a batch (by name) so the rollout order is deterministic.
 func OrderAppMembers(members []db.Project, deployOrdered bool) [][]db.Project {

@@ -39,7 +39,13 @@ func ShouldBuild(filterEnabled bool, rootDir string, watchPaths, changedPaths []
 			return true, "changed path under root"
 		}
 		for _, glob := range watchPaths {
-			if matchGlob(strings.TrimSpace(glob), changed) {
+			// Normalize the glob the same way as changed paths (trim surrounding
+			// space + a leading "/") so "/packages/**" matches "packages/x".
+			glob = strings.TrimPrefix(strings.TrimSpace(glob), "/")
+			if glob == "" {
+				continue
+			}
+			if matchGlob(glob, changed) {
 				return true, "changed path matches watch glob"
 			}
 		}

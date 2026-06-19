@@ -9,6 +9,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
+	"github.com/LEFTEQ/lovinka-deployik/internal/audit"
 	"github.com/LEFTEQ/lovinka-deployik/internal/auth"
 	"github.com/LEFTEQ/lovinka-deployik/internal/build"
 	"github.com/LEFTEQ/lovinka-deployik/internal/crypto"
@@ -20,6 +21,21 @@ type AppHandler struct {
 	DB        *db.DB
 	Pipeline  *build.Pipeline   // coordinated app deploys (P4); nil disables deploy/rollback
 	Encryptor *crypto.Encryptor // decrypts the caller's GitHub token for deploys
+	Audit     *audit.Recorder   // nil-safe; records app mutations
+}
+
+// recordAudit logs an app mutation when an audit recorder is wired (nil in tests).
+func (h *AppHandler) recordAudit(userID, action, appID string, metadata map[string]any) {
+	if h.Audit == nil {
+		return
+	}
+	h.Audit.Record(audit.Entry{
+		UserID:       userID,
+		Action:       action,
+		ResourceType: "app",
+		ResourceID:   appID,
+		Metadata:     metadata,
+	})
 }
 
 type createAppRequest struct {
@@ -102,6 +118,7 @@ func (h *AppHandler) Create(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to create app"})
 		return
 	}
+	h.recordAudit(claims.UserID, "app.create", app.ID, map[string]any{"name": app.Name, "organization_id": organizationID})
 	writeJSON(w, http.StatusCreated, app)
 }
 
@@ -142,7 +159,7 @@ func (h *AppHandler) Update(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *AppHandler) Delete(w http.ResponseWriter, r *http.Request) {
-	app, _, ok := h.loadManagedApp(w, r)
+	app, claims, ok := h.loadManagedApp(w, r)
 	if !ok {
 		return
 	}
@@ -150,6 +167,7 @@ func (h *AppHandler) Delete(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to delete app"})
 		return
 	}
+	h.recordAudit(claims.UserID, "app.delete", app.ID, map[string]any{"name": app.Name})
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -170,6 +188,10 @@ func (h *AppHandler) AddProjects(w http.ResponseWriter, r *http.Request) {
 	if err := h.DB.AddProjectsToApp(app.ID, req.ProjectIDs); err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to add projects"})
 		return
+	}
+	// Re-fetch so project_count reflects the attach.
+	if refreshed, err := h.DB.GetAppForUser(app.ID, claims.UserID); err == nil && refreshed != nil {
+		app = refreshed
 	}
 	writeJSON(w, http.StatusOK, app)
 }
