@@ -83,6 +83,26 @@ type AppCreate struct {
 	ProjectIDs     []string
 }
 
+// AppRelease is a snapshot of one coordinated app deploy for an environment —
+// which deployment each member ran — so a single rollback can redeploy the
+// whole set to a known-good point.
+type AppRelease struct {
+	ID          string             `json:"id"`
+	AppID       string             `json:"app_id"`
+	Environment string             `json:"environment"`
+	Status      string             `json:"status"` // pending|succeeded|failed|rolled_back
+	CreatedAt   time.Time          `json:"created_at"`
+	UpdatedAt   time.Time          `json:"updated_at"`
+	Members     []AppReleaseMember `json:"members,omitempty"`
+}
+
+// AppReleaseMember records the exact deployment a member project ran in a release.
+type AppReleaseMember struct {
+	ReleaseID    string `json:"release_id"`
+	ProjectID    string `json:"project_id"`
+	DeploymentID string `json:"deployment_id"`
+}
+
 type GroupMember struct {
 	GroupID   string    `json:"group_id"`
 	UserID    string    `json:"user_id"`
@@ -192,8 +212,11 @@ type Project struct {
 	// BuildFilterEnabled opts a project into changed-path build filtering (the
 	// monorepo fan-out fix). WatchPaths is a JSON-encoded list of globs for
 	// shared dependencies outside RootDirectory. Both inert when filtering is off.
-	BuildFilterEnabled bool      `json:"build_filter_enabled"`
-	WatchPaths         []string  `json:"watch_paths"`
+	BuildFilterEnabled bool     `json:"build_filter_enabled"`
+	WatchPaths         []string `json:"watch_paths"`
+	// DeployOrder positions this member in a coordinated app deploy; honored only
+	// when its app's DeployOrdered = 1 (low deploys first, equal = parallel).
+	DeployOrder        int       `json:"deploy_order"`
 	Status             string    `json:"status"`
 	PreviewPassword    string    `json:"-"` // encrypted, never expose in JSON
 	ProductionPassword string    `json:"-"` // encrypted, never expose in JSON
@@ -242,6 +265,7 @@ const (
 type ProjectService struct {
 	ID                  string        `json:"id"`
 	ProjectID           string        `json:"project_id"`
+	AppID               string        `json:"app_id,omitempty"` // set when the service is associated with an app
 	Environment         string        `json:"environment"`
 	ServiceType         ServiceType   `json:"service_type"`
 	Image               string        `json:"image"`

@@ -170,3 +170,63 @@ func TestAddRemoveProjectAndListByApp(t *testing.T) {
 		t.Fatalf("expected 0 members after remove, got %d", len(after))
 	}
 }
+
+func TestAppReleaseSnapshotRoundTrip(t *testing.T) {
+	database := newTestDB(t)
+	user := createAppTestUser(t, database, "owner", 1)
+	org, err := database.EnsurePersonalOrganization(user)
+	if err != nil {
+		t.Fatalf("EnsurePersonalOrganization: %v", err)
+	}
+	app, err := database.CreateApp(&AppCreate{OrganizationID: org.ID, Name: "Bundle"})
+	if err != nil {
+		t.Fatalf("CreateApp: %v", err)
+	}
+	project := &Project{
+		Name: "api", GithubRepo: "r", GithubOwner: "o", Branch: "main",
+		UserID: user.ID, OrganizationID: org.ID, Framework: "static",
+		PackageManager: "auto", Status: "active",
+	}
+	if err := database.CreateProject(project); err != nil {
+		t.Fatalf("CreateProject: %v", err)
+	}
+	deployment := &Deployment{ProjectID: project.ID, Environment: "production", Branch: "main", Status: "live", TriggeredBy: user.ID}
+	if err := database.CreateDeployment(deployment); err != nil {
+		t.Fatalf("CreateDeployment: %v", err)
+	}
+
+	release, err := database.CreateAppRelease(
+		&AppRelease{AppID: app.ID, Environment: "production", Status: "succeeded"},
+		[]AppReleaseMember{{ProjectID: project.ID, DeploymentID: deployment.ID}},
+	)
+	if err != nil {
+		t.Fatalf("CreateAppRelease: %v", err)
+	}
+	if release.ID == "" || len(release.Members) != 1 {
+		t.Fatalf("unexpected release: %+v", release)
+	}
+	if release.Members[0].DeploymentID != deployment.ID {
+		t.Fatalf("member deployment = %q, want %q", release.Members[0].DeploymentID, deployment.ID)
+	}
+
+	list, err := database.ListAppReleases(app.ID, "production")
+	if err != nil {
+		t.Fatalf("ListAppReleases: %v", err)
+	}
+	if len(list) != 1 || list[0].ID != release.ID || list[0].Status != "succeeded" {
+		t.Fatalf("ListAppReleases = %+v, want one succeeded release %s", list, release.ID)
+	}
+
+	// deploy_order persists + drives member ordering.
+	project.DeployOrder = 3
+	if err := database.UpdateProject(project); err != nil {
+		t.Fatalf("UpdateProject: %v", err)
+	}
+	reloaded, err := database.GetProject(project.ID)
+	if err != nil {
+		t.Fatalf("GetProject: %v", err)
+	}
+	if reloaded.DeployOrder != 3 {
+		t.Fatalf("deploy_order = %d, want 3", reloaded.DeployOrder)
+	}
+}

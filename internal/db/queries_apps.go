@@ -254,11 +254,11 @@ func (db *DB) ListProjectsByApp(appID string) ([]Project, error) {
 		        p.created_at, p.updated_at,
 		        p.host_network_access, p.data_volume_enabled, COALESCE(p.data_mount_path, '/app/data'),
 		        p.port, COALESCE(p.resource_tier, 'small'), p.start_command, p.health_path,
-		        p.build_filter_enabled, p.watch_paths
+		        p.build_filter_enabled, p.watch_paths, p.deploy_order
 		 FROM projects p
 		 LEFT JOIN organizations o ON o.id = p.organization_id
 		 WHERE p.app_id = ? AND p.status != 'deleted'
-		 ORDER BY p.name ASC`,
+		 ORDER BY p.deploy_order ASC, p.name ASC`,
 		appID,
 	)
 	if err != nil {
@@ -277,7 +277,7 @@ func (db *DB) ListProjectsByApp(appID string) ([]Project, error) {
 			&p.CreatedAt, &p.UpdatedAt,
 			&p.HostNetworkAccess, &p.DataVolumeEnabled, &p.DataMountPath,
 			&p.Port, &p.ResourceTier, &p.StartCommand, &p.HealthPath,
-			&p.BuildFilterEnabled, &watchPaths); err != nil {
+			&p.BuildFilterEnabled, &watchPaths, &p.DeployOrder); err != nil {
 			return nil, fmt.Errorf("scan project: %w", err)
 		}
 		p.WatchPaths = scanWatchPaths(watchPaths)
