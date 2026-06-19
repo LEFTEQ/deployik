@@ -1,0 +1,202 @@
+package db
+
+import (
+	"database/sql"
+	"fmt"
+	"strings"
+)
+
+// CreateApp creates an app inside an organization and optionally moves the given
+// projects into it. Mirrors CreateGroup. The caller is responsible for verifying
+// the user may write to the organization + projects (the HTTP handler does this).
+func (db *DB) CreateApp(input *AppCreate) (*App, error) {
+	if input == nil {
+		return nil, fmt.Errorf("create app: input is nil")
+	}
+	name := strings.TrimSpace(input.Name)
+	if name == "" {
+		return nil, fmt.Errorf("create app: name is required")
+	}
+	orgID := strings.TrimSpace(input.OrganizationID)
+	if orgID == "" {
+		return nil, fmt.Errorf("create app: organization_id is required")
+	}
+
+	tx, err := db.Begin()
+	if err != nil {
+		return nil, fmt.Errorf("create app: begin: %w", err)
+	}
+	defer tx.Rollback()
+
+	slug, err := reserveUniqueAppSlug(tx, orgID, slugifyOrganizationName(name))
+	if err != nil {
+		return nil, fmt.Errorf("create app: %w", err)
+	}
+
+	var displayOrder int
+	if err := tx.QueryRow(
+		`SELECT COALESCE(MAX(display_order), 0) + 1 FROM apps WHERE organization_id = ?`,
+		orgID,
+	).Scan(&displayOrder); err != nil {
+		return nil, fmt.Errorf("create app: next display order: %w", err)
+	}
+
+	appID := NewID()
+	if _, err := tx.Exec(
+		`INSERT INTO apps (id, organization_id, name, slug, display_order)
+		 VALUES (?, ?, ?, ?, ?)`,
+		appID, orgID, name, slug, displayOrder,
+	); err != nil {
+		return nil, fmt.Errorf("create app: insert: %w", err)
+	}
+	for _, projectID := range uniqueNonEmpty(input.ProjectIDs) {
+		if err := moveProjectToAppTx(tx, appID, projectID); err != nil {
+			return nil, fmt.Errorf("create app: move project: %w", err)
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		return nil, fmt.Errorf("create app: commit: %w", err)
+	}
+
+	app, err := db.GetApp(appID)
+	if err != nil {
+		return nil, err
+	}
+	if app == nil {
+		return nil, fmt.Errorf("create app: created app not found")
+	}
+	return app, nil
+}
+
+// reserveUniqueAppSlug returns base, or base-2, base-3, … unique within the org.
+func reserveUniqueAppSlug(tx *sql.Tx, orgID, base string) (string, error) {
+	if base == "" {
+		base = "app"
+	}
+	candidate := base
+	for n := 2; ; n++ {
+		var exists int
+		if err := tx.QueryRow(
+			`SELECT COUNT(*) FROM apps WHERE organization_id = ? AND slug = ?`,
+			orgID, candidate,
+		).Scan(&exists); err != nil {
+			return "", fmt.Errorf("reserve slug: %w", err)
+		}
+		if exists == 0 {
+			return candidate, nil
+		}
+		candidate = fmt.Sprintf("%s-%d", base, n)
+	}
+}
+
+// moveProjectToAppTx sets a project's app_id within a transaction.
+func moveProjectToAppTx(tx *sql.Tx, appID, projectID string) error {
+	res, err := tx.Exec(
+		`UPDATE projects SET app_id = ?, updated_at = datetime('now')
+		 WHERE id = ? AND status != 'deleted'`,
+		appID, projectID,
+	)
+	if err != nil {
+		return fmt.Errorf("move project to app: %w", err)
+	}
+	affected, err := res.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("move project to app: rows affected: %w", err)
+	}
+	if affected == 0 {
+		return ErrProjectNotMovable
+	}
+	return nil
+}
+
+func (db *DB) appSelect(where string, args ...any) (*App, error) {
+	app := &App{}
+	query := `SELECT a.id, a.organization_id, a.name, a.slug, a.deploy_ordered, a.display_order,
+	                 COALESCE((SELECT COUNT(*) FROM projects p
+	                           WHERE p.app_id = a.id AND p.status != 'deleted'), 0),
+	                 a.created_at, a.updated_at
+	          FROM apps a ` + where
+	err := db.QueryRow(query, args...).Scan(
+		&app.ID, &app.OrganizationID, &app.Name, &app.Slug, &app.DeployOrdered,
+		&app.DisplayOrder, &app.ProjectCount, &app.CreatedAt, &app.UpdatedAt,
+	)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("get app: %w", err)
+	}
+	return app, nil
+}
+
+// GetApp fetches an app by id (no access check).
+func (db *DB) GetApp(appID string) (*App, error) {
+	return db.appSelect(`WHERE a.id = ?`, appID)
+}
+
+// GetAppForUser fetches an app only if the user is a member of its organization.
+func (db *DB) GetAppForUser(appID, userID string) (*App, error) {
+	return db.appSelect(
+		`WHERE a.id = ? AND EXISTS (
+		   SELECT 1 FROM organization_memberships om
+		   WHERE om.organization_id = a.organization_id AND om.user_id = ?
+		 )`,
+		appID, userID,
+	)
+}
+
+// ListAppsForUser lists apps across every organization the user belongs to.
+func (db *DB) ListAppsForUser(userID string) ([]App, error) {
+	rows, err := db.Query(
+		`SELECT a.id, a.organization_id, a.name, a.slug, a.deploy_ordered, a.display_order,
+		        COALESCE((SELECT COUNT(*) FROM projects p
+		                  WHERE p.app_id = a.id AND p.status != 'deleted'), 0),
+		        a.created_at, a.updated_at
+		 FROM apps a
+		 JOIN organization_memberships om ON om.organization_id = a.organization_id
+		 WHERE om.user_id = ?
+		 ORDER BY a.display_order ASC, lower(a.name) ASC`,
+		userID,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("list apps for user: %w", err)
+	}
+	defer rows.Close()
+
+	var apps []App
+	for rows.Next() {
+		var app App
+		if err := rows.Scan(
+			&app.ID, &app.OrganizationID, &app.Name, &app.Slug, &app.DeployOrdered,
+			&app.DisplayOrder, &app.ProjectCount, &app.CreatedAt, &app.UpdatedAt,
+		); err != nil {
+			return nil, fmt.Errorf("scan app: %w", err)
+		}
+		apps = append(apps, app)
+	}
+	return apps, rows.Err()
+}
+
+// UpdateAppName renames an app.
+func (db *DB) UpdateAppName(appID, name string) (*App, error) {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return nil, fmt.Errorf("update app name: name is required")
+	}
+	if _, err := db.Exec(
+		`UPDATE apps SET name = ?, updated_at = datetime('now') WHERE id = ?`,
+		name, appID,
+	); err != nil {
+		return nil, fmt.Errorf("update app name: %w", err)
+	}
+	return db.GetApp(appID)
+}
+
+// DeleteApp deletes an app. Member projects survive: projects.app_id is set NULL
+// by the ON DELETE SET NULL foreign key.
+func (db *DB) DeleteApp(appID string) error {
+	if _, err := db.Exec(`DELETE FROM apps WHERE id = ?`, appID); err != nil {
+		return fmt.Errorf("delete app: %w", err)
+	}
+	return nil
+}

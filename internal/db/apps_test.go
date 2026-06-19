@@ -25,3 +25,93 @@ func TestMigration026CreatesAppsSchema(t *testing.T) {
 		t.Fatalf("expected projects.app_id column, found %d", appIDColumns)
 	}
 }
+
+func createAppTestUser(t *testing.T, database *DB, username string, githubID int64) *User {
+	t.Helper()
+	user := &User{ID: NewID(), GithubID: githubID, Username: username, Role: "user"}
+	if err := database.UpsertUser(user); err != nil {
+		t.Fatalf("UpsertUser(%s): %v", username, err)
+	}
+	return user
+}
+
+func TestCreateAppAndGetForUser(t *testing.T) {
+	database := newTestDB(t)
+	user := createAppTestUser(t, database, "owner", 1)
+	org, err := database.EnsurePersonalOrganization(user)
+	if err != nil {
+		t.Fatalf("EnsurePersonalOrganization: %v", err)
+	}
+
+	app, err := database.CreateApp(&AppCreate{OrganizationID: org.ID, Name: "Forge acme"})
+	if err != nil {
+		t.Fatalf("CreateApp: %v", err)
+	}
+	if app.ID == "" {
+		t.Fatal("expected generated app id")
+	}
+	if app.Name != "Forge acme" || app.Slug == "" {
+		t.Fatalf("unexpected app name/slug: %q / %q", app.Name, app.Slug)
+	}
+	if app.OrganizationID != org.ID {
+		t.Fatalf("app org = %q, want %q", app.OrganizationID, org.ID)
+	}
+
+	got, err := database.GetAppForUser(app.ID, user.ID)
+	if err != nil {
+		t.Fatalf("GetAppForUser: %v", err)
+	}
+	if got == nil || got.ID != app.ID {
+		t.Fatalf("GetAppForUser returned %v, want app %s", got, app.ID)
+	}
+
+	// A non-member cannot see it.
+	stranger := createAppTestUser(t, database, "stranger", 2)
+	hidden, err := database.GetAppForUser(app.ID, stranger.ID)
+	if err != nil {
+		t.Fatalf("GetAppForUser(stranger): %v", err)
+	}
+	if hidden != nil {
+		t.Fatal("expected non-member to get nil app")
+	}
+}
+
+func TestListAppsForUserAndUpdateDelete(t *testing.T) {
+	database := newTestDB(t)
+	user := createAppTestUser(t, database, "owner", 1)
+	org, err := database.EnsurePersonalOrganization(user)
+	if err != nil {
+		t.Fatalf("EnsurePersonalOrganization: %v", err)
+	}
+	app, err := database.CreateApp(&AppCreate{OrganizationID: org.ID, Name: "Alpha"})
+	if err != nil {
+		t.Fatalf("CreateApp: %v", err)
+	}
+
+	apps, err := database.ListAppsForUser(user.ID)
+	if err != nil {
+		t.Fatalf("ListAppsForUser: %v", err)
+	}
+	if len(apps) != 1 || apps[0].ID != app.ID {
+		t.Fatalf("ListAppsForUser = %+v, want 1 app %s", apps, app.ID)
+	}
+
+	renamed, err := database.UpdateAppName(app.ID, "Beta")
+	if err != nil {
+		t.Fatalf("UpdateAppName: %v", err)
+	}
+	if renamed.Name != "Beta" {
+		t.Fatalf("rename = %q, want Beta", renamed.Name)
+	}
+
+	if err := database.DeleteApp(app.ID); err != nil {
+		t.Fatalf("DeleteApp: %v", err)
+	}
+	gone, err := database.GetApp(app.ID)
+	if err != nil {
+		t.Fatalf("GetApp after delete: %v", err)
+	}
+	if gone != nil {
+		t.Fatal("expected app to be deleted")
+	}
+}
