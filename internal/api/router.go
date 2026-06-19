@@ -194,6 +194,15 @@ func NewRouter(cfg *RouterConfig) *chi.Mux {
 			r.With(mutationLimiter.Middleware("group_invite_create")).Post("/groups/{id}/invites", groupHandler.CreateInvite)
 			r.With(mutationLimiter.Middleware("group_invite_cancel")).Delete("/groups/{id}/invites/{iid}", groupHandler.CancelInvite)
 
+			appHandler := &handlers.AppHandler{DB: cfg.DB}
+			r.Get("/apps", appHandler.List)
+			r.With(mutationLimiter.Middleware("app_create")).Post("/apps", appHandler.Create)
+			r.Get("/apps/{id}/health", appHandler.GetHealth)
+			r.With(mutationLimiter.Middleware("app_update")).Patch("/apps/{id}", appHandler.Update)
+			r.With(mutationLimiter.Middleware("app_delete")).Delete("/apps/{id}", appHandler.Delete)
+			r.With(mutationLimiter.Middleware("app_projects_add")).Post("/apps/{id}/projects", appHandler.AddProjects)
+			r.With(mutationLimiter.Middleware("app_projects_remove")).Delete("/apps/{id}/projects/{pid}", appHandler.RemoveProject)
+
 			platformHandler := &handlers.PlatformHandler{}
 			if cfg.DomainManager != nil {
 				platformHandler.DNSTargetIP = cfg.DomainManager.VPSHost

@@ -231,6 +231,19 @@ func (db *DB) RemoveProjectFromApp(projectID string) error {
 	return nil
 }
 
+// IsOrganizationMember reports whether the user belongs to the organization.
+func (db *DB) IsOrganizationMember(orgID, userID string) (bool, error) {
+	var exists int
+	err := db.QueryRow(
+		`SELECT COUNT(*) FROM organization_memberships WHERE organization_id = ? AND user_id = ?`,
+		orgID, userID,
+	).Scan(&exists)
+	if err != nil {
+		return false, fmt.Errorf("is organization member: %w", err)
+	}
+	return exists > 0, nil
+}
+
 // ListProjectsByApp returns the member projects of an app (for the unified view).
 func (db *DB) ListProjectsByApp(appID string) ([]Project, error) {
 	rows, err := db.Query(
