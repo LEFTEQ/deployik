@@ -115,3 +115,58 @@ func TestListAppsForUserAndUpdateDelete(t *testing.T) {
 		t.Fatal("expected app to be deleted")
 	}
 }
+
+func TestAddRemoveProjectAndListByApp(t *testing.T) {
+	database := newTestDB(t)
+	user := createAppTestUser(t, database, "owner", 1)
+	org, err := database.EnsurePersonalOrganization(user)
+	if err != nil {
+		t.Fatalf("EnsurePersonalOrganization: %v", err)
+	}
+	app, err := database.CreateApp(&AppCreate{OrganizationID: org.ID, Name: "Bundle"})
+	if err != nil {
+		t.Fatalf("CreateApp: %v", err)
+	}
+
+	project := &Project{
+		Name: "acme-api", GithubRepo: "forge", GithubOwner: "owner", Branch: "main",
+		UserID: user.ID, OrganizationID: org.ID, Framework: "static",
+		PackageManager: "auto", OutputDirectory: "dist", BuildCommand: "bun run build",
+		InstallCommand: "bun install", NodeVersion: "22", Status: "active",
+	}
+	if err := database.CreateProject(project); err != nil {
+		t.Fatalf("CreateProject: %v", err)
+	}
+
+	if err := database.AddProjectsToApp(app.ID, []string{project.ID}); err != nil {
+		t.Fatalf("AddProjectsToApp: %v", err)
+	}
+
+	members, err := database.ListProjectsByApp(app.ID)
+	if err != nil {
+		t.Fatalf("ListProjectsByApp: %v", err)
+	}
+	if len(members) != 1 || members[0].ID != project.ID {
+		t.Fatalf("members = %+v, want [%s]", members, project.ID)
+	}
+
+	// GetProject now reflects the app membership.
+	got, err := database.GetProject(project.ID)
+	if err != nil {
+		t.Fatalf("GetProject: %v", err)
+	}
+	if got.AppID != app.ID {
+		t.Fatalf("project app_id = %q, want %q", got.AppID, app.ID)
+	}
+
+	if err := database.RemoveProjectFromApp(project.ID); err != nil {
+		t.Fatalf("RemoveProjectFromApp: %v", err)
+	}
+	after, err := database.ListProjectsByApp(app.ID)
+	if err != nil {
+		t.Fatalf("ListProjectsByApp after remove: %v", err)
+	}
+	if len(after) != 0 {
+		t.Fatalf("expected 0 members after remove, got %d", len(after))
+	}
+}

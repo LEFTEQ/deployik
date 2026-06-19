@@ -35,7 +35,7 @@ func parseSQLiteDateTime(val string) *time.Time {
 func (db *DB) ListProjects(userID, organizationID string) ([]Project, error) {
 	baseQuery := `
 		SELECT p.id, p.name, p.github_repo, p.github_owner, p.branch, p.user_id,
-		       COALESCE(p.organization_id, ''), COALESCE(o.name, ''), p.framework, p.package_manager,
+		       COALESCE(p.organization_id, ''), COALESCE(o.name, ''), COALESCE(p.app_id, ''), p.framework, p.package_manager,
 		       p.root_directory, p.output_directory, p.build_command, p.install_command, p.node_version,
 		       p.status, COALESCE(p.preview_password, ''), COALESCE(p.production_password, ''),
 		       p.created_at, p.updated_at,
@@ -70,7 +70,7 @@ func (db *DB) ListProjects(userID, organizationID string) ([]Project, error) {
 	for rows.Next() {
 		var p Project
 		if err := rows.Scan(&p.ID, &p.Name, &p.GithubRepo, &p.GithubOwner, &p.Branch,
-			&p.UserID, &p.OrganizationID, &p.OrganizationName, &p.Framework, &p.PackageManager, &p.RootDirectory, &p.OutputDirectory, &p.BuildCommand, &p.InstallCommand, &p.NodeVersion,
+			&p.UserID, &p.OrganizationID, &p.OrganizationName, &p.AppID, &p.Framework, &p.PackageManager, &p.RootDirectory, &p.OutputDirectory, &p.BuildCommand, &p.InstallCommand, &p.NodeVersion,
 			&p.Status, &p.PreviewPassword, &p.ProductionPassword,
 			&p.CreatedAt, &p.UpdatedAt,
 			&p.HostNetworkAccess, &p.DataVolumeEnabled, &p.DataMountPath,
@@ -87,7 +87,7 @@ func (db *DB) GetProject(id string) (*Project, error) {
 	var previewDeploy, productionDeploy sql.NullString
 	err := db.QueryRow(
 		`SELECT p.id, p.name, p.github_repo, p.github_owner, p.branch, p.user_id,
-		        COALESCE(p.organization_id, ''), COALESCE(o.name, ''), p.framework, p.package_manager,
+		        COALESCE(p.organization_id, ''), COALESCE(o.name, ''), COALESCE(p.app_id, ''), p.framework, p.package_manager,
 		        p.root_directory, p.output_directory, p.build_command, p.install_command, p.node_version, p.status,
 		        COALESCE(p.preview_password, ''), COALESCE(p.production_password, ''),
 		        p.created_at, p.updated_at,
@@ -101,7 +101,7 @@ func (db *DB) GetProject(id string) (*Project, error) {
 		 LEFT JOIN organizations o ON o.id = p.organization_id
 		 WHERE p.id = ?`, id,
 	).Scan(&p.ID, &p.Name, &p.GithubRepo, &p.GithubOwner, &p.Branch,
-		&p.UserID, &p.OrganizationID, &p.OrganizationName, &p.Framework, &p.PackageManager, &p.RootDirectory, &p.OutputDirectory, &p.BuildCommand, &p.InstallCommand, &p.NodeVersion,
+		&p.UserID, &p.OrganizationID, &p.OrganizationName, &p.AppID, &p.Framework, &p.PackageManager, &p.RootDirectory, &p.OutputDirectory, &p.BuildCommand, &p.InstallCommand, &p.NodeVersion,
 		&p.Status, &p.PreviewPassword, &p.ProductionPassword,
 		&p.CreatedAt, &p.UpdatedAt,
 		&p.HostNetworkAccess, &p.DataVolumeEnabled, &p.DataMountPath,
@@ -127,7 +127,7 @@ func (db *DB) GetProjectForUser(id, userID string) (*Project, error) {
 	var previewDeploy, productionDeploy sql.NullString
 	err := db.QueryRow(
 		`SELECT p.id, p.name, p.github_repo, p.github_owner, p.branch, p.user_id,
-		        COALESCE(p.organization_id, ''), COALESCE(o.name, ''), p.framework, p.package_manager,
+		        COALESCE(p.organization_id, ''), COALESCE(o.name, ''), COALESCE(p.app_id, ''), p.framework, p.package_manager,
 		        p.root_directory, p.output_directory, p.build_command, p.install_command, p.node_version, p.status,
 		        COALESCE(p.preview_password, ''), COALESCE(p.production_password, ''),
 		        p.created_at, p.updated_at,
@@ -149,7 +149,7 @@ func (db *DB) GetProjectForUser(id, userID string) (*Project, error) {
 		     )
 		   )`, id, userID, userID,
 	).Scan(&p.ID, &p.Name, &p.GithubRepo, &p.GithubOwner, &p.Branch,
-		&p.UserID, &p.OrganizationID, &p.OrganizationName, &p.Framework, &p.PackageManager, &p.RootDirectory, &p.OutputDirectory, &p.BuildCommand, &p.InstallCommand, &p.NodeVersion,
+		&p.UserID, &p.OrganizationID, &p.OrganizationName, &p.AppID, &p.Framework, &p.PackageManager, &p.RootDirectory, &p.OutputDirectory, &p.BuildCommand, &p.InstallCommand, &p.NodeVersion,
 		&p.Status, &p.PreviewPassword, &p.ProductionPassword,
 		&p.CreatedAt, &p.UpdatedAt,
 		&p.HostNetworkAccess, &p.DataVolumeEnabled, &p.DataMountPath,
@@ -251,7 +251,7 @@ func (db *DB) DeleteProject(id string) error {
 func (db *DB) ListProjectsWithLatestDeployment(userID, orgID string) ([]ProjectWithLatestDeployment, error) {
 	baseQuery := `
 		SELECT p.id, p.name, p.github_repo, p.github_owner, p.branch, p.user_id,
-		       COALESCE(p.organization_id, ''), COALESCE(o.name, ''), p.framework, p.package_manager,
+		       COALESCE(p.organization_id, ''), COALESCE(o.name, ''), COALESCE(p.app_id, ''), p.framework, p.package_manager,
 		       p.root_directory, p.output_directory, p.build_command, p.install_command, p.node_version,
 		       p.status, COALESCE(p.preview_password, ''), COALESCE(p.production_password, ''),
 		       p.created_at, p.updated_at,
@@ -315,7 +315,7 @@ func (db *DB) ListProjectsWithLatestDeployment(userID, orgID string) ([]ProjectW
 		var previewDeploy, productionDeploy sql.NullString
 		if err := rows.Scan(
 			&p.ID, &p.Name, &p.GithubRepo, &p.GithubOwner, &p.Branch,
-			&p.UserID, &p.OrganizationID, &p.OrganizationName, &p.Framework, &p.PackageManager,
+			&p.UserID, &p.OrganizationID, &p.OrganizationName, &p.AppID, &p.Framework, &p.PackageManager,
 			&p.RootDirectory, &p.OutputDirectory, &p.BuildCommand, &p.InstallCommand, &p.NodeVersion,
 			&p.Status, &p.PreviewPassword, &p.ProductionPassword,
 			&p.CreatedAt, &p.UpdatedAt,

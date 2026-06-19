@@ -200,3 +200,71 @@ func (db *DB) DeleteApp(appID string) error {
 	}
 	return nil
 }
+
+// AddProjectsToApp moves projects into an app (sets projects.app_id).
+func (db *DB) AddProjectsToApp(appID string, projectIDs []string) error {
+	tx, err := db.Begin()
+	if err != nil {
+		return fmt.Errorf("add projects to app: begin: %w", err)
+	}
+	defer tx.Rollback()
+	for _, projectID := range uniqueNonEmpty(projectIDs) {
+		if err := moveProjectToAppTx(tx, appID, projectID); err != nil {
+			return fmt.Errorf("add projects to app: %w", err)
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("add projects to app: commit: %w", err)
+	}
+	return nil
+}
+
+// RemoveProjectFromApp detaches a project from its app (app_id = NULL).
+func (db *DB) RemoveProjectFromApp(projectID string) error {
+	if _, err := db.Exec(
+		`UPDATE projects SET app_id = NULL, updated_at = datetime('now')
+		 WHERE id = ? AND status != 'deleted'`,
+		projectID,
+	); err != nil {
+		return fmt.Errorf("remove project from app: %w", err)
+	}
+	return nil
+}
+
+// ListProjectsByApp returns the member projects of an app (for the unified view).
+func (db *DB) ListProjectsByApp(appID string) ([]Project, error) {
+	rows, err := db.Query(
+		`SELECT p.id, p.name, p.github_repo, p.github_owner, p.branch, p.user_id,
+		        COALESCE(p.organization_id, ''), COALESCE(o.name, ''), COALESCE(p.app_id, ''),
+		        p.framework, p.package_manager, p.root_directory, p.output_directory,
+		        p.build_command, p.install_command, p.node_version, p.status,
+		        p.created_at, p.updated_at,
+		        p.host_network_access, p.data_volume_enabled, COALESCE(p.data_mount_path, '/app/data'),
+		        p.port, COALESCE(p.resource_tier, 'small'), p.start_command, p.health_path
+		 FROM projects p
+		 LEFT JOIN organizations o ON o.id = p.organization_id
+		 WHERE p.app_id = ? AND p.status != 'deleted'
+		 ORDER BY p.name ASC`,
+		appID,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("list projects by app: %w", err)
+	}
+	defer rows.Close()
+
+	var projects []Project
+	for rows.Next() {
+		var p Project
+		if err := rows.Scan(&p.ID, &p.Name, &p.GithubRepo, &p.GithubOwner, &p.Branch,
+			&p.UserID, &p.OrganizationID, &p.OrganizationName, &p.AppID,
+			&p.Framework, &p.PackageManager, &p.RootDirectory, &p.OutputDirectory,
+			&p.BuildCommand, &p.InstallCommand, &p.NodeVersion, &p.Status,
+			&p.CreatedAt, &p.UpdatedAt,
+			&p.HostNetworkAccess, &p.DataVolumeEnabled, &p.DataMountPath,
+			&p.Port, &p.ResourceTier, &p.StartCommand, &p.HealthPath); err != nil {
+			return nil, fmt.Errorf("scan project: %w", err)
+		}
+		projects = append(projects, p)
+	}
+	return projects, rows.Err()
+}
