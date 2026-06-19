@@ -105,6 +105,12 @@ function getWorkspaceItems(): NavItem[] {
       matchPath: (p) => p === "/",
     },
     {
+      label: "Apps",
+      icon: LayoutGrid,
+      to: "/apps",
+      matchPath: (p) => p.startsWith("/apps"),
+    },
+    {
       label: "Access tokens",
       icon: KeyRound,
       to: "/account/tokens",

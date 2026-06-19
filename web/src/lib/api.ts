@@ -7,6 +7,9 @@ import type {
   Group,
   GroupInvite,
   GroupMember,
+  App,
+  AppHealth,
+  AppRelease,
   Project,
   Deployment,
   Domain,
@@ -313,6 +316,78 @@ class ApiClient {
     await this.request<void>(`/me/group-invites/${inviteId}/decline`, {
       method: "POST",
     });
+  }
+
+  // ---- App bundles ----
+  async listApps(): Promise<App[]> {
+    return this.request("/apps");
+  }
+
+  async createApp(data: {
+    name: string;
+    organization_id?: string;
+    project_ids?: string[];
+  }): Promise<App> {
+    return this.request("/apps", {
+      method: "POST",
+      body: JSON.stringify(data),
+    });
+  }
+
+  async updateApp(id: string, data: { name: string }): Promise<App> {
+    return this.request(`/apps/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify(data),
+    });
+  }
+
+  async deleteApp(id: string): Promise<void> {
+    await this.request<void>(`/apps/${id}`, { method: "DELETE" });
+  }
+
+  async getAppHealth(id: string): Promise<AppHealth> {
+    return this.request(`/apps/${id}/health`);
+  }
+
+  async addProjectsToApp(appId: string, projectIds: string[]): Promise<App> {
+    return this.request(`/apps/${appId}/projects`, {
+      method: "POST",
+      body: JSON.stringify({ project_ids: projectIds }),
+    });
+  }
+
+  async removeProjectFromApp(appId: string, projectId: string): Promise<void> {
+    await this.request<void>(`/apps/${appId}/projects/${projectId}`, {
+      method: "DELETE",
+    });
+  }
+
+  async deployApp(
+    appId: string,
+    environment: "preview" | "production",
+  ): Promise<{ status: string; member_count: number }> {
+    return this.request(`/apps/${appId}/deploy`, {
+      method: "POST",
+      body: JSON.stringify({ environment }),
+    });
+  }
+
+  async rollbackApp(
+    appId: string,
+    environment: "preview" | "production",
+    releaseId: string,
+  ): Promise<{ status: string }> {
+    return this.request(`/apps/${appId}/rollback`, {
+      method: "POST",
+      body: JSON.stringify({ environment, release_id: releaseId }),
+    });
+  }
+
+  async listAppReleases(
+    appId: string,
+    environment: "preview" | "production",
+  ): Promise<AppRelease[]> {
+    return this.request(`/apps/${appId}/releases?environment=${environment}`);
   }
 
   async getPlatformInfo(): Promise<PlatformInfo> {

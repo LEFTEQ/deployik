@@ -11,6 +11,13 @@ export const queryKeys = {
   groupMembers: (groupId: string) => ["groups", groupId, "members"] as const,
   groupInvites: (groupId: string) => ["groups", groupId, "invites"] as const,
   myGroupInvites: () => ["me", "group-invites"] as const,
+
+  // App bundles
+  apps: () => ["apps"] as const,
+  appHealth: (appId: string) => ["apps", appId, "health"] as const,
+  appReleases: (appId: string, environment: string) =>
+    ["apps", appId, "releases", environment] as const,
+
   platform: () => ["platform"] as const,
   health: () => ["health"] as const,
 
