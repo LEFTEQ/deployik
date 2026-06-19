@@ -438,6 +438,20 @@ type ProjectVariable struct {
 	UpdatedAt   time.Time    `json:"updated_at"`
 }
 
+// AppVariable is an app-scoped env var or secret (mirrors ProjectVariable but
+// owned by an app). Layered underneath each member's project variables at
+// deploy time. Value is encrypted at rest and masked in API responses.
+type AppVariable struct {
+	ID          string       `json:"id"`
+	AppID       string       `json:"app_id"`
+	Environment string       `json:"environment"`
+	Kind        VariableKind `json:"kind"`
+	Key         string       `json:"key"`
+	Value       string       `json:"value"`
+	CreatedAt   time.Time    `json:"created_at"`
+	UpdatedAt   time.Time    `json:"updated_at"`
+}
+
 type EnvVariable = ProjectVariable
 
 type AutoBuildConfig struct {

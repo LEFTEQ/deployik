@@ -132,4 +132,72 @@ export function registerAppTools(server: McpServer, ctx: ToolContext): void {
       };
     },
   });
+
+  // App-level env vars / secrets. These are layered UNDERNEATH each member
+  // project's own variables at deploy time (app shared → app env → project
+  // shared → project env). Set once on the app, inherited by every member.
+  registerAppVariableTools(server, ctx, "env");
+  registerAppVariableTools(server, ctx, "secret");
+}
+
+interface AppVariable {
+  key: string;
+  environment: string;
+  value: string;
+}
+
+// registerAppVariableTools registers list/set/delete for one app variable store.
+function registerAppVariableTools(server: McpServer, ctx: ToolContext, kind: "env" | "secret"): void {
+  const path = kind === "secret" ? "secrets" : "env";
+  const label = kind === "secret" ? "secret" : "env var";
+  const suffix = kind === "secret" ? "secret" : "env_var";
+
+  registerTool(server, ctx, {
+    name: `list_app_${suffix}s`,
+    description: `List an app's ${label}s for one environment scope (values masked). These are inherited by every member project.`,
+    inputSchema: {
+      app_id: z.string(),
+      environment: z.enum(["shared", "preview", "production"]).default("shared"),
+    },
+    annotations: { readOnlyHint: true, title: `List app ${label}s` },
+    handler: async (args) => {
+      const vars = await ctx.client.request<AppVariable[]>(`/apps/${args.app_id}/${path}?environment=${args.environment}`);
+      const text = vars.length ? vars.map((v) => `${v.key}=${v.value} (${v.environment})`).join("\n") : `(no app ${label}s)`;
+      return { text, data: vars };
+    },
+  });
+
+  registerTool(server, ctx, {
+    name: `set_app_${suffix}`,
+    description: `Set an app-level ${label} (inherited by all member projects). Scope defaults to shared.`,
+    inputSchema: {
+      app_id: z.string(),
+      key: z.string(),
+      value: z.string(),
+      environment: z.enum(["shared", "preview", "production"]).default("shared"),
+    },
+    annotations: { title: `Set app ${label}` },
+    handler: async (args) => {
+      await ctx.client.request(`/apps/${args.app_id}/${path}`, {
+        method: "POST",
+        body: { key: args.key, value: args.value, environment: args.environment },
+      });
+      return { text: `Set app ${label} ${args.key} (${args.environment}) on app ${args.app_id}.`, data: { key: args.key, environment: args.environment } };
+    },
+  });
+
+  registerTool(server, ctx, {
+    name: `delete_app_${suffix}`,
+    description: `Delete an app-level ${label} from one scope.`,
+    inputSchema: {
+      app_id: z.string(),
+      key: z.string(),
+      environment: z.enum(["shared", "preview", "production"]).default("shared"),
+    },
+    annotations: { title: `Delete app ${label}` },
+    handler: async (args) => {
+      await ctx.client.request<void>(`/apps/${args.app_id}/${path}/${encodeURIComponent(args.key)}?environment=${args.environment}`, { method: "DELETE" });
+      return { text: `Deleted app ${label} ${args.key} (${args.environment}).`, data: { key: args.key, environment: args.environment, deleted: true } };
+    },
+  });
 }

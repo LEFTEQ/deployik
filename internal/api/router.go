@@ -203,6 +203,18 @@ func NewRouter(cfg *RouterConfig) *chi.Mux {
 			r.With(mutationLimiter.Middleware("app_projects_add")).Post("/apps/{id}/projects", appHandler.AddProjects)
 			r.With(mutationLimiter.Middleware("app_projects_remove")).Delete("/apps/{id}/projects/{pid}", appHandler.RemoveProject)
 
+			appEnvHandler := &handlers.AppVariableHandler{DB: cfg.DB, Encryptor: cfg.Encryptor, Kind: db.VariableKindEnv}
+			r.Get("/apps/{id}/env", appEnvHandler.List)
+			r.With(mutationLimiter.Middleware("app_env_bulk_set")).Put("/apps/{id}/env", appEnvHandler.BulkSet)
+			r.With(mutationLimiter.Middleware("app_env_upsert")).Post("/apps/{id}/env", appEnvHandler.Upsert)
+			r.With(mutationLimiter.Middleware("app_env_delete")).Delete("/apps/{id}/env/{key}", appEnvHandler.Delete)
+
+			appSecretHandler := &handlers.AppVariableHandler{DB: cfg.DB, Encryptor: cfg.Encryptor, Kind: db.VariableKindSecret}
+			r.Get("/apps/{id}/secrets", appSecretHandler.List)
+			r.With(mutationLimiter.Middleware("app_secret_bulk_set")).Put("/apps/{id}/secrets", appSecretHandler.BulkSet)
+			r.With(mutationLimiter.Middleware("app_secret_upsert")).Post("/apps/{id}/secrets", appSecretHandler.Upsert)
+			r.With(mutationLimiter.Middleware("app_secret_delete")).Delete("/apps/{id}/secrets/{key}", appSecretHandler.Delete)
+
 			platformHandler := &handlers.PlatformHandler{}
 			if cfg.DomainManager != nil {
 				platformHandler.DNSTargetIP = cfg.DomainManager.VPSHost
