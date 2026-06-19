@@ -71,7 +71,13 @@ func PrepareDockerBuild(repoDir string, data DockerfileData) (DockerBuildPlan, e
 	if data.RootDirectory != "" {
 		appDir := filepath.Join(repoDir, filepath.FromSlash(data.RootDirectory))
 		appDockerfilePath := filepath.Join(appDir, "Dockerfile")
-		if sameFilesystemPath(dockerfilePath, appDockerfilePath) {
+		// A user Dockerfile inside root_directory builds from the app dir so
+		// Docker sees the app's files + ignore rules — UNLESS the app is part of
+		// a workspace whose lockfile/manifest lives at the repo root (a monorepo).
+		// Then the Dockerfile needs the whole repo to install the workspace and
+		// reach sibling packages, so keep the repo as context.
+		if sameFilesystemPath(dockerfilePath, appDockerfilePath) &&
+			detectInstallDirectory(repoDir, data.RootDirectory) != "" {
 			contextDir = appDir
 		}
 	}

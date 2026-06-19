@@ -113,6 +113,39 @@ func TestPrepareDockerBuildUsesRootDirectoryContextForAppDockerfile(t *testing.T
 	}
 }
 
+func TestPrepareDockerBuildUsesRepoContextForMonorepoAppDockerfile(t *testing.T) {
+	t.Parallel()
+
+	repoDir := t.TempDir()
+	appDir := filepath.Join(repoDir, "apps", "api")
+	if err := os.MkdirAll(appDir, 0755); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+	// A workspace lockfile at the repo root marks this as a monorepo, so the
+	// app's user Dockerfile must build from the repo root to install the
+	// workspace and reach sibling packages.
+	if err := os.WriteFile(filepath.Join(repoDir, "bun.lock"), []byte("{}"), 0644); err != nil {
+		t.Fatalf("WriteFile bun.lock: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(appDir, "Dockerfile"), []byte("FROM scratch\n"), 0644); err != nil {
+		t.Fatalf("WriteFile Dockerfile: %v", err)
+	}
+
+	plan, err := PrepareDockerBuild(repoDir, DockerfileData{
+		RootDirectory: "apps/api",
+	})
+	if err != nil {
+		t.Fatalf("PrepareDockerBuild: %v", err)
+	}
+
+	if got, want := filepath.Clean(plan.DockerfilePath), filepath.Join(appDir, "Dockerfile"); got != want {
+		t.Fatalf("DockerfilePath = %q, want %q", got, want)
+	}
+	if got, want := filepath.Clean(plan.ContextDir), filepath.Clean(repoDir); got != want {
+		t.Fatalf("ContextDir = %q, want repo root %q", got, want)
+	}
+}
+
 func TestPrepareDockerBuildKeepsRepoContextForRootDockerfile(t *testing.T) {
 	t.Parallel()
 
