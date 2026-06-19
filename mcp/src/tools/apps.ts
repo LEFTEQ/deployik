@@ -1,6 +1,15 @@
 import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { registerTool, type ToolContext } from "./_helpers.js";
+import { pollUntil } from "../lib/poll.js";
+
+const TERMINAL_RELEASE_STATUSES = new Set(["succeeded", "failed", "rolled_back"]);
+
+interface AppReleaseSummary {
+  id: string;
+  status: string;
+  created_at: string;
+}
 
 // Minimal shapes for the API responses we render.
 interface App {
@@ -153,6 +162,45 @@ export function registerAppTools(server: McpServer, ctx: ToolContext): void {
       return {
         text: `Started ${args.environment} deploy of app ${args.app_id} (${res.member_count} member(s)${res.deploy_ordered ? ", ordered" : ""}). Watch member deployments or list_app_releases for the outcome.`,
         data: res,
+      };
+    },
+  });
+
+  registerTool(server, ctx, {
+    name: "deploy_app_and_wait",
+    description: "Coordinated deploy of every app member, then WAIT until the coordinated release reaches a terminal status (succeeded / failed / rolled_back) and return it. Use this when you need the deploy outcome; use deploy_app for fire-and-forget.",
+    inputSchema: {
+      app_id: z.string(),
+      environment: z.enum(["preview", "production"]).default("production"),
+      timeout_ms: z.number().int().positive().max(1_800_000).default(900_000).describe("Max wait in ms (default 15 min). A coordinated deploy builds every member, so allow generous time."),
+    },
+    annotations: { title: "Deploy app (wait)" },
+    handler: async (args) => {
+      const env = args.environment;
+      // Snapshot existing releases so we can detect the one this deploy records.
+      // The backend writes a single app_release at the END of the rollout with a
+      // terminal status, so a new release appearing == the deploy finished.
+      const before = await ctx.client.request<AppReleaseSummary[]>(`/apps/${args.app_id}/releases?environment=${env}`);
+      const seen = new Set(before.map((r) => r.id));
+
+      await ctx.client.request(`/apps/${args.app_id}/deploy`, { method: "POST", body: { environment: env } });
+
+      const result = await pollUntil<AppReleaseSummary[]>(
+        () => ctx.client.request<AppReleaseSummary[]>(`/apps/${args.app_id}/releases?environment=${env}`),
+        (releases) => releases.some((r) => !seen.has(r.id) && TERMINAL_RELEASE_STATUSES.has(r.status)),
+        { intervalMs: 10_000, timeoutMs: args.timeout_ms, initialDelayMs: 3000 },
+      );
+
+      const fresh = result.value.find((r) => !seen.has(r.id));
+      if (!fresh) {
+        return {
+          text: `Started ${env} deploy of app ${args.app_id}, but no release was recorded${result.done ? "" : " before the timeout"}. Check list_app_releases.`,
+          data: { app_id: args.app_id, environment: env, timed_out: !result.done },
+        };
+      }
+      return {
+        text: `App ${args.app_id} ${env} deploy finished: release ${fresh.id} [${fresh.status}]${result.done ? "" : " (timed out waiting; status may be stale)"}.`,
+        data: fresh,
       };
     },
   });
