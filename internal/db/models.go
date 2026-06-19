@@ -187,8 +187,13 @@ type Project struct {
 	// StartCommand and HealthPath drive the generated node-api Dockerfile's
 	// CMD and HEALTHCHECK. Empty values mean "use the runtime default" — see
 	// projectconfig.DefaultStartCommand and DefaultHealthPath.
-	StartCommand       string    `json:"start_command"`
-	HealthPath         string    `json:"health_path"`
+	StartCommand string `json:"start_command"`
+	HealthPath   string `json:"health_path"`
+	// BuildFilterEnabled opts a project into changed-path build filtering (the
+	// monorepo fan-out fix). WatchPaths is a JSON-encoded list of globs for
+	// shared dependencies outside RootDirectory. Both inert when filtering is off.
+	BuildFilterEnabled bool      `json:"build_filter_enabled"`
+	WatchPaths         []string  `json:"watch_paths"`
 	Status             string    `json:"status"`
 	PreviewPassword    string    `json:"-"` // encrypted, never expose in JSON
 	ProductionPassword string    `json:"-"` // encrypted, never expose in JSON

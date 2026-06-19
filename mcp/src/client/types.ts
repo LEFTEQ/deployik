@@ -138,6 +138,8 @@ export interface CreateProjectPayload {
   start_command?: string;
   health_path?: string;
   resource_tier?: ResourceTier;
+  build_filter_enabled?: boolean;
+  watch_paths?: string[];
   auto_build_enabled?: boolean;
   auto_production_enabled?: boolean;
 }

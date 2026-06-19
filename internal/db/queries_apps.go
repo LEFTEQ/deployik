@@ -253,7 +253,8 @@ func (db *DB) ListProjectsByApp(appID string) ([]Project, error) {
 		        p.build_command, p.install_command, p.node_version, p.status,
 		        p.created_at, p.updated_at,
 		        p.host_network_access, p.data_volume_enabled, COALESCE(p.data_mount_path, '/app/data'),
-		        p.port, COALESCE(p.resource_tier, 'small'), p.start_command, p.health_path
+		        p.port, COALESCE(p.resource_tier, 'small'), p.start_command, p.health_path,
+		        p.build_filter_enabled, p.watch_paths
 		 FROM projects p
 		 LEFT JOIN organizations o ON o.id = p.organization_id
 		 WHERE p.app_id = ? AND p.status != 'deleted'
@@ -268,15 +269,18 @@ func (db *DB) ListProjectsByApp(appID string) ([]Project, error) {
 	var projects []Project
 	for rows.Next() {
 		var p Project
+		var watchPaths sql.NullString
 		if err := rows.Scan(&p.ID, &p.Name, &p.GithubRepo, &p.GithubOwner, &p.Branch,
 			&p.UserID, &p.OrganizationID, &p.OrganizationName, &p.AppID,
 			&p.Framework, &p.PackageManager, &p.RootDirectory, &p.OutputDirectory,
 			&p.BuildCommand, &p.InstallCommand, &p.NodeVersion, &p.Status,
 			&p.CreatedAt, &p.UpdatedAt,
 			&p.HostNetworkAccess, &p.DataVolumeEnabled, &p.DataMountPath,
-			&p.Port, &p.ResourceTier, &p.StartCommand, &p.HealthPath); err != nil {
+			&p.Port, &p.ResourceTier, &p.StartCommand, &p.HealthPath,
+			&p.BuildFilterEnabled, &watchPaths); err != nil {
 			return nil, fmt.Errorf("scan project: %w", err)
 		}
+		p.WatchPaths = scanWatchPaths(watchPaths)
 		projects = append(projects, p)
 	}
 	return projects, rows.Err()

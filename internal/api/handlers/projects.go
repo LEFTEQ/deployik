@@ -42,46 +42,50 @@ type ProjectHandler struct {
 var slugRegex = regexp.MustCompile(`^[a-z0-9]([a-z0-9-]*[a-z0-9])?$`)
 
 type createProjectRequest struct {
-	OrganizationID        string `json:"organization_id"`
-	Name                  string `json:"name"`
-	GithubRepo            string `json:"github_repo"`
-	GithubOwner           string `json:"github_owner"`
-	Branch                string `json:"branch"`
-	Framework             string `json:"framework"`
-	PackageManager        string `json:"package_manager"`
-	RootDirectory         string `json:"root_directory"`
-	OutputDirectory       string `json:"output_directory"`
-	BuildCommand          string `json:"build_command"`
-	InstallCommand        string `json:"install_command"`
-	NodeVersion           string `json:"node_version"`
-	Port                  int    `json:"port"`
-	HostNetworkAccess     bool   `json:"host_network_access"`
-	DataVolumeEnabled     bool   `json:"data_volume_enabled"`
-	DataMountPath         string `json:"data_mount_path"`
-	StartCommand          string `json:"start_command"`
-	HealthPath            string `json:"health_path"`
-	ResourceTier          string `json:"resource_tier"`
-	AutoBuildEnabled      *bool  `json:"auto_build_enabled"`
-	AutoProductionEnabled bool   `json:"auto_production_enabled"`
+	OrganizationID        string   `json:"organization_id"`
+	Name                  string   `json:"name"`
+	GithubRepo            string   `json:"github_repo"`
+	GithubOwner           string   `json:"github_owner"`
+	Branch                string   `json:"branch"`
+	Framework             string   `json:"framework"`
+	PackageManager        string   `json:"package_manager"`
+	RootDirectory         string   `json:"root_directory"`
+	OutputDirectory       string   `json:"output_directory"`
+	BuildCommand          string   `json:"build_command"`
+	InstallCommand        string   `json:"install_command"`
+	NodeVersion           string   `json:"node_version"`
+	Port                  int      `json:"port"`
+	HostNetworkAccess     bool     `json:"host_network_access"`
+	DataVolumeEnabled     bool     `json:"data_volume_enabled"`
+	DataMountPath         string   `json:"data_mount_path"`
+	StartCommand          string   `json:"start_command"`
+	HealthPath            string   `json:"health_path"`
+	ResourceTier          string   `json:"resource_tier"`
+	BuildFilterEnabled    bool     `json:"build_filter_enabled"`
+	WatchPaths            []string `json:"watch_paths"`
+	AutoBuildEnabled      *bool    `json:"auto_build_enabled"`
+	AutoProductionEnabled bool     `json:"auto_production_enabled"`
 }
 
 type updateProjectRequest struct {
-	Name              *string `json:"name,omitempty"`
-	Branch            *string `json:"branch,omitempty"`
-	Framework         *string `json:"framework,omitempty"`
-	PackageManager    *string `json:"package_manager,omitempty"`
-	RootDirectory     *string `json:"root_directory,omitempty"`
-	OutputDirectory   *string `json:"output_directory,omitempty"`
-	BuildCommand      *string `json:"build_command,omitempty"`
-	InstallCommand    *string `json:"install_command,omitempty"`
-	NodeVersion       *string `json:"node_version,omitempty"`
-	Port              *int    `json:"port,omitempty"`
-	HostNetworkAccess *bool   `json:"host_network_access,omitempty"`
-	DataVolumeEnabled *bool   `json:"data_volume_enabled,omitempty"`
-	DataMountPath     *string `json:"data_mount_path,omitempty"`
-	StartCommand      *string `json:"start_command,omitempty"`
-	HealthPath        *string `json:"health_path,omitempty"`
-	ResourceTier      *string `json:"resource_tier,omitempty"`
+	Name               *string   `json:"name,omitempty"`
+	Branch             *string   `json:"branch,omitempty"`
+	Framework          *string   `json:"framework,omitempty"`
+	PackageManager     *string   `json:"package_manager,omitempty"`
+	RootDirectory      *string   `json:"root_directory,omitempty"`
+	OutputDirectory    *string   `json:"output_directory,omitempty"`
+	BuildCommand       *string   `json:"build_command,omitempty"`
+	InstallCommand     *string   `json:"install_command,omitempty"`
+	NodeVersion        *string   `json:"node_version,omitempty"`
+	Port               *int      `json:"port,omitempty"`
+	HostNetworkAccess  *bool     `json:"host_network_access,omitempty"`
+	DataVolumeEnabled  *bool     `json:"data_volume_enabled,omitempty"`
+	DataMountPath      *string   `json:"data_mount_path,omitempty"`
+	StartCommand       *string   `json:"start_command,omitempty"`
+	HealthPath         *string   `json:"health_path,omitempty"`
+	ResourceTier       *string   `json:"resource_tier,omitempty"`
+	BuildFilterEnabled *bool     `json:"build_filter_enabled,omitempty"`
+	WatchPaths         *[]string `json:"watch_paths,omitempty"`
 }
 
 // validateProjectPort rejects obviously-invalid ports. 0 is treated as "unset"
@@ -177,27 +181,29 @@ func (h *ProjectHandler) Create(w http.ResponseWriter, r *http.Request) {
 	}
 
 	project := &db.Project{
-		OrganizationID:    organizationID,
-		Name:              name,
-		GithubRepo:        req.GithubRepo,
-		GithubOwner:       req.GithubOwner,
-		Branch:            strings.TrimSpace(req.Branch),
-		UserID:            claims.UserID,
-		Framework:         req.Framework,
-		PackageManager:    req.PackageManager,
-		RootDirectory:     req.RootDirectory,
-		OutputDirectory:   req.OutputDirectory,
-		BuildCommand:      req.BuildCommand,
-		InstallCommand:    req.InstallCommand,
-		NodeVersion:       req.NodeVersion,
-		Port:              req.Port,
-		HostNetworkAccess: req.HostNetworkAccess,
-		DataVolumeEnabled: req.DataVolumeEnabled,
-		DataMountPath:     req.DataMountPath,
-		StartCommand:      req.StartCommand,
-		HealthPath:        req.HealthPath,
-		ResourceTier:      resourceTier,
-		Status:            "active",
+		OrganizationID:     organizationID,
+		Name:               name,
+		GithubRepo:         req.GithubRepo,
+		GithubOwner:        req.GithubOwner,
+		Branch:             strings.TrimSpace(req.Branch),
+		UserID:             claims.UserID,
+		Framework:          req.Framework,
+		PackageManager:     req.PackageManager,
+		RootDirectory:      req.RootDirectory,
+		OutputDirectory:    req.OutputDirectory,
+		BuildCommand:       req.BuildCommand,
+		InstallCommand:     req.InstallCommand,
+		NodeVersion:        req.NodeVersion,
+		Port:               req.Port,
+		HostNetworkAccess:  req.HostNetworkAccess,
+		DataVolumeEnabled:  req.DataVolumeEnabled,
+		DataMountPath:      req.DataMountPath,
+		StartCommand:       req.StartCommand,
+		HealthPath:         req.HealthPath,
+		ResourceTier:       resourceTier,
+		BuildFilterEnabled: req.BuildFilterEnabled,
+		WatchPaths:         req.WatchPaths,
+		Status:             "active",
 	}
 	if project.DataMountPath == "" {
 		project.DataMountPath = "/app/data"
@@ -371,6 +377,12 @@ func (h *ProjectHandler) Update(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		project.ResourceTier = tier
+	}
+	if req.BuildFilterEnabled != nil {
+		project.BuildFilterEnabled = *req.BuildFilterEnabled
+	}
+	if req.WatchPaths != nil {
+		project.WatchPaths = *req.WatchPaths
 	}
 	if err := projectconfig.ApplyProjectDefaults(project); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})

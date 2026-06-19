@@ -31,6 +31,8 @@ export interface CreateProjectToolArgs {
   resource_tier?: "nano" | "small" | "medium" | "large";
   start_command?: string;
   health_path?: string;
+  build_filter_enabled?: boolean;
+  watch_paths?: string[];
 }
 
 export function buildCreateProjectPayload(
@@ -61,6 +63,8 @@ export function buildCreateProjectPayload(
   if (args.resource_tier) payload.resource_tier = args.resource_tier;
   if (args.start_command) payload.start_command = args.start_command;
   if (args.health_path) payload.health_path = args.health_path;
+  if (args.build_filter_enabled !== undefined) payload.build_filter_enabled = args.build_filter_enabled;
+  if (args.watch_paths) payload.watch_paths = args.watch_paths;
   return payload;
 }
 
@@ -167,6 +171,8 @@ export function registerProjectTools(server: McpServer, ctx: ToolContext): void 
       resource_tier: z.enum(["nano", "small", "medium", "large"]).optional(),
       start_command: z.string().optional(),
       health_path: z.string().optional(),
+      build_filter_enabled: z.boolean().optional().describe("Opt into changed-path build filtering (the monorepo fan-out fix): only rebuild when a changed path is under root_directory or matches a watch_paths glob."),
+      watch_paths: z.array(z.string()).optional().describe("Globs for shared deps outside root_directory that should also trigger a rebuild, e.g. [\"packages/shared/**\",\"bun.lock\"]. Supports ** and *."),
     },
     annotations: { title: "Create project" },
     handler: async (args) => {
@@ -205,6 +211,8 @@ export function registerProjectTools(server: McpServer, ctx: ToolContext): void 
           start_command: z.string().optional(),
           health_path: z.string().optional(),
           resource_tier: z.enum(["nano", "small", "medium", "large"]).optional(),
+          build_filter_enabled: z.boolean().optional(),
+          watch_paths: z.array(z.string()).optional(),
         })
         .describe("Fields to update. Server validates."),
     },

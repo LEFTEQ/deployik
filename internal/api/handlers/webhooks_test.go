@@ -653,3 +653,109 @@ func TestWebhookPreclaimedEnvironmentDoesNotCreateDeployment(t *testing.T) {
 	}
 	assertReceivedWebhookEvent(t, database, project.ID, "preview")
 }
+
+// sendGithubPushWithCommits sends a push whose commits carry changed-file lists,
+// exercising path-based build filtering.
+func sendGithubPushWithCommits(t *testing.T, handler *WebhookHandler, deliveryID, branch string, changed []string) *httptest.ResponseRecorder {
+	t.Helper()
+	payload := map[string]any{
+		"ref":         "refs/heads/" + branch,
+		"after":       "abcdef1234567890",
+		"deleted":     false,
+		"repository":  map[string]any{"full_name": "owner/repo"},
+		"pusher":      map[string]any{"name": "alice"},
+		"head_commit": map[string]any{"message": "Ship homepage"},
+		"commits": []map[string]any{
+			{"added": changed, "modified": []string{}, "removed": []string{}},
+		},
+	}
+	body, err := json.Marshal(payload)
+	if err != nil {
+		t.Fatalf("marshal payload: %v", err)
+	}
+	mac := hmac.New(sha256.New, []byte(webhookSecretForTests))
+	mac.Write(body)
+	signature := "sha256=" + hex.EncodeToString(mac.Sum(nil))
+
+	req := httptest.NewRequest(http.MethodPost, "/api/webhooks/github", bytes.NewReader(body))
+	req.Header.Set("X-GitHub-Event", "push")
+	req.Header.Set("X-GitHub-Delivery", deliveryID)
+	req.Header.Set("X-Hub-Signature-256", signature)
+	rr := httptest.NewRecorder()
+	handler.HandleGithub(rr, req)
+	return rr
+}
+
+func TestWebhookPathFilterSkipsUnchangedProject(t *testing.T) {
+	database, handler, project := setupWebhookProject(t, false, "*")
+	project.RootDirectory = "apps/web"
+	project.BuildFilterEnabled = true
+	if err := database.UpdateProject(project); err != nil {
+		t.Fatalf("UpdateProject: %v", err)
+	}
+
+	// Change touches a sibling app only — the filtered project must be skipped.
+	rr := sendGithubPushWithCommits(t, handler, "delivery-filter-skip", "main", []string{"apps/api/main.go"})
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status = %d, body: %s", rr.Code, rr.Body.String())
+	}
+
+	counts := deploymentEnvironmentCounts(t, database, project.ID)
+	if counts["preview"] != 0 || counts["production"] != 0 {
+		t.Fatalf("deployment counts = %#v, want no deployments (skipped)", counts)
+	}
+	var status, msg string
+	if err := database.QueryRow(
+		`SELECT status, COALESCE(error_message, '') FROM webhook_events WHERE project_id = ? AND environment = 'preview'`,
+		project.ID,
+	).Scan(&status, &msg); err != nil {
+		t.Fatalf("get preview webhook event: %v", err)
+	}
+	if status != "ignored" {
+		t.Fatalf("preview webhook status = %q, want ignored", status)
+	}
+	if !strings.Contains(msg, "skipped") {
+		t.Fatalf("preview webhook message = %q, want a skip reason", msg)
+	}
+}
+
+func TestWebhookPathFilterBuildsChangedProject(t *testing.T) {
+	database, handler, project := setupWebhookProject(t, false, "*")
+	project.RootDirectory = "apps/web"
+	project.BuildFilterEnabled = true
+	if err := database.UpdateProject(project); err != nil {
+		t.Fatalf("UpdateProject: %v", err)
+	}
+
+	// Change touches this project's root — it must build.
+	rr := sendGithubPushWithCommits(t, handler, "delivery-filter-build", "main", []string{"apps/web/src/page.tsx"})
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status = %d, body: %s", rr.Code, rr.Body.String())
+	}
+
+	counts := deploymentEnvironmentCounts(t, database, project.ID)
+	if counts["preview"] != 1 {
+		t.Fatalf("preview deployments = %d, want 1 (built)", counts["preview"])
+	}
+	assertProcessedWebhookEvent(t, database, project.ID, "preview")
+}
+
+func TestWebhookPathFilterDisabledAlwaysBuilds(t *testing.T) {
+	// build_filter_enabled defaults off — a sibling-only change still builds,
+	// guarding the inert-by-default behavior.
+	database, handler, project := setupWebhookProject(t, false, "*")
+	project.RootDirectory = "apps/web"
+	if err := database.UpdateProject(project); err != nil {
+		t.Fatalf("UpdateProject: %v", err)
+	}
+
+	rr := sendGithubPushWithCommits(t, handler, "delivery-filter-off", "main", []string{"apps/api/main.go"})
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status = %d, body: %s", rr.Code, rr.Body.String())
+	}
+
+	counts := deploymentEnvironmentCounts(t, database, project.ID)
+	if counts["preview"] != 1 {
+		t.Fatalf("preview deployments = %d, want 1 (filter disabled)", counts["preview"])
+	}
+}

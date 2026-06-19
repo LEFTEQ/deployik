@@ -2,10 +2,38 @@ package db
 
 import (
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
 )
+
+// marshalWatchPaths encodes a project's watch_paths glob list for storage.
+// Empty list stores NULL so "no globs" round-trips as nil, not "[]".
+func marshalWatchPaths(paths []string) any {
+	if len(paths) == 0 {
+		return nil
+	}
+	b, err := json.Marshal(paths)
+	if err != nil {
+		// []string is always marshalable; treat the impossible as "no globs".
+		return nil
+	}
+	return string(b)
+}
+
+// scanWatchPaths decodes a stored watch_paths value. A malformed/empty value is
+// recoverable as "no globs" (nil) — filtering then falls back to root_directory.
+func scanWatchPaths(ns sql.NullString) []string {
+	if !ns.Valid || strings.TrimSpace(ns.String) == "" {
+		return nil
+	}
+	var out []string
+	if err := json.Unmarshal([]byte(ns.String), &out); err != nil {
+		return nil
+	}
+	return out
+}
 
 // parseSQLiteDateTime parses a datetime string returned by a SQLite scalar
 // aggregate (e.g. MAX(created_at)). The modernc.org/sqlite driver hands these
@@ -40,7 +68,8 @@ func (db *DB) ListProjects(userID, organizationID string) ([]Project, error) {
 		       p.status, COALESCE(p.preview_password, ''), COALESCE(p.production_password, ''),
 		       p.created_at, p.updated_at,
 		       p.host_network_access, p.data_volume_enabled, COALESCE(p.data_mount_path, '/app/data'),
-		       p.port, COALESCE(p.resource_tier, 'small'), p.start_command, p.health_path
+		       p.port, COALESCE(p.resource_tier, 'small'), p.start_command, p.health_path,
+		       p.build_filter_enabled, p.watch_paths
 		FROM projects p
 		LEFT JOIN organizations o ON o.id = p.organization_id
 		WHERE p.status != 'deleted'
@@ -69,14 +98,17 @@ func (db *DB) ListProjects(userID, organizationID string) ([]Project, error) {
 	var projects []Project
 	for rows.Next() {
 		var p Project
+		var watchPaths sql.NullString
 		if err := rows.Scan(&p.ID, &p.Name, &p.GithubRepo, &p.GithubOwner, &p.Branch,
 			&p.UserID, &p.OrganizationID, &p.OrganizationName, &p.AppID, &p.Framework, &p.PackageManager, &p.RootDirectory, &p.OutputDirectory, &p.BuildCommand, &p.InstallCommand, &p.NodeVersion,
 			&p.Status, &p.PreviewPassword, &p.ProductionPassword,
 			&p.CreatedAt, &p.UpdatedAt,
 			&p.HostNetworkAccess, &p.DataVolumeEnabled, &p.DataMountPath,
-			&p.Port, &p.ResourceTier, &p.StartCommand, &p.HealthPath); err != nil {
+			&p.Port, &p.ResourceTier, &p.StartCommand, &p.HealthPath,
+			&p.BuildFilterEnabled, &watchPaths); err != nil {
 			return nil, fmt.Errorf("scan project: %w", err)
 		}
+		p.WatchPaths = scanWatchPaths(watchPaths)
 		projects = append(projects, p)
 	}
 	return projects, rows.Err()
@@ -84,7 +116,7 @@ func (db *DB) ListProjects(userID, organizationID string) ([]Project, error) {
 
 func (db *DB) GetProject(id string) (*Project, error) {
 	p := &Project{}
-	var previewDeploy, productionDeploy sql.NullString
+	var previewDeploy, productionDeploy, watchPaths sql.NullString
 	err := db.QueryRow(
 		`SELECT p.id, p.name, p.github_repo, p.github_owner, p.branch, p.user_id,
 		        COALESCE(p.organization_id, ''), COALESCE(o.name, ''), COALESCE(p.app_id, ''), p.framework, p.package_manager,
@@ -93,6 +125,7 @@ func (db *DB) GetProject(id string) (*Project, error) {
 		        p.created_at, p.updated_at,
 		        p.host_network_access, p.data_volume_enabled, COALESCE(p.data_mount_path, '/app/data'),
 		        p.port, COALESCE(p.resource_tier, 'small'), p.start_command, p.health_path,
+		        p.build_filter_enabled, p.watch_paths,
 		        (SELECT MAX(created_at) FROM deployments
 		         WHERE project_id = p.id AND environment = 'preview' AND status = 'live'),
 		        (SELECT MAX(created_at) FROM deployments
@@ -106,6 +139,7 @@ func (db *DB) GetProject(id string) (*Project, error) {
 		&p.CreatedAt, &p.UpdatedAt,
 		&p.HostNetworkAccess, &p.DataVolumeEnabled, &p.DataMountPath,
 		&p.Port, &p.ResourceTier, &p.StartCommand, &p.HealthPath,
+		&p.BuildFilterEnabled, &watchPaths,
 		&previewDeploy, &productionDeploy)
 	if err == sql.ErrNoRows {
 		return nil, nil
@@ -113,6 +147,7 @@ func (db *DB) GetProject(id string) (*Project, error) {
 	if err != nil {
 		return nil, fmt.Errorf("get project: %w", err)
 	}
+	p.WatchPaths = scanWatchPaths(watchPaths)
 	if previewDeploy.Valid {
 		p.LatestPreviewDeployAt = parseSQLiteDateTime(previewDeploy.String)
 	}
@@ -124,7 +159,7 @@ func (db *DB) GetProject(id string) (*Project, error) {
 
 func (db *DB) GetProjectForUser(id, userID string) (*Project, error) {
 	p := &Project{}
-	var previewDeploy, productionDeploy sql.NullString
+	var previewDeploy, productionDeploy, watchPaths sql.NullString
 	err := db.QueryRow(
 		`SELECT p.id, p.name, p.github_repo, p.github_owner, p.branch, p.user_id,
 		        COALESCE(p.organization_id, ''), COALESCE(o.name, ''), COALESCE(p.app_id, ''), p.framework, p.package_manager,
@@ -133,6 +168,7 @@ func (db *DB) GetProjectForUser(id, userID string) (*Project, error) {
 		        p.created_at, p.updated_at,
 		        p.host_network_access, p.data_volume_enabled, COALESCE(p.data_mount_path, '/app/data'),
 		        p.port, COALESCE(p.resource_tier, 'small'), p.start_command, p.health_path,
+		        p.build_filter_enabled, p.watch_paths,
 		        (SELECT MAX(created_at) FROM deployments
 		         WHERE project_id = p.id AND environment = 'preview' AND status = 'live'),
 		        (SELECT MAX(created_at) FROM deployments
@@ -154,6 +190,7 @@ func (db *DB) GetProjectForUser(id, userID string) (*Project, error) {
 		&p.CreatedAt, &p.UpdatedAt,
 		&p.HostNetworkAccess, &p.DataVolumeEnabled, &p.DataMountPath,
 		&p.Port, &p.ResourceTier, &p.StartCommand, &p.HealthPath,
+		&p.BuildFilterEnabled, &watchPaths,
 		&previewDeploy, &productionDeploy)
 	if err == sql.ErrNoRows {
 		return nil, nil
@@ -161,6 +198,7 @@ func (db *DB) GetProjectForUser(id, userID string) (*Project, error) {
 	if err != nil {
 		return nil, fmt.Errorf("get project for user: %w", err)
 	}
+	p.WatchPaths = scanWatchPaths(watchPaths)
 	if previewDeploy.Valid {
 		p.LatestPreviewDeployAt = parseSQLiteDateTime(previewDeploy.String)
 	}
@@ -179,12 +217,12 @@ func (db *DB) CreateProject(p *Project) error {
 		`INSERT INTO projects (id, name, github_repo, github_owner, branch, user_id, organization_id, framework, package_manager,
 		                       root_directory, output_directory, build_command, install_command, node_version, status,
 		                       host_network_access, data_volume_enabled, data_mount_path, port, resource_tier,
-		                       start_command, health_path)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		                       start_command, health_path, build_filter_enabled, watch_paths)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		p.ID, p.Name, p.GithubRepo, p.GithubOwner, p.Branch, p.UserID, nullableString(p.OrganizationID), p.Framework, packageManager,
 		p.RootDirectory, p.OutputDirectory, p.BuildCommand, p.InstallCommand, p.NodeVersion, p.Status,
 		p.HostNetworkAccess, p.DataVolumeEnabled, p.DataMountPath, port, resourceTier,
-		p.StartCommand, p.HealthPath,
+		p.StartCommand, p.HealthPath, p.BuildFilterEnabled, marshalWatchPaths(p.WatchPaths),
 	)
 	if err != nil {
 		return fmt.Errorf("create project: %w", err)
@@ -203,13 +241,13 @@ func (db *DB) UpdateProject(p *Project) error {
 		`UPDATE projects SET name = ?, branch = ?, framework = ?, package_manager = ?, root_directory = ?, output_directory = ?, build_command = ?,
 		        install_command = ?, node_version = ?, status = ?,
 		        host_network_access = ?, data_volume_enabled = ?, data_mount_path = ?, port = ?, resource_tier = ?,
-		        start_command = ?, health_path = ?,
+		        start_command = ?, health_path = ?, build_filter_enabled = ?, watch_paths = ?,
 		        updated_at = datetime('now')
 		 WHERE id = ?`,
 		p.Name, p.Branch, p.Framework, packageManager, p.RootDirectory, p.OutputDirectory, p.BuildCommand, p.InstallCommand,
 		p.NodeVersion, p.Status,
 		p.HostNetworkAccess, p.DataVolumeEnabled, p.DataMountPath, port, resourceTier,
-		p.StartCommand, p.HealthPath, p.ID,
+		p.StartCommand, p.HealthPath, p.BuildFilterEnabled, marshalWatchPaths(p.WatchPaths), p.ID,
 	)
 	if err != nil {
 		return fmt.Errorf("update project: %w", err)
@@ -257,6 +295,7 @@ func (db *DB) ListProjectsWithLatestDeployment(userID, orgID string) ([]ProjectW
 		       p.created_at, p.updated_at,
 		       p.host_network_access, p.data_volume_enabled, COALESCE(p.data_mount_path, '/app/data'),
 		       p.port, COALESCE(p.resource_tier, 'small'), p.start_command, p.health_path,
+		       p.build_filter_enabled, p.watch_paths,
 		       (SELECT MAX(created_at) FROM deployments
 		        WHERE project_id = p.id AND environment = 'preview' AND status = 'live'),
 		       (SELECT MAX(created_at) FROM deployments
@@ -312,7 +351,7 @@ func (db *DB) ListProjectsWithLatestDeployment(userID, orgID string) ([]ProjectW
 		var ldID, ldStatus, ldBranch, ldCommitSHA, ldCommitMsg sql.NullString
 		var ldEnvironment, ldScreenshotPath sql.NullString
 		var ldCreatedAt NullableTime
-		var previewDeploy, productionDeploy sql.NullString
+		var previewDeploy, productionDeploy, watchPaths sql.NullString
 		if err := rows.Scan(
 			&p.ID, &p.Name, &p.GithubRepo, &p.GithubOwner, &p.Branch,
 			&p.UserID, &p.OrganizationID, &p.OrganizationName, &p.AppID, &p.Framework, &p.PackageManager,
@@ -321,12 +360,14 @@ func (db *DB) ListProjectsWithLatestDeployment(userID, orgID string) ([]ProjectW
 			&p.CreatedAt, &p.UpdatedAt,
 			&p.HostNetworkAccess, &p.DataVolumeEnabled, &p.DataMountPath,
 			&p.Port, &p.ResourceTier, &p.StartCommand, &p.HealthPath,
+			&p.BuildFilterEnabled, &watchPaths,
 			&previewDeploy, &productionDeploy,
 			&ldID, &ldStatus, &ldBranch, &ldCommitSHA, &ldCommitMsg, &ldCreatedAt,
 			&ldEnvironment, &ldScreenshotPath,
 		); err != nil {
 			return nil, fmt.Errorf("scan project with latest deployment: %w", err)
 		}
+		p.WatchPaths = scanWatchPaths(watchPaths)
 		if previewDeploy.Valid {
 			p.LatestPreviewDeployAt = parseSQLiteDateTime(previewDeploy.String)
 		}
