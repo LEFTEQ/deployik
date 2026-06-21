@@ -10,6 +10,7 @@ import {
   ENVIRONMENT_META,
   formatRelativeDate,
 } from "@/lib/deployment-helpers";
+import { DeploymentCard } from "@/components/projects/deployment-card";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import {
@@ -32,6 +33,13 @@ import { cn } from "@/lib/utils";
 
 type Environment = "preview" | "production";
 
+const REVEAL =
+  "animate-in fade-in slide-in-from-bottom-2 duration-500 [animation-fill-mode:both]";
+const reveal = (ms: number) => ({
+  className: REVEAL,
+  style: { animationDelay: `${ms}ms` },
+});
+
 export function AppDeployments() {
   const { appId } = useParams({ strict: false }) as { appId: string };
   const navigate = useNavigate();
@@ -49,14 +57,26 @@ export function AppDeployments() {
         : false,
   });
 
+  const openDeployment = (projectId: string, deploymentId: string) =>
+    navigate({
+      to: "/projects/$id/deployments/$did",
+      params: { id: projectId, did: deploymentId },
+    });
+
   return (
-    <div className="space-y-6">
-      <div className="flex flex-wrap items-center justify-between gap-3">
+    <div className="space-y-8">
+      <div
+        {...reveal(0)}
+        className={cn(
+          REVEAL,
+          "flex flex-wrap items-start justify-between gap-4",
+        )}
+      >
         <div>
           <h2 className="text-base font-semibold">Deployments</h2>
           <p className="text-sm text-muted-foreground">
-            Every member's builds in one place. Click a row to open the
-            project's deployment.
+            Every member's builds in one feed. Click a row to open the project's
+            deployment.
           </p>
         </div>
         <Select
@@ -79,7 +99,7 @@ export function AppDeployments() {
           description="Fetching every member's recent build history."
         />
       ) : !deployments?.length ? (
-        <Card>
+        <Card {...reveal(60)} className={REVEAL}>
           <CardContent className="py-12 text-center">
             <p className="text-sm text-muted-foreground">
               No {environment} deployments yet.
@@ -87,93 +107,123 @@ export function AppDeployments() {
           </CardContent>
         </Card>
       ) : (
-        <Card className="overflow-hidden">
-          <CardContent className="p-0">
-            <Table>
-              <TableHeader>
-                <TableRow className="border-white/8 hover:bg-transparent">
-                  <TableHead className="pl-6">Project</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead>Commit</TableHead>
-                  <TableHead>Environment</TableHead>
-                  <TableHead>Started</TableHead>
-                  <TableHead className="pr-6 text-right">Duration</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {deployments.map((d) => {
-                  const statusMeta = DEPLOYMENT_STATUS_META[d.status];
-                  const envMeta = ENVIRONMENT_META[d.environment];
-                  const open = () =>
-                    navigate({
-                      to: "/projects/$id/deployments/$did",
-                      params: { id: d.project_id, did: d.id },
-                    });
+        <>
+          {/* Phones get tappable cards; the table needs more width than 390px. */}
+          <div {...reveal(60)} className={cn(REVEAL, "space-y-4 md:hidden")}>
+            {deployments.map((d) => (
+              <div key={d.id} className="space-y-1.5">
+                <p className="px-1 text-xs font-medium text-muted-foreground">
+                  {d.project_name}
+                </p>
+                <DeploymentCard
+                  deployment={d}
+                  onOpen={() => openDeployment(d.project_id, d.id)}
+                />
+              </div>
+            ))}
+          </div>
 
-                  return (
-                    <TableRow
-                      key={d.id}
-                      className={cn(
-                        "cursor-pointer border-white/8 transition-colors hover:bg-white/[0.04] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary/40",
-                        d.status === "live" && "bg-white/[0.03]",
-                      )}
-                      role="link"
-                      tabIndex={0}
-                      onClick={open}
-                      onKeyDown={(event) => {
-                        if (event.key === "Enter" || event.key === " ") {
-                          event.preventDefault();
-                          open();
-                        }
-                      }}
-                    >
-                      <TableCell className="pl-6 font-medium">
-                        {d.project_name}
-                      </TableCell>
-                      <TableCell>
-                        <Badge
-                          variant="outline"
-                          className={statusMeta.badgeClass}
-                        >
-                          {statusMeta.label}
-                        </Badge>
-                      </TableCell>
-                      <TableCell className="max-w-[320px]">
-                        <div className="space-y-1">
-                          <span className="font-mono text-xs text-foreground">
-                            {d.commit_sha ? d.commit_sha.slice(0, 7) : "pending"}
-                          </span>
-                          <p
-                            className="truncate text-xs text-muted-foreground"
-                            title={d.commit_message || d.error_message}
+          <Card
+            {...reveal(60)}
+            className={cn(REVEAL, "hidden overflow-hidden md:block")}
+          >
+            <CardContent className="p-0">
+              <Table>
+                <TableHeader>
+                  <TableRow className="border-white/8 hover:bg-transparent">
+                    <TableHead className="pl-6">Project</TableHead>
+                    <TableHead>Status</TableHead>
+                    <TableHead>Commit</TableHead>
+                    <TableHead>Environment</TableHead>
+                    <TableHead>Started</TableHead>
+                    <TableHead className="pr-6 text-right">Duration</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {deployments.map((d) => {
+                    const statusMeta = DEPLOYMENT_STATUS_META[d.status];
+                    const envMeta = ENVIRONMENT_META[d.environment];
+                    const open = () => openDeployment(d.project_id, d.id);
+
+                    return (
+                      <TableRow
+                        key={d.id}
+                        className={cn(
+                          "cursor-pointer border-white/8 transition-colors hover:bg-white/[0.04] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary/40",
+                          d.status === "live" && "bg-white/[0.03]",
+                        )}
+                        role="link"
+                        tabIndex={0}
+                        onClick={open}
+                        onKeyDown={(event) => {
+                          if (event.key === "Enter" || event.key === " ") {
+                            event.preventDefault();
+                            open();
+                          }
+                        }}
+                      >
+                        <TableCell className="pl-6">
+                          <div className="flex items-center gap-3">
+                            <span
+                              className={cn(
+                                "h-2.5 w-2.5 shrink-0 rounded-full",
+                                statusMeta.dotClass,
+                                ACTIVE_DEPLOYMENT_STATUSES.has(d.status) &&
+                                  "animate-pulse",
+                              )}
+                            />
+                            <span className="truncate font-medium text-foreground">
+                              {d.project_name}
+                            </span>
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          <Badge
+                            variant="outline"
+                            className={statusMeta.badgeClass}
                           >
-                            {d.commit_message ||
-                              d.error_message ||
-                              statusMeta.label}
-                          </p>
-                        </div>
-                      </TableCell>
-                      <TableCell>
-                        <Badge
-                          variant="outline"
-                          className={envMeta?.badgeClass}
-                        >
-                          {envMeta?.label}
-                        </Badge>
-                      </TableCell>
-                      <TableCell className="text-sm text-muted-foreground">
-                        {formatRelativeDate(d.created_at)}
-                      </TableCell>
-                      <TableCell className="pr-6 text-right text-sm text-muted-foreground">
-                        {d.build_duration > 0 ? `${d.build_duration}s` : "--"}
-                      </TableCell>
-                    </TableRow>
-                  );
-                })}
-              </TableBody>
-            </Table>
-          </CardContent>
-        </Card>
+                            {statusMeta.label}
+                          </Badge>
+                        </TableCell>
+                        <TableCell className="max-w-[320px]">
+                          <div className="space-y-1">
+                            <span className="font-mono text-xs text-foreground">
+                              {d.commit_sha
+                                ? d.commit_sha.slice(0, 7)
+                                : "pending"}
+                            </span>
+                            <p
+                              className="truncate text-xs text-muted-foreground"
+                              title={d.commit_message || d.error_message}
+                            >
+                              {d.commit_message ||
+                                d.error_message ||
+                                statusMeta.label}
+                            </p>
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          <Badge
+                            variant="outline"
+                            className={envMeta?.badgeClass}
+                          >
+                            {envMeta?.label}
+                          </Badge>
+                        </TableCell>
+                        <TableCell className="text-sm text-muted-foreground">
+                          {formatRelativeDate(d.created_at)}
+                        </TableCell>
+                        <TableCell className="pr-6 text-right text-sm text-muted-foreground">
+                          {d.build_duration > 0 ? `${d.build_duration}s` : "--"}
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
+                </TableBody>
+              </Table>
+            </CardContent>
+          </Card>
+        </>
       )}
     </div>
   );

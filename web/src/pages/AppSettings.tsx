@@ -2,10 +2,24 @@ import { useState } from "react";
 import { useNavigate, useParams } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { ArrowDown, ArrowUp, Plus, Trash2, X } from "lucide-react";
+import {
+  ArrowDown,
+  ArrowUp,
+  Boxes,
+  ListOrdered,
+  Pencil,
+  Plus,
+  Trash2,
+  TriangleAlert,
+  X,
+} from "lucide-react";
 
 import { api } from "@/lib/api";
 import { queryKeys } from "@/lib/queryKeys";
+import {
+  ACTIVE_MEMBER_STATUSES,
+  MEMBER_STATUS_META,
+} from "@/lib/app-helpers";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -31,6 +45,15 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { cn } from "@/lib/utils";
+import type { AppHealthMember } from "@/types/api";
+
+const REVEAL =
+  "animate-in fade-in slide-in-from-bottom-2 duration-500 [animation-fill-mode:both]";
+const reveal = (ms: number) => ({
+  className: REVEAL,
+  style: { animationDelay: `${ms}ms` },
+});
 
 export function AppSettings() {
   const { appId } = useParams({ strict: false }) as { appId: string };
@@ -127,14 +150,36 @@ export function AppSettings() {
     reorderMut.mutate(next);
   };
   const selectedIds = Object.keys(selected).filter((id) => selected[id]);
+  const ordered = !!app?.deploy_ordered;
 
   return (
-    <div className="space-y-6">
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">App name</CardTitle>
+    <div className="space-y-7">
+      {/* Hero */}
+      <div {...reveal(0)} className={cn(REVEAL, "space-y-1.5")}>
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="flex h-9 w-9 items-center justify-center rounded-lg border border-primary/20 bg-primary/10 text-primary">
+            <Boxes className="h-5 w-5" />
+          </span>
+          <h1 className="text-2xl font-semibold tracking-tight">Settings</h1>
+        </div>
+        <p className="text-sm text-muted-foreground">
+          Rename {app?.name ?? "this app"}, manage its members, and control how
+          they roll out together.
+        </p>
+      </div>
+
+      {/* App name */}
+      <Card
+        {...reveal(60)}
+        className={cn(REVEAL, "bg-gradient-to-t from-primary/5 to-card")}
+      >
+        <CardHeader className="pb-3">
+          <CardTitle className="flex items-center gap-2 text-base">
+            <Pencil className="h-4 w-4 text-muted-foreground" />
+            App name
+          </CardTitle>
         </CardHeader>
-        <CardContent className="flex items-center gap-2">
+        <CardContent className="flex flex-wrap items-center gap-2">
           <Input
             className="max-w-sm"
             placeholder={app?.name}
@@ -150,80 +195,44 @@ export function AppSettings() {
         </CardContent>
       </Card>
 
-      <Card>
-        <CardHeader className="flex flex-row items-center justify-between">
-          <div>
-            <CardTitle className="text-base">Deploy order</CardTitle>
+      {/* Deploy order + members */}
+      <Card {...reveal(120)} className={REVEAL}>
+        <CardHeader className="flex flex-row items-start justify-between gap-3 pb-3">
+          <div className="space-y-0.5">
+            <CardTitle className="flex items-center gap-2 text-base">
+              <ListOrdered className="h-4 w-4 text-muted-foreground" />
+              Deploy order
+            </CardTitle>
             <p className="text-sm text-muted-foreground">
               When on, members deploy in the order below; otherwise in parallel.
             </p>
           </div>
           <Switch
-            checked={!!app?.deploy_ordered}
+            checked={ordered}
             onCheckedChange={(v) => orderedMut.mutate(v)}
           />
         </CardHeader>
-        <CardContent className="space-y-2">
+        <CardContent className="space-y-3">
           {members.length === 0 ? (
-            <p className="py-4 text-center text-sm text-muted-foreground">
+            <p className="rounded-lg border border-dashed py-8 text-center text-sm text-muted-foreground">
               No members yet.
             </p>
           ) : (
-            members.map((m, i) => (
-              <div
-                key={m.project.id}
-                className="flex items-center justify-between rounded-md border px-3 py-2"
-              >
-                <div className="flex items-center gap-3">
-                  {app?.deploy_ordered && (
-                    <span className="font-mono text-xs text-muted-foreground">
-                      {i + 1}
-                    </span>
-                  )}
-                  <span className="font-medium">{m.project.name}</span>
-                  <Badge variant="secondary" className="text-xs">
-                    {m.project.framework}
-                  </Badge>
-                </div>
-                <div className="flex items-center gap-1">
-                  {app?.deploy_ordered && (
-                    <>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-7 w-7"
-                        disabled={i === 0 || reorderMut.isPending}
-                        onClick={() => move(i, -1)}
-                        title="Move up"
-                      >
-                        <ArrowUp className="h-4 w-4" />
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-7 w-7"
-                        disabled={
-                          i === members.length - 1 || reorderMut.isPending
-                        }
-                        onClick={() => move(i, 1)}
-                        title="Move down"
-                      >
-                        <ArrowDown className="h-4 w-4" />
-                      </Button>
-                    </>
-                  )}
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="h-7 w-7"
-                    onClick={() => removeMut.mutate(m.project.id)}
-                    title="Remove from app"
-                  >
-                    <X className="h-4 w-4" />
-                  </Button>
-                </div>
-              </div>
-            ))
+            <div className="divide-y divide-border rounded-lg border">
+              {members.map((m, i) => (
+                <MemberRow
+                  key={m.project.id}
+                  member={m}
+                  index={i}
+                  ordered={ordered}
+                  isFirst={i === 0}
+                  isLast={i === members.length - 1}
+                  reordering={reorderMut.isPending}
+                  onMove={(dir) => move(i, dir)}
+                  onRemove={() => removeMut.mutate(m.project.id)}
+                />
+              ))}
+            </div>
           )}
           <Button variant="outline" size="sm" onClick={() => setAddOpen(true)}>
             <Plus className="h-4 w-4" /> Add projects
@@ -231,18 +240,24 @@ export function AppSettings() {
         </CardContent>
       </Card>
 
-      <Card className="border-destructive/40">
-        <CardHeader>
-          <CardTitle className="text-base text-destructive">
+      {/* Danger zone */}
+      <Card {...reveal(180)} className={cn(REVEAL, "border-destructive/40")}>
+        <CardHeader className="pb-3">
+          <CardTitle className="flex items-center gap-2 text-base text-destructive">
+            <TriangleAlert className="h-4 w-4" />
             Danger zone
           </CardTitle>
         </CardHeader>
-        <CardContent>
+        <CardContent className="flex flex-wrap items-center justify-between gap-3">
+          <p className="text-sm text-muted-foreground">
+            Deleting the app bundle keeps member projects — they become
+            standalone.
+          </p>
           <AlertDialog>
             <AlertDialogTrigger asChild>
               <Button
                 variant="outline"
-                className="border-destructive/40 text-destructive"
+                className="border-destructive/40 text-destructive hover:bg-destructive/10 hover:text-destructive"
               >
                 <Trash2 className="h-4 w-4" /> Delete app
               </Button>
@@ -286,30 +301,47 @@ export function AppSettings() {
               Only standalone projects (not already in an app) can be added.
             </DialogDescription>
           </DialogHeader>
-          <div className="max-h-72 space-y-1 overflow-y-auto">
+          <div className="max-h-72 space-y-1.5 overflow-y-auto py-1">
             {addable.length === 0 ? (
-              <p className="py-4 text-center text-sm text-muted-foreground">
+              <p className="rounded-lg border border-dashed py-8 text-center text-sm text-muted-foreground">
                 No standalone projects available.
               </p>
             ) : (
-              addable.map((p) => (
-                <label
-                  key={p.id}
-                  className="flex cursor-pointer items-center gap-2 rounded-md border px-3 py-2 hover:bg-accent"
-                >
-                  <input
-                    type="checkbox"
-                    checked={!!selected[p.id]}
-                    onChange={(e) =>
-                      setSelected((s) => ({ ...s, [p.id]: e.target.checked }))
-                    }
-                  />
-                  <span className="font-medium">{p.name}</span>
-                  <Badge variant="secondary" className="text-xs">
-                    {p.framework}
-                  </Badge>
-                </label>
-              ))
+              addable.map((p) => {
+                const checked = !!selected[p.id];
+                return (
+                  <label
+                    key={p.id}
+                    className={cn(
+                      "flex cursor-pointer items-center gap-3 rounded-md border px-3 py-2.5 transition-colors",
+                      checked
+                        ? "border-primary/40 bg-primary/5"
+                        : "border-white/8 hover:bg-white/[0.04]",
+                    )}
+                  >
+                    <input
+                      type="checkbox"
+                      className="h-4 w-4 accent-primary"
+                      checked={checked}
+                      onChange={(e) =>
+                        setSelected((s) => ({
+                          ...s,
+                          [p.id]: e.target.checked,
+                        }))
+                      }
+                    />
+                    <span className="truncate text-sm font-medium">
+                      {p.name}
+                    </span>
+                    <Badge
+                      variant="outline"
+                      className="ml-auto border-primary/20 bg-primary/10 font-mono text-[10px] text-primary"
+                    >
+                      {p.framework}
+                    </Badge>
+                  </label>
+                );
+              })
             )}
           </div>
           <DialogFooter>
@@ -320,11 +352,94 @@ export function AppSettings() {
               disabled={selectedIds.length === 0 || addMut.isPending}
               onClick={() => addMut.mutate(selectedIds)}
             >
-              Add {selectedIds.length || ""}
+              <Plus className="h-4 w-4" /> Add {selectedIds.length || ""}
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
+    </div>
+  );
+}
+
+function MemberRow({
+  member,
+  index,
+  ordered,
+  isFirst,
+  isLast,
+  reordering,
+  onMove,
+  onRemove,
+}: {
+  member: AppHealthMember;
+  index: number;
+  ordered: boolean;
+  isFirst: boolean;
+  isLast: boolean;
+  reordering: boolean;
+  onMove: (dir: -1 | 1) => void;
+  onRemove: () => void;
+}) {
+  const meta = MEMBER_STATUS_META[member.live_status];
+  const active = ACTIVE_MEMBER_STATUSES.has(member.live_status);
+  return (
+    <div className="flex items-center gap-3 px-4 py-3">
+      <span
+        className={cn(
+          "h-2.5 w-2.5 shrink-0 rounded-full",
+          meta.dotClass,
+          active && "animate-pulse",
+        )}
+      />
+      <span className="truncate text-sm font-medium text-foreground">
+        {member.project.name}
+      </span>
+      <Badge
+        variant="outline"
+        className="border-primary/20 bg-primary/10 font-mono text-[10px] text-primary"
+      >
+        {member.project.framework}
+      </Badge>
+      {ordered ? (
+        <span className="font-mono text-[11px] text-muted-foreground">
+          #{index + 1}
+        </span>
+      ) : null}
+      <div className="ml-auto flex items-center gap-1">
+        {ordered && (
+          <>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-7 w-7"
+              disabled={isFirst || reordering}
+              onClick={() => onMove(-1)}
+              title="Move up"
+            >
+              <ArrowUp className="h-4 w-4" />
+            </Button>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-7 w-7"
+              disabled={isLast || reordering}
+              onClick={() => onMove(1)}
+              title="Move down"
+            >
+              <ArrowDown className="h-4 w-4" />
+            </Button>
+          </>
+        )}
+        <Button
+          variant="ghost"
+          size="icon"
+          className="h-7 w-7 text-muted-foreground hover:text-destructive"
+          onClick={onRemove}
+          title="Remove from app"
+        >
+          <X className="h-4 w-4" />
+        </Button>
+      </div>
     </div>
   );
 }
