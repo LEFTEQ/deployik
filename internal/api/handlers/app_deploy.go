@@ -16,6 +16,15 @@ import (
 
 const appDeployMemberTimeout = 20 * time.Minute
 
+// appMemberTriggerSource is the deployments.trigger_source recorded for every
+// deployment a coordinated app deploy or rollback creates. It MUST be a value
+// allowed by the deployments CHECK constraint (migration 008:
+// 'manual','webhook','api'). Coordinated rollouts are API/MCP-driven, so 'api'
+// fits. Writing an out-of-vocabulary value (e.g. "app_deploy") makes
+// CreateDeployment fail the CHECK and aborts the whole rollout before any member
+// builds. The app-deploy context is still recorded via app_releases + audit logs.
+const appMemberTriggerSource = "api"
+
 // inflightRollouts guards against overlapping coordinated deploy/rollback jobs
 // for the same (app, environment). Deployik is single-process, so an in-memory
 // set is sufficient; a second request gets 409 until the first finishes.
@@ -169,7 +178,7 @@ func (h *AppHandler) deployMember(member db.Project, environment, userID, userna
 		Branch:              member.Branch,
 		Status:              "queued",
 		TriggeredBy:         userID,
-		TriggerSource:       "app_deploy",
+		TriggerSource:       appMemberTriggerSource,
 		TriggeredByUsername: username,
 	}
 	if environment == "preview" {
@@ -357,7 +366,7 @@ func (h *AppHandler) redeployMemberToDeployment(member db.Project, environment, 
 		CommitMessage:       commitMsg,
 		Status:              "queued",
 		TriggeredBy:         userID,
-		TriggerSource:       "app_rollback",
+		TriggerSource:       appMemberTriggerSource,
 		TriggeredByUsername: username,
 	}
 	if environment == "preview" {
