@@ -42,7 +42,7 @@ func TestAppHandlerCreateAndList(t *testing.T) {
 	claims := &auth.Claims{UserID: user.ID, Role: "user"}
 
 	// Create
-	body, _ := json.Marshal(map[string]any{"name": "Forge acme", "organization_id": org.ID})
+	body, _ := json.Marshal(map[string]any{"name": "Acme Store", "organization_id": org.ID})
 	req := httptest.NewRequest(http.MethodPost, "/apps", bytes.NewReader(body))
 	req = req.WithContext(auth.WithClaims(req.Context(), claims))
 	rec := httptest.NewRecorder()
@@ -54,7 +54,7 @@ func TestAppHandlerCreateAndList(t *testing.T) {
 	if err := json.Unmarshal(rec.Body.Bytes(), &created); err != nil {
 		t.Fatalf("decode created: %v", err)
 	}
-	if created.ID == "" || created.Name != "Forge acme" {
+	if created.ID == "" || created.Name != "Acme Store" {
 		t.Fatalf("unexpected created app: %+v", created)
 	}
 
@@ -152,5 +152,65 @@ func TestAppHandlerListReleases(t *testing.T) {
 	}
 	if len(releases) != 1 || releases[0].Status != "succeeded" {
 		t.Fatalf("releases = %+v, want one succeeded", releases)
+	}
+}
+
+func TestGetHealthReturnsLiveStatusAndCombined(t *testing.T) {
+	database := appTestDB(t)
+	user := &db.User{ID: db.NewID(), GithubID: 1, Username: "owner", Role: "user"}
+	if err := database.UpsertUser(user); err != nil {
+		t.Fatalf("UpsertUser: %v", err)
+	}
+	org, err := database.EnsurePersonalOrganization(user)
+	if err != nil {
+		t.Fatalf("EnsurePersonalOrganization: %v", err)
+	}
+	app, err := database.CreateApp(&db.AppCreate{OrganizationID: org.ID, Name: "Bundle"})
+	if err != nil {
+		t.Fatalf("CreateApp: %v", err)
+	}
+	member := &db.Project{
+		Name: "web", GithubRepo: "r", GithubOwner: "o", Branch: "main",
+		UserID: user.ID, OrganizationID: org.ID, Framework: "nextjs",
+		PackageManager: "auto", Status: "active",
+	}
+	if err := database.CreateProject(member); err != nil {
+		t.Fatalf("CreateProject: %v", err)
+	}
+	if err := database.AddProjectsToApp(app.ID, []string{member.ID}); err != nil {
+		t.Fatalf("AddProjectsToApp: %v", err)
+	}
+	if err := database.CreateDeployment(&db.Deployment{ProjectID: member.ID, Environment: "production", Branch: "main", Status: "live", TriggeredBy: user.ID, CommitSHA: "m1"}); err != nil {
+		t.Fatalf("CreateDeployment: %v", err)
+	}
+
+	h := &AppHandler{DB: database}
+	claims := &auth.Claims{UserID: user.ID, Role: "user"}
+	rctx := chi.NewRouteContext()
+	rctx.URLParams.Add("id", app.ID)
+	req := httptest.NewRequest(http.MethodGet, "/apps/"+app.ID+"/health?environment=production", nil)
+	req = req.WithContext(context.WithValue(req.Context(), chi.RouteCtxKey, rctx))
+	req = req.WithContext(auth.WithClaims(req.Context(), claims))
+	rec := httptest.NewRecorder()
+
+	h.GetHealth(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200 (body: %s)", rec.Code, rec.Body.String())
+	}
+	var out struct {
+		CombinedStatus string `json:"combined_status"`
+		Environment    string `json:"environment"`
+		Members        []struct {
+			LiveStatus string `json:"live_status"`
+		} `json:"members"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &out); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if out.Environment != "production" || out.CombinedStatus != "healthy" {
+		t.Fatalf("env/combined = %q/%q, want production/healthy (body: %s)", out.Environment, out.CombinedStatus, rec.Body.String())
+	}
+	if len(out.Members) != 1 || out.Members[0].LiveStatus != "healthy" {
+		t.Fatalf("members = %+v, want one healthy (body: %s)", out.Members, rec.Body.String())
 	}
 }

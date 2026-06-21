@@ -1,8 +1,10 @@
 package handlers
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 	"net/http"
 	"strings"
 	"time"
@@ -220,12 +222,18 @@ func (h *AppHandler) RemoveProject(w http.ResponseWriter, r *http.Request) {
 
 // appHealth is the composite "unified view" payload.
 type appHealth struct {
-	App     *db.App           `json:"app"`
-	Members []appHealthMember `json:"members"`
+	App            *db.App           `json:"app"`
+	Environment    string            `json:"environment"`
+	CombinedStatus string            `json:"combined_status"`
+	Members        []appHealthMember `json:"members"`
 }
 
 type appHealthMember struct {
-	Project          db.Project `json:"project"`
+	Project          db.Project     `json:"project"`
+	LiveStatus       string         `json:"live_status"`
+	PrimaryDomain    string         `json:"primary_domain,omitempty"`
+	LatestDeployment *db.Deployment `json:"latest_deployment,omitempty"`
+	// Retained for backwards-compatibility with the legacy AppDetail page.
 	LatestPreview    *time.Time `json:"latest_preview_deploy_at,omitempty"`
 	LatestProduction *time.Time `json:"latest_production_deploy_at,omitempty"`
 }
@@ -235,15 +243,21 @@ func (h *AppHandler) GetHealth(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	environment, valid := normalizeAppEnvironment(r.URL.Query().Get("environment"))
+	if !valid {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "environment must be preview or production"})
+		return
+	}
+
 	members, err := h.DB.ListProjectsByApp(app.ID)
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to load members"})
 		return
 	}
-	out := appHealth{App: app, Members: make([]appHealthMember, 0, len(members))}
+
+	out := appHealth{App: app, Environment: environment, Members: make([]appHealthMember, 0, len(members))}
+	statuses := make([]string, 0, len(members))
 	for i := range members {
-		// GetProject populates the latest-deploy timestamps; ListProjectsByApp
-		// returns the lighter row, so re-fetch each member for its deploy state.
 		full, err := h.DB.GetProject(members[i].ID)
 		if err != nil {
 			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to load member"})
@@ -252,13 +266,38 @@ func (h *AppHandler) GetHealth(w http.ResponseWriter, r *http.Request) {
 		if full == nil {
 			continue
 		}
+		latest, err := h.DB.GetLatestDeployment(full.ID, environment)
+		if err != nil {
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to load member deployment"})
+			return
+		}
+		status := h.resolveMemberLiveStatus(r.Context(), *full, environment, latest)
+		statuses = append(statuses, status)
+
+		primaryDomain := ""
+		if d, derr := h.DB.GetPrimaryDomain(full.ID, environment); derr != nil {
+			log.Printf("app health: primary domain lookup for project %s (%s): %v", full.ID, environment, derr)
+		} else if d != nil {
+			primaryDomain = d.DomainName
+		}
+
 		out.Members = append(out.Members, appHealthMember{
 			Project:          *full,
+			LiveStatus:       status,
+			PrimaryDomain:    primaryDomain,
+			LatestDeployment: latest,
 			LatestPreview:    full.LatestPreviewDeployAt,
 			LatestProduction: full.LatestProductionDeployAt,
 		})
 	}
+	out.CombinedStatus = combinedAppStatus(statuses)
 	writeJSON(w, http.StatusOK, out)
+}
+
+// resolveMemberLiveStatus picks a member's live status. P1: derived purely from
+// the latest deployment. P2 overrides this to consult a live prober.
+func (h *AppHandler) resolveMemberLiveStatus(_ context.Context, _ db.Project, _ string, latest *db.Deployment) string {
+	return deriveMemberLiveStatusFromDeployment(latest)
 }
 
 // resolveCreateOrganizationID validates an explicit workspace id or defaults to
