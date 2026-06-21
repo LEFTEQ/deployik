@@ -195,6 +195,15 @@ func NewRouter(cfg *RouterConfig) *chi.Mux {
 			r.With(mutationLimiter.Middleware("group_invite_cancel")).Delete("/groups/{id}/invites/{iid}", groupHandler.CancelInvite)
 
 			appHandler := &handlers.AppHandler{DB: cfg.DB, Pipeline: cfg.Pipeline, Encryptor: cfg.Encryptor, Audit: auditRecorder}
+			// Live per-member health probe. Without a Docker client (e.g. test
+			// wiring or Docker unavailable) the handler falls back to deploy-status-only.
+			if dockerClient != nil {
+				proxyType := "docker"
+				if cfg.Pipeline != nil {
+					proxyType = cfg.Pipeline.ProxyType
+				}
+				appHandler.Prober = build.NewDockerHealthProber(dockerClient, proxyType)
+			}
 			r.Get("/apps", appHandler.List)
 			r.With(mutationLimiter.Middleware("app_create")).Post("/apps", appHandler.Create)
 			r.Get("/apps/{id}/health", appHandler.GetHealth)

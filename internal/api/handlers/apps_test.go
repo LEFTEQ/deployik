@@ -11,6 +11,7 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	"github.com/LEFTEQ/lovinka-deployik/internal/auth"
+	"github.com/LEFTEQ/lovinka-deployik/internal/build"
 	"github.com/LEFTEQ/lovinka-deployik/internal/db"
 )
 
@@ -152,6 +153,63 @@ func TestAppHandlerListReleases(t *testing.T) {
 	}
 	if len(releases) != 1 || releases[0].Status != "succeeded" {
 		t.Fatalf("releases = %+v, want one succeeded", releases)
+	}
+}
+
+type fakeProber struct{ result build.MemberProbe }
+
+func (f fakeProber) Probe(_ context.Context, _ db.Project, _ string) build.MemberProbe { return f.result }
+
+func TestGetHealthUsesProber(t *testing.T) {
+	database := appTestDB(t)
+	user := &db.User{ID: db.NewID(), GithubID: 1, Username: "owner", Role: "user"}
+	if err := database.UpsertUser(user); err != nil {
+		t.Fatalf("UpsertUser: %v", err)
+	}
+	org, err := database.EnsurePersonalOrganization(user)
+	if err != nil {
+		t.Fatalf("EnsurePersonalOrganization: %v", err)
+	}
+	app, err := database.CreateApp(&db.AppCreate{OrganizationID: org.ID, Name: "Bundle"})
+	if err != nil {
+		t.Fatalf("CreateApp: %v", err)
+	}
+	member := &db.Project{Name: "web", GithubRepo: "r", GithubOwner: "o", Branch: "main", UserID: user.ID, OrganizationID: org.ID, Framework: "nextjs", PackageManager: "auto", Status: "active"}
+	if err := database.CreateProject(member); err != nil {
+		t.Fatalf("CreateProject: %v", err)
+	}
+	if err := database.AddProjectsToApp(app.ID, []string{member.ID}); err != nil {
+		t.Fatalf("AddProjectsToApp: %v", err)
+	}
+	if err := database.CreateDeployment(&db.Deployment{ProjectID: member.ID, Environment: "production", Branch: "main", Status: "live", TriggeredBy: user.ID, CommitSHA: "m1"}); err != nil {
+		t.Fatalf("CreateDeployment: %v", err)
+	}
+
+	// last deploy live, but the container is running and failing its probe -> degraded.
+	h := &AppHandler{DB: database, Prober: fakeProber{result: build.MemberProbe{Probed: true, Running: true, OK: false}}}
+	claims := &auth.Claims{UserID: user.ID, Role: "user"}
+	rctx := chi.NewRouteContext()
+	rctx.URLParams.Add("id", app.ID)
+	req := httptest.NewRequest(http.MethodGet, "/apps/"+app.ID+"/health?environment=production", nil)
+	req = req.WithContext(context.WithValue(req.Context(), chi.RouteCtxKey, rctx))
+	req = req.WithContext(auth.WithClaims(req.Context(), claims))
+	rec := httptest.NewRecorder()
+
+	h.GetHealth(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d (body: %s)", rec.Code, rec.Body.String())
+	}
+	var out struct {
+		CombinedStatus string `json:"combined_status"`
+		Members        []struct {
+			LiveStatus string `json:"live_status"`
+		} `json:"members"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &out); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if out.CombinedStatus != "degraded" || len(out.Members) != 1 || out.Members[0].LiveStatus != "degraded" {
+		t.Fatalf("want degraded/degraded, got %q/%+v (body: %s)", out.CombinedStatus, out.Members, rec.Body.String())
 	}
 }
 

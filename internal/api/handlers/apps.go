@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -25,6 +26,7 @@ type AppHandler struct {
 	Pipeline  *build.Pipeline   // coordinated app deploys (P4); nil disables deploy/rollback
 	Encryptor *crypto.Encryptor // decrypts the caller's GitHub token for deploys
 	Audit     *audit.Recorder   // nil-safe; records app mutations
+	Prober    build.HealthProber // nil => deploy-status-only (P1 fallback)
 }
 
 // recordAudit logs an app mutation when an audit recorder is wired (nil in tests).
@@ -256,40 +258,67 @@ func (h *AppHandler) GetHealth(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Resolve members concurrently — each live probe can take up to 2s, so a
+	// sequential loop would stack latencies. Each goroutine writes into a
+	// pre-sized slot by index (no shared-map races); concurrent *sql.DB reads
+	// are safe. ok=false slots (missing/errored members) are dropped after join.
+	type memberResult struct {
+		member appHealthMember
+		status string
+		ok     bool
+	}
+	results := make([]memberResult, len(members))
+	var wg sync.WaitGroup
+	for i := range members {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			full, err := h.DB.GetProject(members[i].ID)
+			if err != nil {
+				log.Printf("app health: load member %s: %v", members[i].ID, err)
+				return
+			}
+			if full == nil {
+				return
+			}
+			latest, err := h.DB.GetLatestDeployment(full.ID, environment)
+			if err != nil {
+				log.Printf("app health: load latest deployment for project %s (%s): %v", full.ID, environment, err)
+				return
+			}
+			status := h.resolveMemberLiveStatus(r.Context(), *full, environment, latest)
+
+			primaryDomain := ""
+			if d, derr := h.DB.GetPrimaryDomain(full.ID, environment); derr != nil {
+				log.Printf("app health: primary domain lookup for project %s (%s): %v", full.ID, environment, derr)
+			} else if d != nil {
+				primaryDomain = d.DomainName
+			}
+
+			results[i] = memberResult{
+				member: appHealthMember{
+					Project:          *full,
+					LiveStatus:       status,
+					PrimaryDomain:    primaryDomain,
+					LatestDeployment: latest,
+					LatestPreview:    full.LatestPreviewDeployAt,
+					LatestProduction: full.LatestProductionDeployAt,
+				},
+				status: status,
+				ok:     true,
+			}
+		}(i)
+	}
+	wg.Wait()
+
 	out := appHealth{App: app, Environment: environment, Members: make([]appHealthMember, 0, len(members))}
 	statuses := make([]string, 0, len(members))
-	for i := range members {
-		full, err := h.DB.GetProject(members[i].ID)
-		if err != nil {
-			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to load member"})
-			return
-		}
-		if full == nil {
+	for i := range results {
+		if !results[i].ok {
 			continue
 		}
-		latest, err := h.DB.GetLatestDeployment(full.ID, environment)
-		if err != nil {
-			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to load member deployment"})
-			return
-		}
-		status := h.resolveMemberLiveStatus(r.Context(), *full, environment, latest)
-		statuses = append(statuses, status)
-
-		primaryDomain := ""
-		if d, derr := h.DB.GetPrimaryDomain(full.ID, environment); derr != nil {
-			log.Printf("app health: primary domain lookup for project %s (%s): %v", full.ID, environment, derr)
-		} else if d != nil {
-			primaryDomain = d.DomainName
-		}
-
-		out.Members = append(out.Members, appHealthMember{
-			Project:          *full,
-			LiveStatus:       status,
-			PrimaryDomain:    primaryDomain,
-			LatestDeployment: latest,
-			LatestPreview:    full.LatestPreviewDeployAt,
-			LatestProduction: full.LatestProductionDeployAt,
-		})
+		out.Members = append(out.Members, results[i].member)
+		statuses = append(statuses, results[i].status)
 	}
 	out.CombinedStatus = combinedAppStatus(statuses)
 	writeJSON(w, http.StatusOK, out)
@@ -321,10 +350,14 @@ func (h *AppHandler) GetDeployments(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, rows)
 }
 
-// resolveMemberLiveStatus picks a member's live status. P1: derived purely from
-// the latest deployment. P2 overrides this to consult a live prober.
-func (h *AppHandler) resolveMemberLiveStatus(_ context.Context, _ db.Project, _ string, latest *db.Deployment) string {
-	return deriveMemberLiveStatusFromDeployment(latest)
+// resolveMemberLiveStatus picks a member's live status. With no prober wired it
+// falls back to the P1 deploy-status-only derivation; otherwise it combines the
+// latest deployment with a live container probe.
+func (h *AppHandler) resolveMemberLiveStatus(ctx context.Context, project db.Project, environment string, latest *db.Deployment) string {
+	if h.Prober == nil {
+		return deriveMemberLiveStatusFromDeployment(latest)
+	}
+	return statusFromProbe(latest, h.Prober.Probe(ctx, project, environment))
 }
 
 // resolveCreateOrganizationID validates an explicit workspace id or defaults to
