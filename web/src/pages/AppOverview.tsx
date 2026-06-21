@@ -57,6 +57,7 @@ export function AppOverview() {
       toast.success(`Deploying ${r.member_count} member(s) to ${environment}`);
       queryClient.invalidateQueries({ queryKey: queryKeys.appReleases(appId, environment) });
       queryClient.invalidateQueries({ queryKey: queryKeys.appHealth(appId, environment) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.appDeployments(appId, environment) });
     },
     onError: (e) => toast.error(e instanceof Error ? e.message : "Failed to start deploy"),
   });
