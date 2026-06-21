@@ -295,8 +295,8 @@ func TestWildcardCoversMatchesSingleLabelPreviewSubdomains(t *testing.T) {
 	}
 
 	covered := []string{
-		"acme-app-api.preview.example.com",
-		"acme-app.preview.example.com",
+		"acme-api.preview.example.com",
+		"acme.preview.example.com",
 	}
 	for _, host := range covered {
 		if !m.wildcardCovers(host) {
@@ -307,8 +307,8 @@ func TestWildcardCoversMatchesSingleLabelPreviewSubdomains(t *testing.T) {
 	notCovered := []string{
 		"preview.example.com",         // apex, not a subdomain
 		"a.b.preview.example.com",     // two labels — *.preview.example.com covers one
-		"acme-app.preview.example.org", // custom domain, different base
-		"acme-app.example.com",      // different base
+		"acme.preview.example.org", // custom domain, different base
+		"acme.example.com",      // different base
 	}
 	for _, host := range notCovered {
 		if m.wildcardCovers(host) {
@@ -322,7 +322,7 @@ func TestWildcardCoversRequiresConfiguredCert(t *testing.T) {
 
 	// Wildcard base configured but no PROXY_SSL_CERT → never matches.
 	m := &Manager{WildcardDomains: []string{"preview.example.com"}}
-	if m.wildcardCovers("acme-app-api.preview.example.com") {
+	if m.wildcardCovers("acme-api.preview.example.com") {
 		t.Fatal("expected no wildcard match when ProxySSLCert is empty")
 	}
 }
@@ -336,7 +336,7 @@ func TestCertPathsForReturnsWildcardOrPerDomain(t *testing.T) {
 		WildcardDomains: []string{"preview.example.com"},
 	}
 
-	cert, key := m.certPathsFor("acme-app-api.preview.example.com")
+	cert, key := m.certPathsFor("acme-api.preview.example.com")
 	if cert != m.ProxySSLCert || key != m.ProxySSLKey {
 		t.Fatalf("expected wildcard pair, got cert=%s key=%s", cert, key)
 	}
@@ -369,7 +369,7 @@ func TestNewManagerThreadsWildcardDomains(t *testing.T) {
 		ProxySSLKey:     "/etc/nginx/certs/live/wildcard.preview.example.com/privkey.pem",
 		WildcardDomains: []string{"preview.example.com"},
 	})
-	if !m.wildcardCovers("acme-app-api.preview.example.com") {
+	if !m.wildcardCovers("acme-api.preview.example.com") {
 		t.Fatal("expected NewManager to thread WildcardDomains through to the matcher")
 	}
 }
@@ -387,10 +387,10 @@ func TestWriteNginxConfigUsesWildcardCertWhenCovered(t *testing.T) {
 
 	confPath, err := manager.WriteNginxConfig(ProvisionConfig{
 		ProjectID:     "01KNTESTPROJECT",
-		ProjectName:   "acme-app-api",
-		Domain:        "acme-app-api.preview.example.com",
+		ProjectName:   "acme-api",
+		Domain:        "acme-api.preview.example.com",
 		Environment:   "preview",
-		ContainerName: "deployik-acme-app-api-preview",
+		ContainerName: "deployik-acme-api-preview",
 	})
 	if err != nil {
 		t.Fatalf("WriteNginxConfig returned error: %v", err)
@@ -408,7 +408,7 @@ func TestWriteNginxConfigUsesWildcardCertWhenCovered(t *testing.T) {
 	if !strings.Contains(got, "ssl_certificate_key /etc/nginx/certs/live/wildcard.preview.example.com/privkey.pem;") {
 		t.Fatalf("expected wildcard key path, got:\n%s", got)
 	}
-	if strings.Contains(got, "/etc/nginx/certs/live/acme-app-api.preview.example.com/") {
+	if strings.Contains(got, "/etc/nginx/certs/live/acme-api.preview.example.com/") {
 		t.Fatalf("did not expect per-domain cert path for a wildcard-covered host, got:\n%s", got)
 	}
 }
@@ -469,10 +469,10 @@ func TestProvisionDomainSkipsCertbotForWildcardCoveredDomain(t *testing.T) {
 
 	err := manager.ProvisionDomain(ProvisionConfig{
 		ProjectID:     "01KNTESTPROJECT",
-		ProjectName:   "acme-app-api",
-		Domain:        "acme-app-api.preview.example.com",
+		ProjectName:   "acme-api",
+		Domain:        "acme-api.preview.example.com",
 		Environment:   "preview",
-		ContainerName: "deployik-acme-app-api-preview",
+		ContainerName: "deployik-acme-api-preview",
 	}, false, nil)
 	if err != nil {
 		t.Fatalf("ProvisionDomain returned error: %v", err)

@@ -34,7 +34,7 @@ func TestInspect(t *testing.T) {
 		expected Report
 	}{
 		{
-			// Test 1: forge-shaped pnpm + Turborepo
+			// Test 1: acme-shaped pnpm + Turborepo
 			name: "pnpm turborepo monorepo",
 			gh: &fakeInspector{
 				tree: []string{
@@ -50,7 +50,7 @@ func TestInspect(t *testing.T) {
 				files: map[string][]byte{
 					"package.json":          []byte(fixturePnpmTurboRootPkg),
 					"pnpm-workspace.yaml":   []byte(fixturePnpmWorkspaceYAML),
-					"apps/web/package.json": []byte(fixtureForgeWebPkg),
+					"apps/web/package.json": []byte(fixtureAcmeWebPkg),
 					"apps/web/vite.config.ts": []byte(fixtureViteConfigBasic),
 				},
 			},
@@ -60,11 +60,11 @@ func TestInspect(t *testing.T) {
 				Tooling:        []Tooling{ToolingTurborepo},
 				Apps: []App{
 					{
-						Name:                  "@forge/web",
+						Name:                  "@acme/web",
 						Path:                  "apps/web",
 						Framework:             "vite",
 						OutputDirectory:       "dist",
-						SuggestedBuildCommand: "pnpm turbo run build --filter=@forge/web",
+						SuggestedBuildCommand: "pnpm turbo run build --filter=@acme/web",
 						Buildable:             true,
 					},
 				},
@@ -85,7 +85,7 @@ func TestInspect(t *testing.T) {
 				files: map[string][]byte{
 					"package.json":          []byte(fixturePnpmTurboRootPkg),
 					"pnpm-workspace.yaml":   []byte(fixturePnpmWorkspaceYAML),
-					"apps/web/package.json": []byte(fixtureForgeWebPkg),
+					"apps/web/package.json": []byte(fixtureAcmeWebPkg),
 					"apps/web/vite.config.ts": []byte(fixtureViteConfigOutDir),
 				},
 			},
@@ -95,11 +95,11 @@ func TestInspect(t *testing.T) {
 				Tooling:        []Tooling{ToolingTurborepo},
 				Apps: []App{
 					{
-						Name:                  "@forge/web",
+						Name:                  "@acme/web",
 						Path:                  "apps/web",
 						Framework:             "vite",
 						OutputDirectory:       "public-dist",
-						SuggestedBuildCommand: "pnpm turbo run build --filter=@forge/web",
+						SuggestedBuildCommand: "pnpm turbo run build --filter=@acme/web",
 						Buildable:             true,
 					},
 				},
@@ -451,7 +451,7 @@ const fixturePnpmWorkspaceYAML = `packages:
 `
 
 const fixturePnpmTurboRootPkg = `{
-  "name": "forge-root",
+  "name": "acme-root",
   "packageManager": "pnpm@9.15.4",
   "devDependencies": {
     "turbo": "^2.0.0"
@@ -463,8 +463,8 @@ const fixturePnpmNoTurboRootPkg = `{
   "packageManager": "pnpm@9.0.0"
 }`
 
-const fixtureForgeWebPkg = `{
-  "name": "@forge/web",
+const fixtureAcmeWebPkg = `{
+  "name": "@acme/web",
   "scripts": {
     "build": "tsc -b && vite build",
     "dev": "vite"

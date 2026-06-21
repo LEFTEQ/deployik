@@ -12,7 +12,7 @@ import (
 )
 
 func TestGetFileContent_HappyPath(t *testing.T) {
-	wantContent := []byte(`{"name": "@forge/web"}`)
+	wantContent := []byte(`{"name": "@acme/web"}`)
 	encoded := base64.StdEncoding.EncodeToString(wantContent)
 
 	// GitHub wraps at 60 chars; simulate that.

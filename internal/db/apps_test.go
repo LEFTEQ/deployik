@@ -46,14 +46,14 @@ func TestCreateAppAndGetForUser(t *testing.T) {
 		t.Fatalf("EnsurePersonalOrganization: %v", err)
 	}
 
-	app, err := database.CreateApp(&AppCreate{OrganizationID: org.ID, Name: "Forge acme"})
+	app, err := database.CreateApp(&AppCreate{OrganizationID: org.ID, Name: "Acme Store"})
 	if err != nil {
 		t.Fatalf("CreateApp: %v", err)
 	}
 	if app.ID == "" {
 		t.Fatal("expected generated app id")
 	}
-	if app.Name != "Forge acme" || app.Slug == "" {
+	if app.Name != "Acme Store" || app.Slug == "" {
 		t.Fatalf("unexpected app name/slug: %q / %q", app.Name, app.Slug)
 	}
 	if app.OrganizationID != org.ID {
@@ -132,7 +132,7 @@ func TestAddRemoveProjectAndListByApp(t *testing.T) {
 	}
 
 	project := &Project{
-		Name: "acme-api", GithubRepo: "forge", GithubOwner: "owner", Branch: "main",
+		Name: "acme-api", GithubRepo: "acme", GithubOwner: "owner", Branch: "main",
 		UserID: user.ID, OrganizationID: org.ID, Framework: "static",
 		PackageManager: "auto", OutputDirectory: "dist", BuildCommand: "bun run build",
 		InstallCommand: "bun install", NodeVersion: "22", Status: "active",

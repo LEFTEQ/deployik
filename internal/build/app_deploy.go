@@ -13,9 +13,9 @@ import (
 // its siblings by container name without hardcoding. For a sibling "acme-api"
 // (port 4000) on production it emits:
 //
-//	acme_API_URL=http://deployik-acme-api-production:4000
-//	acme_API_HOST=deployik-acme-api-production
-//	acme_API_PORT=4000
+//	ACME_API_URL=http://deployik-acme-api-production:4000
+//	ACME_API_HOST=deployik-acme-api-production
+//	ACME_API_PORT=4000
 //
 // selfID is excluded. Names are upper-snaked (hyphens → underscores). These are
 // injected at the LOWEST precedence so a user-set app/project var of the same

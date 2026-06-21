@@ -112,7 +112,7 @@ export function Apps() {
           </DialogHeader>
           <Input
             autoFocus
-            placeholder="App name (e.g. Forge acme)"
+            placeholder="App name (e.g. Acme Store)"
             value={name}
             onChange={(e) => setName(e.target.value)}
             onKeyDown={(e) => {

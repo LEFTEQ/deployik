@@ -27,9 +27,9 @@ func TestInspectHandler_MissingBranch(t *testing.T) {
 
 	rctx := chi.NewRouteContext()
 	rctx.URLParams.Add("owner", "LEFTEQ")
-	rctx.URLParams.Add("repo", "forge")
+	rctx.URLParams.Add("repo", "acme")
 
-	req := httptest.NewRequest(http.MethodGet, "/api/github/repos/LEFTEQ/forge/inspect", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/github/repos/LEFTEQ/acme/inspect", nil)
 	req = req.WithContext(context.WithValue(req.Context(), chi.RouteCtxKey, rctx))
 
 	w := httptest.NewRecorder()
@@ -87,7 +87,7 @@ func TestInspectHandler_HappyPath(t *testing.T) {
 		Tooling:        []monorepo.Tooling{},
 		Apps: []monorepo.App{
 			{
-				Name:                  "forge",
+				Name:                  "acme",
 				Path:                  "",
 				Framework:             "nextjs",
 				OutputDirectory:       ".next",
@@ -101,7 +101,7 @@ func TestInspectHandler_HappyPath(t *testing.T) {
 		DB:        database,
 		Encryptor: enc,
 		InspectFn: func(ctx context.Context, _ monorepo.RepoInspector, owner, repo, ref string) (*monorepo.Report, error) {
-			if owner != "LEFTEQ" || repo != "forge" || ref != "main" {
+			if owner != "LEFTEQ" || repo != "acme" || ref != "main" {
 				t.Errorf("unexpected inspect args: owner=%q repo=%q ref=%q", owner, repo, ref)
 			}
 			return wantReport, nil
@@ -111,9 +111,9 @@ func TestInspectHandler_HappyPath(t *testing.T) {
 	// Build request with chi route context.
 	rctx := chi.NewRouteContext()
 	rctx.URLParams.Add("owner", "LEFTEQ")
-	rctx.URLParams.Add("repo", "forge")
+	rctx.URLParams.Add("repo", "acme")
 
-	req := httptest.NewRequest(http.MethodGet, "/api/github/repos/LEFTEQ/forge/inspect?branch=main", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/github/repos/LEFTEQ/acme/inspect?branch=main", nil)
 	ctx := context.WithValue(req.Context(), chi.RouteCtxKey, rctx)
 	ctx = auth.WithClaims(ctx, &auth.Claims{UserID: user.ID})
 	req = req.WithContext(ctx)

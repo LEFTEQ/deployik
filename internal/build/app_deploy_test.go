@@ -106,17 +106,17 @@ func TestAppSiblingEnv(t *testing.T) {
 		got[e] = true
 	}
 	// web sees api (not itself, not the deleted one).
-	if !got["acme_API_URL=http://deployik-acme-api-production:4000"] {
+	if !got["ACME_API_URL=http://deployik-acme-api-production:4000"] {
 		t.Fatalf("missing api URL; got %v", env)
 	}
-	if !got["acme_API_HOST=deployik-acme-api-production"] {
+	if !got["ACME_API_HOST=deployik-acme-api-production"] {
 		t.Fatalf("missing api HOST; got %v", env)
 	}
-	if !got["acme_API_PORT=4000"] {
+	if !got["ACME_API_PORT=4000"] {
 		t.Fatalf("missing api PORT; got %v", env)
 	}
 	for _, e := range env {
-		if strings.HasPrefix(e, "acme_WEB_") {
+		if strings.HasPrefix(e, "ACME_WEB_") {
 			t.Fatalf("self must be excluded, got %q", e)
 		}
 		if strings.HasPrefix(e, "DEAD_") {

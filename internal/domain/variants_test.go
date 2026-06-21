@@ -77,9 +77,9 @@ func TestResolveVariantPlanAddsWWWForPreviewApex(t *testing.T) {
 func TestResolveVariantPlanForeignCustomPreviewSubdomain(t *testing.T) {
 	t.Parallel()
 
-	plan := ResolveVariantPlan("forge.example.org", "preview")
-	if plan.CanonicalDomain != "forge.example.org" {
-		t.Fatalf("canonical domain = %q, want forge.example.org", plan.CanonicalDomain)
+	plan := ResolveVariantPlan("acme.example.org", "preview")
+	if plan.CanonicalDomain != "acme.example.org" {
+		t.Fatalf("canonical domain = %q, want acme.example.org", plan.CanonicalDomain)
 	}
 	if plan.RedirectDomain != "" {
 		t.Fatalf("redirect domain = %q, want empty for custom preview subdomain", plan.RedirectDomain)
