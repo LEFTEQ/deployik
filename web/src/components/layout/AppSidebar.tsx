@@ -11,6 +11,7 @@ import {
   Database,
   FolderKanban,
   Globe2,
+  History,
   KeyRound,
   Languages,
   LayoutGrid,
@@ -19,6 +20,7 @@ import {
   Plus,
   Rocket,
   Settings,
+  Share2,
   Shield,
   Sparkles,
   UserPlus,
@@ -74,8 +76,9 @@ import {
 } from "@/components/ui/sidebar";
 
 interface AppSidebarProps extends React.ComponentProps<typeof Sidebar> {
-  context: "workspace" | "project";
+  context: "workspace" | "project" | "app";
   projectId?: string;
+  appId?: string;
 }
 
 interface NavSubItem {
@@ -232,7 +235,61 @@ function getProjectItems(projectId: string): NavItem[] {
   ];
 }
 
-export function AppSidebar({ context, projectId, ...props }: AppSidebarProps) {
+function getAppItems(appId: string): NavItem[] {
+  const base = `/apps/${appId}`;
+  return [
+    {
+      label: "Overview",
+      icon: LayoutGrid,
+      to: "/apps/$appId",
+      params: { appId },
+      matchPath: (p) => p === base,
+    },
+    {
+      label: "Deployments",
+      icon: Rocket,
+      to: "/apps/$appId/deployments",
+      params: { appId },
+      matchPath: (p) =>
+        p === `${base}/deployments` || p.startsWith(`${base}/deployments/`),
+    },
+    {
+      label: "Topology",
+      icon: Share2,
+      to: "/apps/$appId/topology",
+      params: { appId },
+      matchPath: (p) => p === `${base}/topology`,
+    },
+    {
+      label: "Variables",
+      icon: KeyRound,
+      to: "/apps/$appId/variables",
+      params: { appId },
+      matchPath: (p) => p === `${base}/variables`,
+    },
+    {
+      label: "Releases",
+      icon: History,
+      to: "/apps/$appId/releases",
+      params: { appId },
+      matchPath: (p) => p === `${base}/releases`,
+    },
+    {
+      label: "Settings",
+      icon: Settings,
+      to: "/apps/$appId/settings",
+      params: { appId },
+      matchPath: (p) => p.startsWith(`${base}/settings`),
+    },
+  ];
+}
+
+export function AppSidebar({
+  context,
+  projectId,
+  appId,
+  ...props
+}: AppSidebarProps) {
   const routerState = useRouterState();
   const pathname = routerState.location.pathname;
   const { user, clearAuth } = useAuthStore();
@@ -271,9 +328,12 @@ export function AppSidebar({ context, projectId, ...props }: AppSidebarProps) {
   const items =
     context === "project" && projectId
       ? getProjectItems(projectId)
-      : getWorkspaceItems();
+      : context === "app" && appId
+        ? getAppItems(appId)
+        : getWorkspaceItems();
 
-  const groupLabel = context === "project" ? "Project" : "Navigation";
+  const groupLabel =
+    context === "project" ? "Project" : context === "app" ? "App" : "Navigation";
 
   const handleLogout = async () => {
     try {

@@ -1,12 +1,21 @@
 import { Link, useRouterState } from "@tanstack/react-router";
-import { FolderKanban, LayoutGrid, Menu, Plus, Rocket } from "lucide-react";
+import {
+  FolderKanban,
+  LayoutGrid,
+  Menu,
+  Plus,
+  Rocket,
+  Settings,
+  Share2,
+} from "lucide-react";
 
 import { useSidebar } from "@/components/ui/sidebar";
 import { cn } from "@/lib/utils";
 
 interface MobileTabBarProps {
-  context: "workspace" | "project";
+  context: "workspace" | "project" | "app";
   projectId?: string;
+  appId?: string;
 }
 
 interface TabItem {
@@ -18,8 +27,9 @@ interface TabItem {
 }
 
 function getTabs(
-  context: "workspace" | "project",
+  context: "workspace" | "project" | "app",
   projectId?: string,
+  appId?: string,
 ): TabItem[] {
   if (context === "project" && projectId) {
     const base = `/projects/${projectId}`;
@@ -38,6 +48,40 @@ function getTabs(
         params: { id: projectId },
         matchPath: (p) =>
           p === `${base}/deployments` || p.startsWith(`${base}/deployments/`),
+      },
+    ];
+  }
+  if (context === "app" && appId) {
+    const base = `/apps/${appId}`;
+    return [
+      {
+        label: "Overview",
+        icon: LayoutGrid,
+        to: "/apps/$appId",
+        params: { appId },
+        matchPath: (p) => p === base,
+      },
+      {
+        label: "Deploys",
+        icon: Rocket,
+        to: "/apps/$appId/deployments",
+        params: { appId },
+        matchPath: (p) =>
+          p === `${base}/deployments` || p.startsWith(`${base}/deployments/`),
+      },
+      {
+        label: "Topology",
+        icon: Share2,
+        to: "/apps/$appId/topology",
+        params: { appId },
+        matchPath: (p) => p === `${base}/topology`,
+      },
+      {
+        label: "Settings",
+        icon: Settings,
+        to: "/apps/$appId/settings",
+        params: { appId },
+        matchPath: (p) => p.startsWith(`${base}/settings`),
       },
     ];
   }
@@ -61,11 +105,11 @@ function getTabs(
  * Fixed bottom tab bar for phones. The "More" tab opens the sidebar drawer,
  * which stays the single source of full navigation.
  */
-export function MobileTabBar({ context, projectId }: MobileTabBarProps) {
+export function MobileTabBar({ context, projectId, appId }: MobileTabBarProps) {
   const routerState = useRouterState();
   const pathname = routerState.location.pathname;
   const { setOpenMobile } = useSidebar();
-  const tabs = getTabs(context, projectId);
+  const tabs = getTabs(context, projectId, appId);
 
   return (
     <nav
