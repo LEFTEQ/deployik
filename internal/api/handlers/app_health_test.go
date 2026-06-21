@@ -2,10 +2,32 @@ package handlers
 
 import (
 	"testing"
+	"time"
 
 	"github.com/LEFTEQ/lovinka-deployik/internal/build"
 	"github.com/LEFTEQ/lovinka-deployik/internal/db"
 )
+
+func TestAppHealthCache(t *testing.T) {
+	key := "app-cache-test:production"
+	t0 := time.Now()
+	if _, ok := getCachedAppHealth(key, t0); ok {
+		t.Fatalf("expected empty cache")
+	}
+	storeCachedAppHealth(key, appHealth{Environment: "production", CombinedStatus: "healthy"}, t0)
+	got, ok := getCachedAppHealth(key, t0.Add(3*time.Second))
+	if !ok || got.CombinedStatus != "healthy" {
+		t.Fatalf("expected cache hit within TTL, got ok=%v %+v", ok, got)
+	}
+	if _, ok := getCachedAppHealth(key, t0.Add(6*time.Second)); ok {
+		t.Fatalf("expected expiry after TTL")
+	}
+	storeCachedAppHealth(key, appHealth{}, t0)
+	invalidateAppHealth("app-cache-test", "production")
+	if _, ok := getCachedAppHealth(key, t0); ok {
+		t.Fatalf("expected miss after invalidate")
+	}
+}
 
 func TestDeriveMemberLiveStatusFromDeployment(t *testing.T) {
 	cases := []struct {

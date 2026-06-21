@@ -284,6 +284,14 @@ func (h *AppHandler) GetHealth(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Short-TTL cache so the 3s UI poll does not hammer Docker. Invalidated on
+	// deploy/rollback start + finish so status transitions are not masked.
+	key := appHealthCacheKey(app.ID, environment)
+	if cached, ok := getCachedAppHealth(key, time.Now()); ok {
+		writeJSON(w, http.StatusOK, cached)
+		return
+	}
+
 	members, err := h.DB.ListProjectsByApp(app.ID)
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to load members"})
@@ -353,6 +361,7 @@ func (h *AppHandler) GetHealth(w http.ResponseWriter, r *http.Request) {
 		statuses = append(statuses, results[i].status)
 	}
 	out.CombinedStatus = combinedAppStatus(statuses)
+	storeCachedAppHealth(key, out, time.Now())
 	writeJSON(w, http.StatusOK, out)
 }
 

@@ -118,8 +118,13 @@ func (h *AppHandler) Deploy(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusConflict, map[string]string{"error": "a deploy or rollback is already in progress for this app + environment"})
 		return
 	}
+	// Invalidate the health cache now (so the next read reflects the in-flight
+	// "deploying" state) and again when the rollout finishes (so the final state
+	// isn't masked for up to the TTL).
+	invalidateAppHealth(app.ID, environment)
 	go func() {
 		defer releaseRollout(app.ID, environment)
+		defer invalidateAppHealth(app.ID, environment)
 		h.runAppDeploy(app, environment, members, claims.UserID, username, token)
 	}()
 
@@ -267,8 +272,12 @@ func (h *AppHandler) Rollback(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusConflict, map[string]string{"error": "a deploy or rollback is already in progress for this app + environment"})
 		return
 	}
+	// Invalidate the health cache now (so the next read reflects the in-flight
+	// rollback) and again when it finishes (so the final state isn't masked).
+	invalidateAppHealth(app.ID, environment)
 	go func() {
 		defer releaseRollout(app.ID, environment)
+		defer invalidateAppHealth(app.ID, environment)
 		h.redeployRelease(app, environment, release.ID, claims.UserID, username, token)
 	}()
 

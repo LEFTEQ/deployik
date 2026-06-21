@@ -1,9 +1,48 @@
 package handlers
 
 import (
+	"sync"
+	"time"
+
 	"github.com/LEFTEQ/lovinka-deployik/internal/build"
 	"github.com/LEFTEQ/lovinka-deployik/internal/db"
 )
+
+// appHealthCache is a short-TTL cache for the app health "unified view" payload,
+// keyed "appID:env". It bounds Docker probe load from the 3s UI poll. The cache
+// is invalidated when a deploy or rollback starts (and when one finishes) so
+// status transitions are never masked for up to the TTL.
+type cachedHealth struct {
+	expires time.Time
+	payload appHealth
+}
+
+var appHealthCache sync.Map // key "appID:env" -> cachedHealth
+
+const appHealthCacheTTL = 5 * time.Second
+
+func appHealthCacheKey(appID, environment string) string { return appID + ":" + environment }
+
+// getCachedAppHealth returns a non-expired cached payload for the key.
+func getCachedAppHealth(key string, now time.Time) (appHealth, bool) {
+	v, ok := appHealthCache.Load(key)
+	if !ok {
+		return appHealth{}, false
+	}
+	c := v.(cachedHealth)
+	if now.After(c.expires) {
+		return appHealth{}, false
+	}
+	return c.payload, true
+}
+
+func storeCachedAppHealth(key string, payload appHealth, now time.Time) {
+	appHealthCache.Store(key, cachedHealth{expires: now.Add(appHealthCacheTTL), payload: payload})
+}
+
+func invalidateAppHealth(appID, environment string) {
+	appHealthCache.Delete(appHealthCacheKey(appID, environment))
+}
 
 // Member live-status vocabulary (worst-of contributes to the combined status).
 const (
