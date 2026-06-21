@@ -1,6 +1,9 @@
 package handlers
 
-import "github.com/LEFTEQ/lovinka-deployik/internal/db"
+import (
+	"github.com/LEFTEQ/lovinka-deployik/internal/build"
+	"github.com/LEFTEQ/lovinka-deployik/internal/db"
+)
 
 // Member live-status vocabulary (worst-of contributes to the combined status).
 const (
@@ -30,6 +33,33 @@ func deriveMemberLiveStatusFromDeployment(latest *db.Deployment) string {
 	default: // rolled_back, replaced, or anything unexpected
 		return memberStatusDegraded
 	}
+}
+
+// statusFromProbe combines a member's latest deployment with a live probe into a
+// member live status. Mid-deploy beats the probe; an unprobeable member is "unknown".
+func statusFromProbe(latest *db.Deployment, probe build.MemberProbe) string {
+	if latest != nil {
+		switch latest.Status {
+		case "queued", "building", "deploying":
+			return memberStatusDeploying
+		}
+	}
+	if !probe.Probed {
+		return memberStatusUnknown
+	}
+	if probe.Running {
+		if probe.OK {
+			return memberStatusHealthy
+		}
+		return memberStatusDegraded
+	}
+	if latest == nil {
+		return memberStatusNone
+	}
+	if latest.Status == "failed" {
+		return memberStatusFailed
+	}
+	return memberStatusDown
 }
 
 // statusSeverity ranks a member status for the worst-of roll-up and maps it to

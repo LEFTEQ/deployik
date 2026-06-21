@@ -1,8 +1,11 @@
 package handlers
 
-import "testing"
+import (
+	"testing"
 
-import "github.com/LEFTEQ/lovinka-deployik/internal/db"
+	"github.com/LEFTEQ/lovinka-deployik/internal/build"
+	"github.com/LEFTEQ/lovinka-deployik/internal/db"
+)
 
 func TestDeriveMemberLiveStatusFromDeployment(t *testing.T) {
 	cases := []struct {
@@ -47,6 +50,33 @@ func TestCombinedAppStatus(t *testing.T) {
 		t.Run(c.name, func(t *testing.T) {
 			if got := combinedAppStatus(c.members); got != c.want {
 				t.Fatalf("combined = %q, want %q", got, c.want)
+			}
+		})
+	}
+}
+
+func TestStatusFromProbe(t *testing.T) {
+	live := &db.Deployment{Status: "live"}
+	building := &db.Deployment{Status: "building"}
+	failed := &db.Deployment{Status: "failed"}
+	cases := []struct {
+		name   string
+		latest *db.Deployment
+		probe  build.MemberProbe
+		want   string
+	}{
+		{"mid-deploy beats probe", building, build.MemberProbe{Probed: true, Running: false}, "deploying"},
+		{"unprobed -> unknown", live, build.MemberProbe{Probed: false}, "unknown"},
+		{"running+ok -> healthy", live, build.MemberProbe{Probed: true, Running: true, OK: true}, "healthy"},
+		{"running+notok -> degraded", live, build.MemberProbe{Probed: true, Running: true, OK: false}, "degraded"},
+		{"down: was live, not running", live, build.MemberProbe{Probed: true, Running: false}, "down"},
+		{"failed: not running, last failed", failed, build.MemberProbe{Probed: true, Running: false}, "failed"},
+		{"none: no deployment, not running", nil, build.MemberProbe{Probed: true, Running: false}, "none"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			if got := statusFromProbe(c.latest, c.probe); got != c.want {
+				t.Fatalf("status = %q, want %q", got, c.want)
 			}
 		})
 	}
