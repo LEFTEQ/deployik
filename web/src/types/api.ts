@@ -171,6 +171,17 @@ export interface AppRelease {
   members?: AppReleaseMember[];
 }
 
+export interface AppVariable {
+  id: string;
+  app_id: string;
+  environment: "shared" | "preview" | "production";
+  kind: "env" | "secret";
+  key: string;
+  value: string; // masked in responses
+  created_at: string;
+  updated_at?: string;
+}
+
 /**
  * Resource tier identifiers — mirrors `internal/build/tiers.go`. Backend is the
  * source of truth; the table in `lib/deployment-helpers.ts` carries the

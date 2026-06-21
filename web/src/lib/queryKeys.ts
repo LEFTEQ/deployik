@@ -22,6 +22,8 @@ export const queryKeys = {
     ["apps", appId, "deployments", environment] as const,
   appReleases: (appId: string, environment: string) =>
     ["apps", appId, "releases", environment] as const,
+  appVariables: (appId: string, kind: "env" | "secret", environment: string) =>
+    ["apps", appId, "variables", kind, environment] as const,
 
   platform: () => ["platform"] as const,
   health: () => ["health"] as const,

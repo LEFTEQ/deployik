@@ -12,6 +12,7 @@ import type {
   AppDeployment,
   AppTopology,
   AppRelease,
+  AppVariable,
   Project,
   Deployment,
   Domain,
@@ -423,6 +424,44 @@ class ApiClient {
     environment: "preview" | "production",
   ): Promise<AppRelease[]> {
     return this.request(`/apps/${appId}/releases?environment=${environment}`);
+  }
+
+  async listAppVariables(
+    appId: string,
+    kind: "env" | "secret",
+    environment: "shared" | "preview" | "production",
+  ): Promise<AppVariable[]> {
+    const path = kind === "secret" ? "secrets" : "env";
+    return this.request(`/apps/${appId}/${path}?environment=${environment}`);
+  }
+
+  async upsertAppVariable(
+    appId: string,
+    kind: "env" | "secret",
+    data: {
+      key: string;
+      value: string;
+      environment: "shared" | "preview" | "production";
+    },
+  ): Promise<AppVariable> {
+    const path = kind === "secret" ? "secrets" : "env";
+    return this.request(`/apps/${appId}/${path}`, {
+      method: "POST",
+      body: JSON.stringify(data),
+    });
+  }
+
+  async deleteAppVariable(
+    appId: string,
+    kind: "env" | "secret",
+    key: string,
+    environment: "shared" | "preview" | "production",
+  ): Promise<void> {
+    const path = kind === "secret" ? "secrets" : "env";
+    await this.request<void>(
+      `/apps/${appId}/${path}/${encodeURIComponent(key)}?environment=${environment}`,
+      { method: "DELETE" },
+    );
   }
 
   async getPlatformInfo(): Promise<PlatformInfo> {
