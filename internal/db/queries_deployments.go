@@ -2,6 +2,7 @@ package db
 
 import (
 	"database/sql"
+	"errors"
 	"fmt"
 	"strings"
 )
@@ -192,6 +193,32 @@ func (db *DB) GetLiveDeploymentForTarget(projectID, environment, previewInstance
 		return nil, fmt.Errorf("get live deployment: %w", err)
 	}
 	return d, nil
+}
+
+// GetLatestDeployment returns the most recent deployment for a project in an
+// environment regardless of status (live/failed/building/...), or (nil, nil)
+// when none exist. Used by the App dashboard to derive per-member status.
+func (db *DB) GetLatestDeployment(projectID, environment string) (*Deployment, error) {
+	row := db.QueryRow(
+		`SELECT d.id, d.project_id, d.environment, COALESCE(d.preview_instance_id, ''),
+		        d.commit_sha, d.commit_message, d.branch, d.status,
+		        d.container_id, d.container_name, d.image_tag, d.build_duration, d.triggered_by,
+		        d.error_message, d.created_at, d.finished_at,
+		        d.trigger_source, d.triggered_by_username, d.screenshot_path
+		 FROM deployments d
+		 WHERE d.project_id = ? AND d.environment = ?
+		 ORDER BY d.created_at DESC, d.rowid DESC
+		 LIMIT 1`,
+		projectID, environment,
+	)
+	var d Deployment
+	if err := scanDeployment(row, &d); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("get latest deployment: %w", err)
+	}
+	return &d, nil
 }
 
 func (db *DB) ListDeploymentsFiltered(f DeploymentFilter) (*DeploymentListResponse, error) {
