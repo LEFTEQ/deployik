@@ -17,7 +17,13 @@ import { Login } from "@/pages/Login";
 import { AuthCallback } from "@/pages/AuthCallback";
 import { Projects } from "@/pages/Projects";
 import { Apps } from "@/pages/Apps";
-import { AppDetail } from "@/pages/AppDetail";
+import { AppBundleLayout } from "@/components/layout/AppBundleLayout";
+import { AppOverview } from "@/pages/AppOverview";
+import { AppDeployments } from "@/pages/AppDeployments";
+import { AppTopology } from "@/pages/AppTopology";
+import { AppVariables } from "@/pages/AppVariables";
+import { AppReleases } from "@/pages/AppReleases";
+import { AppSettings } from "@/pages/AppSettings";
 import { ProjectOverview } from "@/pages/ProjectOverview";
 import { ProjectDeployments } from "@/pages/ProjectDeployments";
 // Heavy or less-visited routes are code-split so charts, form primitives,
@@ -202,10 +208,47 @@ const appsRoute = createRoute({
   component: Apps,
 });
 
-const appDetailRoute = createRoute({
-  getParentRoute: () => workspaceLayoutRoute,
+// App bundle layout (first-class app shell with its own sub-routes)
+const appLayoutRoute = createRoute({
+  getParentRoute: () => protectedRoute,
   path: "/apps/$appId",
-  component: AppDetail,
+  component: AppBundleLayout,
+});
+
+const appOverviewRoute = createRoute({
+  getParentRoute: () => appLayoutRoute,
+  path: "/",
+  component: AppOverview,
+});
+
+const appDeploymentsRoute = createRoute({
+  getParentRoute: () => appLayoutRoute,
+  path: "/deployments",
+  component: AppDeployments,
+});
+
+const appTopologyRoute = createRoute({
+  getParentRoute: () => appLayoutRoute,
+  path: "/topology",
+  component: AppTopology,
+});
+
+const appVariablesRoute = createRoute({
+  getParentRoute: () => appLayoutRoute,
+  path: "/variables",
+  component: AppVariables,
+});
+
+const appReleasesRoute = createRoute({
+  getParentRoute: () => appLayoutRoute,
+  path: "/releases",
+  component: AppReleases,
+});
+
+const appSettingsRoute = createRoute({
+  getParentRoute: () => appLayoutRoute,
+  path: "/settings",
+  component: AppSettings,
 });
 
 // New project (no sidebar context needed, uses workspace layout)
@@ -304,9 +347,16 @@ const routeTree = rootRoute.addChildren([
       userTokensRoute,
       notificationSettingsRoute,
       appsRoute,
-      appDetailRoute,
     ]),
     newProjectRoute,
+    appLayoutRoute.addChildren([
+      appOverviewRoute,
+      appDeploymentsRoute,
+      appTopologyRoute,
+      appVariablesRoute,
+      appReleasesRoute,
+      appSettingsRoute,
+    ]),
     projectLayoutRoute.addChildren([
       projectOverviewRoute,
       projectDeploymentsRoute,

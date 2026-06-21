@@ -112,7 +112,7 @@ export function AppOverview() {
           <Card>
             <CardHeader className="flex flex-row items-center justify-between pb-3">
               <CardTitle className="text-base">Architecture</CardTitle>
-              <Link to="/apps/$appId" params={{ appId }} className="text-sm text-primary hover:underline">
+              <Link to="/apps/$appId/topology" params={{ appId }} className="text-sm text-primary hover:underline">
                 Expand
               </Link>
             </CardHeader>
@@ -124,7 +124,7 @@ export function AppOverview() {
           <Card>
             <CardHeader className="flex flex-row items-center justify-between pb-3">
               <CardTitle className="text-base">Members</CardTitle>
-              <Link to="/apps/$appId" params={{ appId }} className="text-sm text-primary hover:underline">
+              <Link to="/apps/$appId/settings" params={{ appId }} className="text-sm text-primary hover:underline">
                 Manage
               </Link>
             </CardHeader>
@@ -159,7 +159,7 @@ export function AppOverview() {
           <Card>
             <CardHeader className="flex flex-row items-center justify-between pb-3">
               <CardTitle className="text-base">Recent deployments</CardTitle>
-              <Link to="/apps/$appId" params={{ appId }} className="inline-flex items-center text-sm text-primary hover:underline">
+              <Link to="/apps/$appId/deployments" params={{ appId }} className="inline-flex items-center text-sm text-primary hover:underline">
                 See all <ArrowRight className="ml-1 h-3.5 w-3.5" />
               </Link>
             </CardHeader>
@@ -175,7 +175,7 @@ export function AppOverview() {
           <Card>
             <CardHeader className="flex flex-row items-center justify-between pb-3">
               <CardTitle className="text-base">Releases</CardTitle>
-              <Link to="/apps/$appId" params={{ appId }} className="text-sm text-primary hover:underline">All</Link>
+              <Link to="/apps/$appId/releases" params={{ appId }} className="text-sm text-primary hover:underline">All</Link>
             </CardHeader>
             <CardContent className="space-y-1">
               {(releases ?? []).slice(0, 3).length === 0 ? (
