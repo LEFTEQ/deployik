@@ -235,6 +235,36 @@ func (db *DB) AddProjectsToApp(appID string, projectIDs []string) error {
 	return nil
 }
 
+// SetAppMemberOrder assigns deploy_order to each member by its index in
+// projectIDs (0-based). All ids must be members of the app; otherwise the whole
+// change rolls back with an error.
+func (db *DB) SetAppMemberOrder(appID string, projectIDs []string) error {
+	tx, err := db.Begin()
+	if err != nil {
+		return fmt.Errorf("begin reorder: %w", err)
+	}
+	defer tx.Rollback()
+
+	for i, pid := range projectIDs {
+		res, err := tx.Exec(
+			`UPDATE projects SET deploy_order = ?, updated_at = datetime('now')
+			 WHERE id = ? AND app_id = ? AND status != 'deleted'`,
+			i, pid, appID,
+		)
+		if err != nil {
+			return fmt.Errorf("reorder member %s: %w", pid, err)
+		}
+		n, err := res.RowsAffected()
+		if err != nil {
+			return fmt.Errorf("reorder rows affected: %w", err)
+		}
+		if n == 0 {
+			return fmt.Errorf("project %s is not a member of app %s", pid, appID)
+		}
+	}
+	return tx.Commit()
+}
+
 // RemoveProjectFromApp detaches a project from its app (app_id = NULL).
 func (db *DB) RemoveProjectFromApp(projectID string) error {
 	if _, err := db.Exec(
