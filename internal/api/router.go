@@ -209,6 +209,7 @@ func NewRouter(cfg *RouterConfig) *chi.Mux {
 			r.Get("/apps/{id}/health", appHandler.GetHealth)
 			r.Get("/apps/{id}/releases", appHandler.ListReleases)
 			r.Get("/apps/{id}/deployments", appHandler.GetDeployments)
+			r.Get("/apps/{id}/topology", appHandler.GetTopology)
 			r.With(mutationLimiter.Middleware("app_update")).Patch("/apps/{id}", appHandler.Update)
 			r.With(mutationLimiter.Middleware("app_delete")).Delete("/apps/{id}", appHandler.Delete)
 			r.With(mutationLimiter.Middleware("app_projects_add")).Post("/apps/{id}/projects", appHandler.AddProjects)
