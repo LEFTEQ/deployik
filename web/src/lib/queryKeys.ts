@@ -14,7 +14,12 @@ export const queryKeys = {
 
   // App bundles
   apps: () => ["apps"] as const,
-  appHealth: (appId: string) => ["apps", appId, "health"] as const,
+  appHealth: (appId: string, environment: string) =>
+    ["apps", appId, "health", environment] as const,
+  appTopology: (appId: string, environment: string) =>
+    ["apps", appId, "topology", environment] as const,
+  appDeployments: (appId: string, environment: string) =>
+    ["apps", appId, "deployments", environment] as const,
   appReleases: (appId: string, environment: string) =>
     ["apps", appId, "releases", environment] as const,
 

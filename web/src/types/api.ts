@@ -98,15 +98,61 @@ export interface App {
   updated_at: string;
 }
 
+export type MemberLiveStatus =
+  | "healthy"
+  | "degraded"
+  | "down"
+  | "deploying"
+  | "failed"
+  | "none"
+  | "unknown";
+
+export type AppCombinedStatus =
+  | "healthy"
+  | "deploying"
+  | "degraded"
+  | "down"
+  | "none";
+
 export interface AppHealthMember {
   project: Project;
+  live_status: MemberLiveStatus;
+  primary_domain?: string;
+  latest_deployment?: Deployment | null;
   latest_preview_deploy_at?: string | null;
   latest_production_deploy_at?: string | null;
 }
 
 export interface AppHealth {
   app: App;
+  environment: "preview" | "production";
+  combined_status: AppCombinedStatus;
   members: AppHealthMember[];
+}
+
+export interface AppDeployment extends Deployment {
+  username: string;
+  avatar_url: string;
+  project_name: string;
+}
+
+export interface TopologyNode {
+  project_id: string;
+  name: string;
+  framework: string;
+}
+
+export interface TopologyEdge {
+  source: string;
+  target: string;
+  via: string;
+  kind: "env" | "secret" | "";
+  confirmed: boolean;
+}
+
+export interface AppTopology {
+  nodes: TopologyNode[];
+  edges: TopologyEdge[];
 }
 
 export interface AppReleaseMember {

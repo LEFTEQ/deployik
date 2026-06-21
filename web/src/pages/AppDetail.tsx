@@ -72,7 +72,7 @@ export function AppDetail() {
   const [selected, setSelected] = useState<Record<string, boolean>>({});
 
   const { data: health, isLoading } = useQuery({
-    queryKey: queryKeys.appHealth(appId),
+    queryKey: queryKeys.appHealth(appId, "production"),
     queryFn: () => api.getAppHealth(appId),
   });
   const { data: releases } = useQuery({
@@ -85,7 +85,7 @@ export function AppDetail() {
   });
 
   const invalidate = () => {
-    queryClient.invalidateQueries({ queryKey: queryKeys.appHealth(appId) });
+    queryClient.invalidateQueries({ queryKey: queryKeys.appHealth(appId, "production") });
     queryClient.invalidateQueries({ queryKey: queryKeys.apps() });
     queryClient.invalidateQueries({ queryKey: ["projects"] });
   };
@@ -140,7 +140,7 @@ export function AppDetail() {
   const orderedMutation = useMutation({
     mutationFn: (deployOrdered: boolean) => api.updateApp(appId, { deploy_ordered: deployOrdered }),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: queryKeys.appHealth(appId) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.appHealth(appId, "production") });
     },
     onError: (e) => toast.error(e instanceof Error ? e.message : "Failed to update app"),
   });

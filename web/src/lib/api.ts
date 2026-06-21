@@ -9,6 +9,8 @@ import type {
   GroupMember,
   App,
   AppHealth,
+  AppDeployment,
+  AppTopology,
   AppRelease,
   Project,
   Deployment,
@@ -348,8 +350,38 @@ class ApiClient {
     await this.request<void>(`/apps/${id}`, { method: "DELETE" });
   }
 
-  async getAppHealth(id: string): Promise<AppHealth> {
-    return this.request(`/apps/${id}/health`);
+  async getAppHealth(
+    id: string,
+    environment: "preview" | "production" = "production",
+  ): Promise<AppHealth> {
+    return this.request(`/apps/${id}/health?environment=${environment}`);
+  }
+
+  async listAppDeployments(
+    appId: string,
+    environment: "preview" | "production",
+    limit = 20,
+  ): Promise<AppDeployment[]> {
+    return this.request(
+      `/apps/${appId}/deployments?environment=${environment}&limit=${limit}`,
+    );
+  }
+
+  async getAppTopology(
+    appId: string,
+    environment: "preview" | "production",
+  ): Promise<AppTopology> {
+    return this.request(`/apps/${appId}/topology?environment=${environment}`);
+  }
+
+  async reorderAppMembers(
+    appId: string,
+    projectIds: string[],
+  ): Promise<Project[]> {
+    return this.request(`/apps/${appId}/members/order`, {
+      method: "PATCH",
+      body: JSON.stringify({ project_ids: projectIds }),
+    });
   }
 
   async addProjectsToApp(appId: string, projectIds: string[]): Promise<App> {
