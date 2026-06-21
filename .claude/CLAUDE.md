@@ -297,7 +297,7 @@ mcp/                      `@lovinka/deployik-mcp` — MCP server that wraps the 
 
 ## Database Schema
 
-SQLite with 18 migrations. Tables:
+SQLite with 30 migrations (this table + the migration list above stop at 019; 020–030 added preview-all-branches default, resource tier, node API runtime, project_services, project_groups, push_subscriptions, and **App Bundles** — apps / app_variables / app_releases + projects.app_id / build_filter / deploy_order. See `.claude/memory/project_app_bundles.md`; this file needs a `/my:aix triage` pass). Tables:
 
 | Table | Key Fields | Notes |
 |---|---|---|
