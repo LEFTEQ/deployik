@@ -201,6 +201,38 @@ func (h *AppHandler) AddProjects(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, app)
 }
 
+type reorderMembersRequest struct {
+	ProjectIDs []string `json:"project_ids"`
+}
+
+// ReorderMembers sets each member's deploy_order from its position in the body.
+func (h *AppHandler) ReorderMembers(w http.ResponseWriter, r *http.Request) {
+	app, claims, ok := h.loadManagedApp(w, r)
+	if !ok {
+		return
+	}
+	var req reorderMembersRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request body"})
+		return
+	}
+	if len(req.ProjectIDs) == 0 {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "project_ids is required"})
+		return
+	}
+	if err := h.DB.SetAppMemberOrder(app.ID, req.ProjectIDs); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		return
+	}
+	members, err := h.DB.ListProjectsByApp(app.ID)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to load members"})
+		return
+	}
+	h.recordAudit(claims.UserID, "app.reorder", app.ID, map[string]any{"count": len(req.ProjectIDs)})
+	writeJSON(w, http.StatusOK, members)
+}
+
 func (h *AppHandler) RemoveProject(w http.ResponseWriter, r *http.Request) {
 	app, claims, ok := h.loadManagedApp(w, r)
 	if !ok {

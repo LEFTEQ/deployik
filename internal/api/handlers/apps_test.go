@@ -323,3 +323,52 @@ func TestGetHealthReturnsLiveStatusAndCombined(t *testing.T) {
 		t.Fatalf("members = %+v, want one healthy (body: %s)", out.Members, rec.Body.String())
 	}
 }
+
+func TestReorderMembers(t *testing.T) {
+	database := appTestDB(t)
+	user := &db.User{ID: db.NewID(), GithubID: 1, Username: "owner", Role: "user"}
+	if err := database.UpsertUser(user); err != nil {
+		t.Fatalf("UpsertUser: %v", err)
+	}
+	org, err := database.EnsurePersonalOrganization(user)
+	if err != nil {
+		t.Fatalf("EnsurePersonalOrganization: %v", err)
+	}
+	app, err := database.CreateApp(&db.AppCreate{OrganizationID: org.ID, Name: "Bundle"})
+	if err != nil {
+		t.Fatalf("CreateApp: %v", err)
+	}
+	mk := func(name string) *db.Project {
+		p := &db.Project{Name: name, GithubRepo: "r-" + name, GithubOwner: "o", Branch: "main", UserID: user.ID, OrganizationID: org.ID, Framework: "static", PackageManager: "auto", Status: "active"}
+		if err := database.CreateProject(p); err != nil {
+			t.Fatalf("CreateProject %s: %v", name, err)
+		}
+		if err := database.AddProjectsToApp(app.ID, []string{p.ID}); err != nil {
+			t.Fatalf("AddProjectsToApp %s: %v", name, err)
+		}
+		return p
+	}
+	a, b := mk("a"), mk("b")
+
+	h := &AppHandler{DB: database}
+	claims := &auth.Claims{UserID: user.ID, Role: "user"}
+	rctx := chi.NewRouteContext()
+	rctx.URLParams.Add("id", app.ID)
+	body, _ := json.Marshal(map[string]any{"project_ids": []string{b.ID, a.ID}})
+	req := httptest.NewRequest(http.MethodPatch, "/apps/"+app.ID+"/members/order", bytes.NewReader(body))
+	req = req.WithContext(context.WithValue(req.Context(), chi.RouteCtxKey, rctx))
+	req = req.WithContext(auth.WithClaims(req.Context(), claims))
+	rec := httptest.NewRecorder()
+
+	h.ReorderMembers(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d (body: %s)", rec.Code, rec.Body.String())
+	}
+	var out []db.Project
+	if err := json.Unmarshal(rec.Body.Bytes(), &out); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if len(out) != 2 || out[0].Name != "b" || out[1].Name != "a" {
+		t.Fatalf("unexpected order: %+v (body: %s)", out, rec.Body.String())
+	}
+}

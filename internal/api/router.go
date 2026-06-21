@@ -214,6 +214,7 @@ func NewRouter(cfg *RouterConfig) *chi.Mux {
 			r.With(mutationLimiter.Middleware("app_delete")).Delete("/apps/{id}", appHandler.Delete)
 			r.With(mutationLimiter.Middleware("app_projects_add")).Post("/apps/{id}/projects", appHandler.AddProjects)
 			r.With(mutationLimiter.Middleware("app_projects_remove")).Delete("/apps/{id}/projects/{pid}", appHandler.RemoveProject)
+			r.With(mutationLimiter.Middleware("app_members_order")).Patch("/apps/{id}/members/order", appHandler.ReorderMembers)
 			r.With(mutationLimiter.Middleware("app_deploy")).Post("/apps/{id}/deploy", appHandler.Deploy)
 			r.With(mutationLimiter.Middleware("app_rollback")).Post("/apps/{id}/rollback", appHandler.Rollback)
 
