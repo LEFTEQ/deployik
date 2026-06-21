@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -292,6 +293,32 @@ func (h *AppHandler) GetHealth(w http.ResponseWriter, r *http.Request) {
 	}
 	out.CombinedStatus = combinedAppStatus(statuses)
 	writeJSON(w, http.StatusOK, out)
+}
+
+// GetDeployments returns recent deployments across all member projects for one
+// environment (the App dashboard's unified feed). ?limit= caps the rows (default 20).
+func (h *AppHandler) GetDeployments(w http.ResponseWriter, r *http.Request) {
+	app, _, ok := h.loadManagedApp(w, r)
+	if !ok {
+		return
+	}
+	environment, valid := normalizeAppEnvironment(r.URL.Query().Get("environment"))
+	if !valid {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "environment must be preview or production"})
+		return
+	}
+	limit := 20
+	if v := r.URL.Query().Get("limit"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 && n <= 200 {
+			limit = n
+		}
+	}
+	rows, err := h.DB.ListAppDeployments(app.ID, environment, limit)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to load deployments"})
+		return
+	}
+	writeJSON(w, http.StatusOK, rows)
 }
 
 // resolveMemberLiveStatus picks a member's live status. P1: derived purely from

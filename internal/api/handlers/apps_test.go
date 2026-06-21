@@ -155,6 +155,57 @@ func TestAppHandlerListReleases(t *testing.T) {
 	}
 }
 
+func TestGetDeploymentsUnifiedFeed(t *testing.T) {
+	database := appTestDB(t)
+	user := &db.User{ID: db.NewID(), GithubID: 1, Username: "owner", Role: "user"}
+	if err := database.UpsertUser(user); err != nil {
+		t.Fatalf("UpsertUser: %v", err)
+	}
+	org, err := database.EnsurePersonalOrganization(user)
+	if err != nil {
+		t.Fatalf("EnsurePersonalOrganization: %v", err)
+	}
+	app, err := database.CreateApp(&db.AppCreate{OrganizationID: org.ID, Name: "Bundle"})
+	if err != nil {
+		t.Fatalf("CreateApp: %v", err)
+	}
+	member := &db.Project{
+		Name: "web", GithubRepo: "r", GithubOwner: "o", Branch: "main",
+		UserID: user.ID, OrganizationID: org.ID, Framework: "nextjs",
+		PackageManager: "auto", Status: "active",
+	}
+	if err := database.CreateProject(member); err != nil {
+		t.Fatalf("CreateProject: %v", err)
+	}
+	if err := database.AddProjectsToApp(app.ID, []string{member.ID}); err != nil {
+		t.Fatalf("AddProjectsToApp: %v", err)
+	}
+	if err := database.CreateDeployment(&db.Deployment{ProjectID: member.ID, Environment: "production", Branch: "main", Status: "live", TriggeredBy: user.ID, CommitSHA: "m1"}); err != nil {
+		t.Fatalf("CreateDeployment: %v", err)
+	}
+
+	h := &AppHandler{DB: database}
+	claims := &auth.Claims{UserID: user.ID, Role: "user"}
+	rctx := chi.NewRouteContext()
+	rctx.URLParams.Add("id", app.ID)
+	req := httptest.NewRequest(http.MethodGet, "/apps/"+app.ID+"/deployments?environment=production&limit=5", nil)
+	req = req.WithContext(context.WithValue(req.Context(), chi.RouteCtxKey, rctx))
+	req = req.WithContext(auth.WithClaims(req.Context(), claims))
+	rec := httptest.NewRecorder()
+
+	h.GetDeployments(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200 (body: %s)", rec.Code, rec.Body.String())
+	}
+	var out []db.AppDeployment
+	if err := json.Unmarshal(rec.Body.Bytes(), &out); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if len(out) != 1 || out[0].ProjectName != "web" {
+		t.Fatalf("unexpected feed: %+v (body: %s)", out, rec.Body.String())
+	}
+}
+
 func TestGetHealthReturnsLiveStatusAndCombined(t *testing.T) {
 	database := appTestDB(t)
 	user := &db.User{ID: db.NewID(), GithubID: 1, Username: "owner", Role: "user"}
