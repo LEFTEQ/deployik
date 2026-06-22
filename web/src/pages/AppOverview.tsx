@@ -29,6 +29,8 @@ import {
 import { TopologyMap } from "@/components/apps/topology-map";
 import { QuickLinksBar } from "@/components/apps/quick-links-bar";
 import { ServiceMatrix, buildMatrixRows } from "@/components/apps/service-matrix";
+import { LiveLogsSheet } from "@/components/apps/live-logs-sheet";
+import { useLogTabsStore } from "@/store/log-tabs";
 import { AnalyticsStatCard } from "@/components/analytics/stat-card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -72,6 +74,7 @@ export function AppOverview() {
   // Default to the development (preview) environment for the detail sections
   // and the Deploy action. The service matrix below always shows both at once.
   const [environment, setEnvironment] = useState<Environment>("preview");
+  const openLogs = useLogTabsStore((s) => s.openLogs);
 
   // Both environments are fetched so the matrix can show them side by side.
   const previewHealth = useQuery({
@@ -193,7 +196,21 @@ export function AppOverview() {
         </div>
 
         {/* Quick links */}
-        <QuickLinksBar appId={appId} members={memberSamples} />
+        <QuickLinksBar
+          appId={appId}
+          members={memberSamples}
+          onOpenLogs={() => {
+            const first = memberSamples[0];
+            if (first) {
+              openLogs({
+                projectId: first.project.id,
+                projectName: first.project.name,
+                environment: "preview",
+                branch: first.latest_deployment?.branch ?? undefined,
+              });
+            }
+          }}
+        />
       </div>
 
       {/* KPI cards */}
@@ -235,7 +252,7 @@ export function AppOverview() {
             </Button>
           }
         />
-        <ServiceMatrix rows={matrixRows} ordered={!!app?.deploy_ordered} />
+        <ServiceMatrix rows={matrixRows} ordered={!!app?.deploy_ordered} onOpenLogs={openLogs} />
       </section>
 
       {/* Two columns */}
@@ -321,6 +338,8 @@ export function AppOverview() {
           </section>
         </div>
       </div>
+
+      <LiveLogsSheet />
     </div>
   );
 }

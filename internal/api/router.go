@@ -383,6 +383,14 @@ func NewRouter(cfg *RouterConfig) *chi.Mux {
 			ws.ServiceLogsHandler(cfg.DB, lookupSpec, streamLogs, cfg.JWTSecret, cfg.AllowedOrigins))
 	}
 
+	// WS member logs — live `docker logs --follow` of an app member's deployed
+	// container. Independent of cfg.Services (uses the package-level streamer).
+	memberStreamLogs := func(ctx context.Context, containerName string, out io.Writer) error {
+		return services.Logs(ctx, &services.ServiceSpec{ContainerName: containerName}, out)
+	}
+	r.With(wsLimiter.Middleware("ws_member_logs")).Get("/ws/projects/{id}/logs",
+		ws.MemberLogsHandler(cfg.DB, cfg.DB.ResolveLiveContainer, memberStreamLogs, cfg.JWTSecret, cfg.AllowedOrigins))
+
 	// Serve embedded SPA for all non-API routes
 	r.NotFound(SPAHandler())
 

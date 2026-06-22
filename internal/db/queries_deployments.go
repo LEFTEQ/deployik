@@ -195,6 +195,42 @@ func (db *DB) GetLiveDeploymentForTarget(projectID, environment, previewInstance
 	return d, nil
 }
 
+// ResolveLiveContainer returns the running container name for a project's live
+// deployment in the given environment. For preview, branch selects the preview
+// instance (empty branch → the project's default instance); production ignores
+// branch. Returns ("", false, nil) when nothing is live for that target —
+// distinct from a real error — so the logs WS can answer 404 cleanly.
+func (db *DB) ResolveLiveContainer(projectID, environment, branch string) (string, bool, error) {
+	previewInstanceID := ""
+	if environment == "preview" {
+		var (
+			inst *PreviewInstance
+			err  error
+		)
+		if branch != "" {
+			inst, err = db.GetPreviewInstanceForBranch(projectID, branch)
+		} else {
+			inst, err = db.GetDefaultPreviewInstance(projectID)
+		}
+		if err != nil {
+			return "", false, err
+		}
+		if inst == nil {
+			return "", false, nil
+		}
+		previewInstanceID = inst.ID
+	}
+
+	dep, err := db.GetLiveDeploymentForTarget(projectID, environment, previewInstanceID)
+	if err != nil {
+		return "", false, err
+	}
+	if dep == nil || dep.ContainerName == "" {
+		return "", false, nil
+	}
+	return dep.ContainerName, true, nil
+}
+
 // GetLatestDeployment returns the most recent deployment for a project in an
 // environment regardless of status (live/failed/building/...), or (nil, nil)
 // when none exist. Used by the App dashboard to derive per-member status.
