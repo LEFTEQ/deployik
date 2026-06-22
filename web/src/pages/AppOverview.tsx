@@ -1,4 +1,5 @@
 import { useState } from "react";
+import type { ReactNode } from "react";
 import { Link, useNavigate, useParams } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
@@ -32,7 +33,6 @@ import { TopologyMap } from "@/components/apps/topology-map";
 import { AnalyticsStatCard } from "@/components/analytics/stat-card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   Select,
   SelectContent,
@@ -48,6 +48,18 @@ type Environment = "preview" | "production";
 
 const REVEAL = "animate-in fade-in slide-in-from-bottom-2 duration-500 [animation-fill-mode:both]";
 const reveal = (ms: number) => ({ className: REVEAL, style: { animationDelay: `${ms}ms` } });
+
+function SectionHeader({ title, sub, action }: { title: string; sub?: string; action?: ReactNode }) {
+  return (
+    <div className="flex items-end justify-between gap-2">
+      <div>
+        <h2 className="text-sm font-semibold text-foreground">{title}</h2>
+        {sub ? <p className="mt-0.5 text-xs text-muted-foreground">{sub}</p> : null}
+      </div>
+      {action}
+    </div>
+  );
+}
 
 export function AppOverview() {
   const { appId } = useParams({ strict: false }) as { appId: string };
@@ -106,7 +118,7 @@ export function AppOverview() {
     .slice(0, 4);
 
   return (
-    <div className="space-y-7">
+    <div className="space-y-8">
       {/* Hero */}
       <div {...reveal(0)} className={cn(REVEAL, "space-y-3")}>
         <div className="flex flex-wrap items-start justify-between gap-3">
@@ -209,107 +221,113 @@ export function AppOverview() {
       </div>
 
       {/* Two columns */}
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-[1fr_340px] lg:items-start">
+      <div className="grid grid-cols-1 gap-x-8 gap-y-8 lg:grid-cols-[1fr_340px] lg:items-start">
         {/* Main */}
-        <div className="space-y-6">
-          <Card {...reveal(120)} className={cn(REVEAL, "overflow-hidden bg-gradient-to-t from-primary/5 to-card")}>
-            <CardHeader className="flex flex-row items-center justify-between pb-3">
-              <div>
-                <CardTitle className="text-base">Architecture</CardTitle>
-                <p className="mt-0.5 text-xs text-muted-foreground">
-                  Auto-derived from env wiring · {environment}
-                </p>
-              </div>
-              <Button asChild variant="outline" size="sm">
-                <Link to="/apps/$appId/topology" params={{ appId }}>
-                  Expand <ArrowRight className="ml-1 h-3.5 w-3.5" />
-                </Link>
-              </Button>
-            </CardHeader>
-            <CardContent>
-              <TopologyMap topology={topology} members={members} compact />
-            </CardContent>
-          </Card>
+        <div className="space-y-8">
+          <section {...reveal(120)} className={cn(REVEAL, "space-y-3")}>
+            <SectionHeader
+              title="Architecture"
+              sub={`Auto-derived from env wiring · ${environment}`}
+              action={
+                <Button asChild variant="outline" size="sm">
+                  <Link to="/apps/$appId/topology" params={{ appId }}>
+                    Expand <ArrowRight className="ml-1 h-3.5 w-3.5" />
+                  </Link>
+                </Button>
+              }
+            />
+            <TopologyMap topology={topology} members={members} compact />
+          </section>
 
-          <Card {...reveal(180)} className={REVEAL}>
-            <CardHeader className="flex flex-row items-center justify-between pb-3">
-              <CardTitle className="text-base">Members</CardTitle>
-              <Button asChild variant="ghost" size="sm">
-                <Link to="/apps/$appId/settings" params={{ appId }}>Manage</Link>
-              </Button>
-            </CardHeader>
-            <CardContent className="p-0">
-              {members.length === 0 ? (
-                <p className="px-6 py-8 text-center text-sm text-muted-foreground">No members yet.</p>
-              ) : (
-                <div className="divide-y divide-border border-t">
-                  {members.map((m) => (
-                    <MemberRow
-                      key={m.project.id}
-                      member={m}
-                      ordered={!!app?.deploy_ordered}
-                      onOpen={() => navigate({ to: "/projects/$id", params: { id: m.project.id } })}
-                    />
-                  ))}
-                </div>
-              )}
-            </CardContent>
-          </Card>
+          <section {...reveal(180)} className={cn(REVEAL, "space-y-3")}>
+            <SectionHeader
+              title="Members"
+              action={
+                <Button asChild variant="ghost" size="sm">
+                  <Link to="/apps/$appId/settings" params={{ appId }}>Manage</Link>
+                </Button>
+              }
+            />
+            {members.length === 0 ? (
+              <div className="rounded-lg border border-dashed border-border/70 px-5 py-8 text-center text-sm text-muted-foreground">
+                No members yet.
+              </div>
+            ) : (
+              <div className="divide-y divide-border overflow-hidden rounded-lg border">
+                {members.map((m) => (
+                  <MemberRow
+                    key={m.project.id}
+                    member={m}
+                    ordered={!!app?.deploy_ordered}
+                    onOpen={() => navigate({ to: "/projects/$id", params: { id: m.project.id } })}
+                  />
+                ))}
+              </div>
+            )}
+          </section>
         </div>
 
         {/* Sticky pulse rail */}
-        <div {...reveal(240)} className={cn(REVEAL, "space-y-4 lg:sticky lg:top-4")}>
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between pb-3">
-              <CardTitle className="text-base">Recent deployments</CardTitle>
-              <Link
-                to="/apps/$appId/deployments"
-                params={{ appId }}
-                className="inline-flex items-center text-sm text-primary transition-colors hover:underline"
-              >
-                See all <ArrowRight className="ml-1 h-3.5 w-3.5" />
-              </Link>
-            </CardHeader>
-            <CardContent className="space-y-1">
-              {recent.length === 0 ? (
-                <p className="py-3 text-center text-sm text-muted-foreground">No deployments yet.</p>
-              ) : (
-                recent.map((d) => (
+        <div className="space-y-8 lg:sticky lg:top-4">
+          <section {...reveal(240)} className={cn(REVEAL, "space-y-3")}>
+            <SectionHeader
+              title="Recent deployments"
+              action={
+                <Link
+                  to="/apps/$appId/deployments"
+                  params={{ appId }}
+                  className="inline-flex items-center text-sm text-primary transition-colors hover:underline"
+                >
+                  See all <ArrowRight className="ml-1 h-3.5 w-3.5" />
+                </Link>
+              }
+            />
+            {recent.length === 0 ? (
+              <div className="rounded-lg border border-dashed border-border/70 px-4 py-6 text-center text-sm text-muted-foreground">
+                No deployments yet.
+              </div>
+            ) : (
+              <div className="divide-y divide-border overflow-hidden rounded-lg border">
+                {recent.map((d) => (
                   <DeployRow
                     key={d.id}
                     d={d}
                     onOpen={() => navigate({ to: "/projects/$id/deployments/$did", params: { id: d.project_id, did: d.id } })}
                   />
-                ))
-              )}
-            </CardContent>
-          </Card>
+                ))}
+              </div>
+            )}
+          </section>
 
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between pb-3">
-              <CardTitle className="text-base">Releases</CardTitle>
-              <Link to="/apps/$appId/releases" params={{ appId }} className="text-sm text-primary transition-colors hover:underline">
-                All
-              </Link>
-            </CardHeader>
-            <CardContent className="space-y-1.5">
-              {(releases ?? []).length === 0 ? (
-                <p className="py-3 text-center text-sm text-muted-foreground">No releases yet.</p>
-              ) : (
-                (releases ?? []).slice(0, 4).map((r) => {
+          <section {...reveal(300)} className={cn(REVEAL, "space-y-3")}>
+            <SectionHeader
+              title="Releases"
+              action={
+                <Link to="/apps/$appId/releases" params={{ appId }} className="text-sm text-primary transition-colors hover:underline">
+                  All
+                </Link>
+              }
+            />
+            {(releases ?? []).length === 0 ? (
+              <div className="rounded-lg border border-dashed border-border/70 px-4 py-6 text-center text-sm text-muted-foreground">
+                No releases yet.
+              </div>
+            ) : (
+              <div className="divide-y divide-border overflow-hidden rounded-lg border">
+                {(releases ?? []).slice(0, 4).map((r) => {
                   const meta = RELEASE_STATUS_META[r.status];
                   return (
-                    <div key={r.id} className="flex items-center gap-2 rounded-md border border-border/60 px-3 py-2 text-sm">
+                    <div key={r.id} className="flex items-center gap-2 px-3 py-2.5 text-sm">
                       <span className={cn("h-1.5 w-1.5 shrink-0 rounded-full", meta.dotClass)} />
                       <Badge variant="outline" className={cn("text-[10px]", meta.badgeClass)}>{meta.label}</Badge>
                       <span className="ml-auto font-mono text-[11px] text-muted-foreground">{r.id.slice(0, 8)}</span>
                       <span className="text-[11px] text-muted-foreground">{formatRelativeDate(r.created_at)}</span>
                     </div>
                   );
-                })
-              )}
-            </CardContent>
-          </Card>
+                })}
+              </div>
+            )}
+          </section>
         </div>
       </div>
     </div>
@@ -369,7 +387,7 @@ function DeployRow({ d, onOpen }: { d: AppDeployment; onOpen: () => void }) {
     <button
       type="button"
       onClick={onOpen}
-      className="flex w-full items-center gap-2 rounded-md px-2 py-2 text-left text-sm transition-colors hover:bg-accent"
+      className="flex w-full items-center gap-2 px-3 py-2.5 text-left text-sm transition-colors hover:bg-accent"
     >
       <span className={cn("h-2 w-2 shrink-0 rounded-full", meta?.dotClass, active && "animate-pulse")} />
       <span className="truncate font-medium text-foreground">{d.project_name}</span>

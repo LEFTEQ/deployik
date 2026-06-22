@@ -22,7 +22,6 @@ import {
 } from "@/lib/app-helpers";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { LoadingState } from "@/components/ui/spinner";
@@ -169,17 +168,12 @@ export function AppSettings() {
       </div>
 
       {/* App name */}
-      <Card
-        {...reveal(60)}
-        className={cn(REVEAL, "bg-gradient-to-t from-primary/5 to-card")}
-      >
-        <CardHeader className="pb-3">
-          <CardTitle className="flex items-center gap-2 text-base">
-            <Pencil className="h-4 w-4 text-muted-foreground" />
-            App name
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="flex flex-wrap items-center gap-2">
+      <section {...reveal(60)} className={cn(REVEAL, "space-y-3")}>
+        <h2 className="flex items-center gap-2 text-sm font-semibold text-foreground">
+          <Pencil className="h-4 w-4 text-muted-foreground" />
+          App name
+        </h2>
+        <div className="flex flex-wrap items-center gap-2 rounded-lg border p-4">
           <Input
             className="max-w-sm"
             placeholder={app?.name}
@@ -192,18 +186,18 @@ export function AppSettings() {
           >
             Save
           </Button>
-        </CardContent>
-      </Card>
+        </div>
+      </section>
 
       {/* Deploy order + members */}
-      <Card {...reveal(120)} className={REVEAL}>
-        <CardHeader className="flex flex-row items-start justify-between gap-3 pb-3">
+      <section {...reveal(120)} className={cn(REVEAL, "space-y-3")}>
+        <div className="flex items-start justify-between gap-3">
           <div className="space-y-0.5">
-            <CardTitle className="flex items-center gap-2 text-base">
+            <h2 className="flex items-center gap-2 text-sm font-semibold text-foreground">
               <ListOrdered className="h-4 w-4 text-muted-foreground" />
               Deploy order
-            </CardTitle>
-            <p className="text-sm text-muted-foreground">
+            </h2>
+            <p className="text-xs text-muted-foreground">
               When on, members deploy in the order below; otherwise in parallel.
             </p>
           </div>
@@ -211,44 +205,40 @@ export function AppSettings() {
             checked={ordered}
             onCheckedChange={(v) => orderedMut.mutate(v)}
           />
-        </CardHeader>
-        <CardContent className="space-y-3">
-          {members.length === 0 ? (
-            <p className="rounded-lg border border-dashed py-8 text-center text-sm text-muted-foreground">
-              No members yet.
-            </p>
-          ) : (
-            <div className="divide-y divide-border rounded-lg border">
-              {members.map((m, i) => (
-                <MemberRow
-                  key={m.project.id}
-                  member={m}
-                  index={i}
-                  ordered={ordered}
-                  isFirst={i === 0}
-                  isLast={i === members.length - 1}
-                  reordering={reorderMut.isPending}
-                  onMove={(dir) => move(i, dir)}
-                  onRemove={() => removeMut.mutate(m.project.id)}
-                />
-              ))}
-            </div>
-          )}
-          <Button variant="outline" size="sm" onClick={() => setAddOpen(true)}>
-            <Plus className="h-4 w-4" /> Add projects
-          </Button>
-        </CardContent>
-      </Card>
+        </div>
+        {members.length === 0 ? (
+          <p className="rounded-lg border border-dashed py-8 text-center text-sm text-muted-foreground">
+            No members yet.
+          </p>
+        ) : (
+          <div className="divide-y divide-border overflow-hidden rounded-lg border">
+            {members.map((m, i) => (
+              <MemberRow
+                key={m.project.id}
+                member={m}
+                index={i}
+                ordered={ordered}
+                isFirst={i === 0}
+                isLast={i === members.length - 1}
+                reordering={reorderMut.isPending}
+                onMove={(dir) => move(i, dir)}
+                onRemove={() => removeMut.mutate(m.project.id)}
+              />
+            ))}
+          </div>
+        )}
+        <Button variant="outline" size="sm" onClick={() => setAddOpen(true)}>
+          <Plus className="h-4 w-4" /> Add projects
+        </Button>
+      </section>
 
       {/* Danger zone */}
-      <Card {...reveal(180)} className={cn(REVEAL, "border-destructive/40")}>
-        <CardHeader className="pb-3">
-          <CardTitle className="flex items-center gap-2 text-base text-destructive">
-            <TriangleAlert className="h-4 w-4" />
-            Danger zone
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="flex flex-wrap items-center justify-between gap-3">
+      <section {...reveal(180)} className={cn(REVEAL, "space-y-3")}>
+        <h2 className="flex items-center gap-2 text-sm font-semibold text-destructive">
+          <TriangleAlert className="h-4 w-4" />
+          Danger zone
+        </h2>
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-destructive/40 p-4">
           <p className="text-sm text-muted-foreground">
             Deleting the app bundle keeps member projects — they become
             standalone.
@@ -290,8 +280,8 @@ export function AppSettings() {
               </AlertDialogFooter>
             </AlertDialogContent>
           </AlertDialog>
-        </CardContent>
-      </Card>
+        </div>
+      </section>
 
       <Dialog open={addOpen} onOpenChange={setAddOpen}>
         <DialogContent>
