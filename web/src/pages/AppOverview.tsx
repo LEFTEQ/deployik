@@ -8,8 +8,6 @@ import {
   ArrowRight,
   Boxes,
   Clock,
-  ExternalLink,
-  Globe2,
   History,
   RefreshCw,
   Rocket,
@@ -20,7 +18,6 @@ import { queryKeys, staleTimes } from "@/lib/queryKeys";
 import {
   ACTIVE_MEMBER_STATUSES,
   APP_STATUS_META,
-  MEMBER_STATUS_META,
   RELEASE_STATUS_META,
 } from "@/lib/app-helpers";
 import {
@@ -30,6 +27,8 @@ import {
   formatRelativeDate,
 } from "@/lib/deployment-helpers";
 import { TopologyMap } from "@/components/apps/topology-map";
+import { QuickLinksBar } from "@/components/apps/quick-links-bar";
+import { ServiceMatrix, buildMatrixRows } from "@/components/apps/service-matrix";
 import { AnalyticsStatCard } from "@/components/analytics/stat-card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -42,12 +41,17 @@ import {
 } from "@/components/ui/select";
 import { LoadingState } from "@/components/ui/spinner";
 import { cn } from "@/lib/utils";
-import type { AppDeployment, AppHealthMember } from "@/types/api";
+import type { AppDeployment, AppHealth, AppHealthMember } from "@/types/api";
 
 type Environment = "preview" | "production";
 
 const REVEAL = "animate-in fade-in slide-in-from-bottom-2 duration-500 [animation-fill-mode:both]";
 const reveal = (ms: number) => ({ className: REVEAL, style: { animationDelay: `${ms}ms` } });
+
+const healthRefetch = (query: { state: { data?: AppHealth } }) =>
+  (query.state.data?.members ?? []).some((m) => ACTIVE_MEMBER_STATUSES.has(m.live_status))
+    ? 3000
+    : false;
 
 function SectionHeader({ title, sub, action }: { title: string; sub?: string; action?: ReactNode }) {
   return (
@@ -65,15 +69,24 @@ export function AppOverview() {
   const { appId } = useParams({ strict: false }) as { appId: string };
   const navigate = useNavigate();
   const queryClient = useQueryClient();
-  const [environment, setEnvironment] = useState<Environment>("production");
+  // Default to the development (preview) environment for the detail sections
+  // and the Deploy action. The service matrix below always shows both at once.
+  const [environment, setEnvironment] = useState<Environment>("preview");
 
-  const { data: health, isLoading } = useQuery({
-    queryKey: queryKeys.appHealth(appId, environment),
-    queryFn: () => api.getAppHealth(appId, environment),
+  // Both environments are fetched so the matrix can show them side by side.
+  const previewHealth = useQuery({
+    queryKey: queryKeys.appHealth(appId, "preview"),
+    queryFn: () => api.getAppHealth(appId, "preview"),
     staleTime: staleTimes.activeDeployments,
-    refetchInterval: (query) =>
-      (query.state.data?.members ?? []).some((m) => ACTIVE_MEMBER_STATUSES.has(m.live_status)) ? 3000 : false,
+    refetchInterval: healthRefetch,
   });
+  const productionHealth = useQuery({
+    queryKey: queryKeys.appHealth(appId, "production"),
+    queryFn: () => api.getAppHealth(appId, "production"),
+    staleTime: staleTimes.activeDeployments,
+    refetchInterval: healthRefetch,
+  });
+
   const { data: topology } = useQuery({
     queryKey: queryKeys.appTopology(appId, environment),
     queryFn: () => api.getAppTopology(appId, environment),
@@ -101,21 +114,25 @@ export function AppOverview() {
     onError: (e) => toast.error(e instanceof Error ? e.message : "Failed to start deploy"),
   });
 
-  if (isLoading) {
+  if (previewHealth.isLoading && productionHealth.isLoading) {
     return <LoadingState title="Loading app…" className="min-h-[320px]" />;
   }
 
-  const app = health?.app;
+  // Hero + KPI cards reflect the selected environment; the matrix shows both.
+  const health = environment === "preview" ? previewHealth.data : productionHealth.data;
+  const app = health?.app ?? previewHealth.data?.app ?? productionHealth.data?.app;
   const members = health?.members ?? [];
   const combined = health?.combined_status ?? "none";
   const combinedMeta = APP_STATUS_META[combined];
   const liveCount = members.filter((m) => m.live_status === "healthy").length;
   const recent = deployments ?? [];
   const lastDeploy = recent[0];
-  const domains = members
-    .map((m) => m.primary_domain)
-    .filter((d): d is string => !!d)
-    .slice(0, 4);
+
+  const matrixRows = buildMatrixRows(previewHealth.data?.members, productionHealth.data?.members);
+  // One member sample per project (preview preferred) for repo detection.
+  const memberSamples = matrixRows
+    .map((row) => row.preview ?? row.production)
+    .filter((m): m is AppHealthMember => !!m);
 
   return (
     <div className="space-y-8">
@@ -154,15 +171,18 @@ export function AppOverview() {
             <Select value={environment} onValueChange={(v) => setEnvironment(v as Environment)}>
               <SelectTrigger className="w-[150px]"><SelectValue /></SelectTrigger>
               <SelectContent>
-                <SelectItem value="production">Production</SelectItem>
                 <SelectItem value="preview">Preview</SelectItem>
+                <SelectItem value="production">Production</SelectItem>
               </SelectContent>
             </Select>
             <Button
               variant="outline"
               size="icon"
               title="Refresh"
-              onClick={() => queryClient.invalidateQueries({ queryKey: queryKeys.appHealth(appId, environment) })}
+              onClick={() => {
+                queryClient.invalidateQueries({ queryKey: queryKeys.appHealth(appId, "preview") });
+                queryClient.invalidateQueries({ queryKey: queryKeys.appHealth(appId, "production") });
+              }}
             >
               <RefreshCw className="h-4 w-4" />
             </Button>
@@ -172,24 +192,8 @@ export function AppOverview() {
           </div>
         </div>
 
-        {/* Member domain strip */}
-        {domains.length > 0 ? (
-          <div className="flex flex-wrap items-center gap-2 rounded-lg border bg-muted/30 px-4 py-2.5">
-            <Globe2 className="h-4 w-4 shrink-0 text-muted-foreground" />
-            {domains.map((d) => (
-              <a
-                key={d}
-                href={`https://${d}`}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="inline-flex min-w-0 max-w-full items-center gap-1 rounded-md border bg-background px-2 py-1 text-sm text-foreground transition-colors hover:bg-accent"
-              >
-                <span className="truncate">{d}</span>
-                <ExternalLink className="h-3 w-3 shrink-0 text-muted-foreground" />
-              </a>
-            ))}
-          </div>
-        ) : null}
+        {/* Quick links */}
+        <QuickLinksBar appId={appId} members={memberSamples} />
       </div>
 
       {/* KPI cards */}
@@ -220,11 +224,25 @@ export function AppOverview() {
         />
       </div>
 
+      {/* Service matrix — both environments at once */}
+      <section {...reveal(100)} className={cn(REVEAL, "space-y-3")}>
+        <SectionHeader
+          title="Members"
+          sub="Development and production side by side · click a domain to open the site"
+          action={
+            <Button asChild variant="ghost" size="sm">
+              <Link to="/apps/$appId/settings" params={{ appId }}>Manage</Link>
+            </Button>
+          }
+        />
+        <ServiceMatrix rows={matrixRows} ordered={!!app?.deploy_ordered} />
+      </section>
+
       {/* Two columns */}
       <div className="grid grid-cols-1 gap-x-8 gap-y-8 lg:grid-cols-[1fr_340px] lg:items-start">
         {/* Main */}
         <div className="space-y-8">
-          <section {...reveal(120)} className={cn(REVEAL, "space-y-3")}>
+          <section {...reveal(160)} className={cn(REVEAL, "space-y-3")}>
             <SectionHeader
               title="Architecture"
               sub={`Auto-derived from env wiring · ${environment}`}
@@ -238,38 +256,11 @@ export function AppOverview() {
             />
             <TopologyMap topology={topology} members={members} compact />
           </section>
-
-          <section {...reveal(180)} className={cn(REVEAL, "space-y-3")}>
-            <SectionHeader
-              title="Members"
-              action={
-                <Button asChild variant="ghost" size="sm">
-                  <Link to="/apps/$appId/settings" params={{ appId }}>Manage</Link>
-                </Button>
-              }
-            />
-            {members.length === 0 ? (
-              <div className="rounded-lg border border-dashed border-border/70 px-5 py-8 text-center text-sm text-muted-foreground">
-                No members yet.
-              </div>
-            ) : (
-              <div className="divide-y divide-border overflow-hidden rounded-lg border">
-                {members.map((m) => (
-                  <MemberRow
-                    key={m.project.id}
-                    member={m}
-                    ordered={!!app?.deploy_ordered}
-                    onOpen={() => navigate({ to: "/projects/$id", params: { id: m.project.id } })}
-                  />
-                ))}
-              </div>
-            )}
-          </section>
         </div>
 
         {/* Sticky pulse rail */}
         <div className="space-y-8 lg:sticky lg:top-4">
-          <section {...reveal(240)} className={cn(REVEAL, "space-y-3")}>
+          <section {...reveal(220)} className={cn(REVEAL, "space-y-3")}>
             <SectionHeader
               title="Recent deployments"
               action={
@@ -299,7 +290,7 @@ export function AppOverview() {
             )}
           </section>
 
-          <section {...reveal(300)} className={cn(REVEAL, "space-y-3")}>
+          <section {...reveal(280)} className={cn(REVEAL, "space-y-3")}>
             <SectionHeader
               title="Releases"
               action={
@@ -330,51 +321,6 @@ export function AppOverview() {
           </section>
         </div>
       </div>
-    </div>
-  );
-}
-
-function MemberRow({ member, ordered, onOpen }: { member: AppHealthMember; ordered: boolean; onOpen: () => void }) {
-  const meta = MEMBER_STATUS_META[member.live_status];
-  const active = ACTIVE_MEMBER_STATUSES.has(member.live_status);
-  const lastAt = member.latest_deployment?.created_at;
-  return (
-    <div
-      role="button"
-      tabIndex={0}
-      onClick={onOpen}
-      onKeyDown={(e) => {
-        if (e.key === "Enter" || e.key === " ") {
-          e.preventDefault();
-          onOpen();
-        }
-      }}
-      className="group flex cursor-pointer items-center gap-3 px-4 py-3 transition-colors hover:bg-accent"
-    >
-      <span className={cn("h-2.5 w-2.5 shrink-0 rounded-full", meta.dotClass, active && "animate-pulse")} />
-      <span className="truncate text-sm font-medium text-foreground">{member.project.name}</span>
-      <Badge variant="outline" className="border-primary/20 bg-primary/10 font-mono text-[10px] text-primary">
-        {member.project.framework}
-      </Badge>
-      {ordered ? (
-        <span className="font-mono text-[11px] text-muted-foreground">#{member.project.deploy_order}</span>
-      ) : null}
-      <span className="ml-auto flex items-center gap-3">
-        {member.primary_domain ? (
-          <a
-            href={`https://${member.primary_domain}`}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="hidden items-center gap-1 text-xs text-muted-foreground transition-colors hover:text-foreground sm:flex"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <span className="max-w-[180px] truncate">{member.primary_domain}</span>
-            <ExternalLink className="h-3 w-3" />
-          </a>
-        ) : null}
-        {lastAt ? <span className="hidden text-xs text-muted-foreground md:inline">{formatRelativeDate(lastAt)}</span> : null}
-        <ArrowRight className="h-4 w-4 text-muted-foreground/40 transition-transform group-hover:translate-x-0.5 group-hover:text-muted-foreground" />
-      </span>
     </div>
   );
 }
