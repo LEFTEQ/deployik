@@ -48,16 +48,39 @@ func PreviewBranchDomain(projectName, branchSlug string) string {
 
 func PreviewContainerName(projectName string, instance *PreviewInstance) string {
 	if instance == nil || instance.IsDefault {
-		return fmt.Sprintf("deployik-%s-preview", projectName)
+		return capContainerName(fmt.Sprintf("deployik-%s-preview", projectName))
 	}
-	return fmt.Sprintf("deployik-%s-preview-%s", projectName, instance.BranchSlug)
+	return capContainerName(fmt.Sprintf("deployik-%s-preview-%s", projectName, instance.BranchSlug))
 }
 
 func DeploymentContainerName(projectName, environment string, instance *PreviewInstance) string {
 	if environment == "preview" {
 		return PreviewContainerName(projectName, instance)
 	}
-	return fmt.Sprintf("deployik-%s-%s", projectName, environment)
+	return capContainerName(fmt.Sprintf("deployik-%s-%s", projectName, environment))
+}
+
+// capContainerName keeps a container name within the DNS label limit so it stays
+// resolvable as an nginx upstream host / Docker network alias. Branch slugs are
+// already capped for the *domain* label (NormalizePreviewBranchSlug), but the
+// "deployik-…-preview-" scaffolding the container name wraps around the slug adds
+// ~18 characters on top — enough to push a long preview-instance name past 63,
+// at which point Docker's embedded DNS refuses to resolve the name and nginx's
+// proxy_pass to that upstream returns 502 even though the container is healthy.
+// Names already within the limit are returned unchanged (no behaviour change for
+// the common case); over-long names are truncated and given a short deterministic
+// hash suffix so distinct inputs keep distinct, stable names across deploys.
+func capContainerName(name string) string {
+	if len(name) <= MaxDNSLabelLength {
+		return name
+	}
+	suffix := shortBranchHash(name)
+	keep := MaxDNSLabelLength - len(suffix) - 1
+	trimmed := strings.Trim(name[:keep], "-")
+	if trimmed == "" {
+		return suffix
+	}
+	return trimmed + "-" + suffix
 }
 
 func DeploymentVolumeName(projectName, environment string, instance *PreviewInstance) string {
