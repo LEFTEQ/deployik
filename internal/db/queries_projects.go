@@ -513,3 +513,45 @@ func (db *DB) ClearProjectPassword(projectID, environment string) error {
 	}
 	return nil
 }
+
+// GetProjectBypassNonce returns the project's stable bypass-link nonce ("" when
+// none has been issued). Empty means the project cannot be bypassed.
+func (db *DB) GetProjectBypassNonce(projectID string) (string, error) {
+	var val sql.NullString
+	err := db.QueryRow(`SELECT bypass_nonce FROM projects WHERE id = ?`, projectID).Scan(&val)
+	if err == sql.ErrNoRows {
+		return "", nil
+	}
+	if err != nil {
+		return "", fmt.Errorf("get project bypass nonce: %w", err)
+	}
+	if !val.Valid {
+		return "", nil
+	}
+	return val.String, nil
+}
+
+// SetProjectBypassNonce stores (or rotates) the project's bypass-link nonce.
+func (db *DB) SetProjectBypassNonce(projectID, nonce string) error {
+	_, err := db.Exec(
+		`UPDATE projects SET bypass_nonce = ?, updated_at = datetime('now') WHERE id = ?`,
+		nonce, projectID,
+	)
+	if err != nil {
+		return fmt.Errorf("set project bypass nonce: %w", err)
+	}
+	return nil
+}
+
+// ClearProjectBypassNonce revokes the project's bypass link (used when password
+// protection is disabled).
+func (db *DB) ClearProjectBypassNonce(projectID string) error {
+	_, err := db.Exec(
+		`UPDATE projects SET bypass_nonce = NULL, updated_at = datetime('now') WHERE id = ?`,
+		projectID,
+	)
+	if err != nil {
+		return fmt.Errorf("clear project bypass nonce: %w", err)
+	}
+	return nil
+}

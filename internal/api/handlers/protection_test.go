@@ -341,3 +341,24 @@ func TestVerify_WrongPasswordOmitsClearSiteData(t *testing.T) {
 		t.Fatalf("Clear-Site-Data = %q, want empty on failed verification", got)
 	}
 }
+
+func TestBypassNonce_QueryRoundTrip(t *testing.T) {
+	h, project := newProtectionHandler(t)
+
+	got, err := h.DB.GetProjectBypassNonce(project.ID)
+	if err != nil || got != "" {
+		t.Fatalf("fresh project nonce = %q err=%v, want empty/no-error", got, err)
+	}
+	if err := h.DB.SetProjectBypassNonce(project.ID, "n1"); err != nil {
+		t.Fatalf("set: %v", err)
+	}
+	if got, _ = h.DB.GetProjectBypassNonce(project.ID); got != "n1" {
+		t.Fatalf("nonce = %q, want n1", got)
+	}
+	if err := h.DB.ClearProjectBypassNonce(project.ID); err != nil {
+		t.Fatalf("clear: %v", err)
+	}
+	if got, _ = h.DB.GetProjectBypassNonce(project.ID); got != "" {
+		t.Fatalf("nonce after clear = %q, want empty", got)
+	}
+}
