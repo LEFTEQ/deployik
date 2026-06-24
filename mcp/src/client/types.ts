@@ -262,12 +262,22 @@ export interface UpdateAutoBuildConfigPayload {
 export interface ProtectionStatus {
   preview_enabled: boolean;
   production_enabled: boolean;
+  preview_bypass_url?: string;
+  production_bypass_url?: string;
 }
 
 export interface ProtectionUpdateResponse {
   environment: string;
   enabled: boolean;
   password?: string;
+  bypass_url?: string;
+}
+
+export interface BypassLinkResponse {
+  environment: string;
+  param: string;
+  token: string;
+  url: string; // "" until an SSL-active domain exists
 }
 
 export interface VolumeInfo {

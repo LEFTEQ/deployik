@@ -4,7 +4,7 @@ import { registerTool, type ToolContext } from "./_helpers.js";
 import { resolveProject } from "../resolve/project.js";
 import { checkSafety } from "../lib/safety.js";
 import { renderDryRun, renderProtection } from "../lib/format.js";
-import type { ProtectionStatus, ProtectionUpdateResponse } from "../client/types.js";
+import type { ProtectionStatus, ProtectionUpdateResponse, BypassLinkResponse } from "../client/types.js";
 
 const ENV = z.enum(["preview", "production"]);
 
@@ -59,7 +59,11 @@ export function registerProtectionTools(server: McpServer, ctx: ToolContext): vo
         body: { environment: args.environment, enabled: args.enabled },
       });
       const passwordLine = res.password ? `\nPassword (shown once): ${res.password}` : "";
-      return { text: `Protection ${res.enabled ? "enabled" : "disabled"} on ${args.environment} of ${project.name}.${passwordLine}`, data: res };
+      const bypassLine = res.bypass_url ? `\nBypass link: ${res.bypass_url}` : "";
+      return {
+        text: `Protection ${res.enabled ? "enabled" : "disabled"} on ${args.environment} of ${project.name}.${passwordLine}${bypassLine}`,
+        data: res,
+      };
     },
   });
 
@@ -93,6 +97,66 @@ export function registerProtectionTools(server: McpServer, ctx: ToolContext): vo
         body: { environment: args.environment },
       });
       return { text: `New password for ${args.environment} of ${project.name} (shown once):\n${res.password ?? "(none returned)"}`, data: res };
+    },
+  });
+
+  registerTool(server, ctx, {
+    name: "get_bypass_link",
+    description:
+      "Get a STABLE password-bypass link for a protected environment. Append it to the site URL " +
+      "(it already includes ?_dpkbypass=...) to skip the password gate — for screenshots or a quick " +
+      "preview. Treat it as a credential; rotate_bypass_link revokes it.",
+    inputSchema: {
+      project_id: z.string().optional(),
+      project: z.string().optional(),
+      environment: ENV,
+    },
+    annotations: { readOnlyHint: true },
+    handler: async (args) => {
+      const { project } = await resolveProject(ctx, args);
+      const res = await ctx.client.request<BypassLinkResponse>(
+        `/projects/${project.id}/protection/bypass-link?environment=${args.environment}`,
+      );
+      const line = res.url
+        ? `Bypass link for ${args.environment} of ${project.name}:\n${res.url}`
+        : `Bypass token for ${args.environment} of ${project.name} (no SSL-active domain yet):\n?${res.param}=${res.token}`;
+      return { text: line, data: res };
+    },
+  });
+
+  registerTool(server, ctx, {
+    name: "rotate_bypass_link",
+    description:
+      "Rotate (revoke) the bypass link for an environment — every previously-shared link stops working.",
+    inputSchema: {
+      project_id: z.string().optional(),
+      project: z.string().optional(),
+      environment: ENV,
+      confirm: z.boolean().optional(),
+      confirm_name: z.string().optional(),
+    },
+    annotations: { destructiveHint: true },
+    audit: true,
+    handler: async (args) => {
+      const { project } = await resolveProject(ctx, args);
+      const safety = checkSafety(
+        {
+          toolName: "rotate_bypass_link",
+          tier: "destructive",
+          expectedName: project.name,
+          impact: { project: project.name, environment: args.environment, note: "All existing bypass links stop working." },
+        },
+        { confirm: args.confirm, confirm_name: args.confirm_name },
+      );
+      if (!safety.proceed) return { text: renderDryRun(safety.dryRun) };
+      const res = await ctx.client.request<BypassLinkResponse>(
+        `/projects/${project.id}/protection/bypass/rotate?environment=${args.environment}`,
+        { method: "POST" },
+      );
+      return {
+        text: `Rotated bypass link for ${args.environment} of ${project.name}:\n${res.url || `?${res.param}=${res.token}`}`,
+        data: res,
+      };
     },
   });
 }

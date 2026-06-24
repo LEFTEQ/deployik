@@ -76,10 +76,13 @@ export function renderVolumesList(volumes: VolumeInfo[]): string {
 }
 
 export function renderProtection(status: ProtectionStatus): string {
-  return [
+  const lines = [
     `  Preview:    ${status.preview_enabled ? "enabled" : "disabled"}`,
     `  Production: ${status.production_enabled ? "enabled" : "disabled"}`,
-  ].join("\n");
+  ];
+  if (status.preview_bypass_url) lines.push(`  Preview bypass:    ${status.preview_bypass_url}`);
+  if (status.production_bypass_url) lines.push(`  Production bypass: ${status.production_bypass_url}`);
+  return lines.join("\n");
 }
 
 function truncate(s: string, n: number): string {
