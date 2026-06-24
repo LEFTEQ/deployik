@@ -342,6 +342,41 @@ func TestVerify_WrongPasswordOmitsClearSiteData(t *testing.T) {
 	}
 }
 
+func TestCheckHandler_AcceptsValidStaticBypass(t *testing.T) {
+	h, project := newProtectionHandler(t)
+	if err := h.DB.SetProjectBypassNonce(project.ID, "nonce-xyz"); err != nil {
+		t.Fatalf("SetProjectBypassNonce: %v", err)
+	}
+	token := auth.MintStaticBypassToken(testBypassSecret, project.ID, "preview", "nonce-xyz")
+
+	req := httptest.NewRequest(http.MethodGet, "/api/site-auth/check", nil)
+	req.Header.Set("X-Deployik-Project", project.ID)
+	req.Header.Set("X-Deployik-Environment", "preview")
+	req.Header.Set("X-Original-URI", "/?_dpkbypass="+token)
+	rr := httptest.NewRecorder()
+	h.Check(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200 (%s)", rr.Code, rr.Body.String())
+	}
+}
+
+func TestCheckHandler_RejectsStaticBypassAfterRotation(t *testing.T) {
+	h, project := newProtectionHandler(t)
+	_ = h.DB.SetProjectBypassNonce(project.ID, "old")
+	token := auth.MintStaticBypassToken(testBypassSecret, project.ID, "preview", "old")
+	_ = h.DB.SetProjectBypassNonce(project.ID, "new") // rotate
+
+	req := httptest.NewRequest(http.MethodGet, "/api/site-auth/check", nil)
+	req.Header.Set("X-Deployik-Project", project.ID)
+	req.Header.Set("X-Deployik-Environment", "preview")
+	req.Header.Set("X-Original-URI", "/?_dpkbypass="+token)
+	rr := httptest.NewRecorder()
+	h.Check(rr, req)
+	if rr.Code != http.StatusUnauthorized {
+		t.Fatalf("status = %d, want 401 after rotation", rr.Code)
+	}
+}
+
 func TestBypassNonce_QueryRoundTrip(t *testing.T) {
 	h, project := newProtectionHandler(t)
 

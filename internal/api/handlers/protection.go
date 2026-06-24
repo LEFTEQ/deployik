@@ -349,6 +349,19 @@ func (h *ProtectionHandler) Check(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	if originalURI := r.Header.Get("X-Original-URI"); originalURI != "" {
+		if token := auth.ExtractStaticBypassToken(originalURI); token != "" {
+			// One DB read, only on explicit bypass-link requests (rare — ordinary
+			// visitors use the cookie path below and never reach this read).
+			if nonce, err := h.DB.GetProjectBypassNonce(expectedProject); err == nil && nonce != "" {
+				if auth.VerifyStaticBypass(h.JWTSecret, token, expectedProject, expectedEnv, nonce) {
+					w.WriteHeader(http.StatusOK)
+					return
+				}
+			}
+		}
+	}
+
 	cookie, err := r.Cookie(siteAuthCookieName)
 	if err != nil {
 		w.WriteHeader(http.StatusUnauthorized)
