@@ -377,6 +377,85 @@ func TestCheckHandler_RejectsStaticBypassAfterRotation(t *testing.T) {
 	}
 }
 
+func TestBypassLink_ReturnsTokenForProtectedEnv(t *testing.T) {
+	h, project := newProtectionHandler(t)
+	enable := protectionRequest(t, http.MethodPut, "/projects/"+project.ID+"/protection", project.ID, map[string]any{
+		"environment": "preview", "enabled": true,
+	})
+	h.Update(httptest.NewRecorder(), enable)
+
+	req := protectionRequest(t, http.MethodGet, "/projects/"+project.ID+"/protection/bypass-link?environment=preview", project.ID, nil)
+	rec := httptest.NewRecorder()
+	h.BypassLink(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200 (%s)", rec.Code, rec.Body.String())
+	}
+	var resp struct {
+		Token string `json:"token"`
+		Param string `json:"param"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if resp.Param != auth.SiteAuthStaticBypassParam {
+		t.Fatalf("param = %q, want %q", resp.Param, auth.SiteAuthStaticBypassParam)
+	}
+	nonce, _ := h.DB.GetProjectBypassNonce(project.ID)
+	if !auth.VerifyStaticBypass(testBypassSecret, resp.Token, project.ID, "preview", nonce) {
+		t.Fatal("returned token does not verify against the stored nonce")
+	}
+}
+
+func TestBypassLink_ConflictWhenNotProtected(t *testing.T) {
+	h, project := newProtectionHandler(t)
+	req := protectionRequest(t, http.MethodGet, "/projects/"+project.ID+"/protection/bypass-link?environment=preview", project.ID, nil)
+	rec := httptest.NewRecorder()
+	h.BypassLink(rec, req)
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("status = %d, want 409 for unprotected env", rec.Code)
+	}
+}
+
+func TestRotateBypass_RevokesOldToken(t *testing.T) {
+	h, project := newProtectionHandler(t)
+	enable := protectionRequest(t, http.MethodPut, "/projects/"+project.ID+"/protection", project.ID, map[string]any{
+		"environment": "preview", "enabled": true,
+	})
+	h.Update(httptest.NewRecorder(), enable)
+	nonceBefore, _ := h.DB.GetProjectBypassNonce(project.ID)
+	oldToken := auth.MintStaticBypassToken(testBypassSecret, project.ID, "preview", nonceBefore)
+
+	rot := protectionRequest(t, http.MethodPost, "/projects/"+project.ID+"/protection/bypass/rotate?environment=preview", project.ID, nil)
+	rec := httptest.NewRecorder()
+	h.RotateBypass(rec, rot)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200 (%s)", rec.Code, rec.Body.String())
+	}
+	nonceAfter, _ := h.DB.GetProjectBypassNonce(project.ID)
+	if nonceAfter == nonceBefore || nonceAfter == "" {
+		t.Fatalf("rotate must change the nonce (before=%q after=%q)", nonceBefore, nonceAfter)
+	}
+	if auth.VerifyStaticBypass(testBypassSecret, oldToken, project.ID, "preview", nonceAfter) {
+		t.Fatal("old token must not verify after rotation")
+	}
+}
+
+func TestUpdate_DisableClearsBypassNonce(t *testing.T) {
+	h, project := newProtectionHandler(t)
+	h.Update(httptest.NewRecorder(), protectionRequest(t, http.MethodPut, "/x", project.ID, map[string]any{
+		"environment": "preview", "enabled": true,
+	}))
+	if _, err := h.ensureBypassNonce(project.ID); err != nil {
+		t.Fatalf("ensureBypassNonce: %v", err)
+	}
+	h.Update(httptest.NewRecorder(), protectionRequest(t, http.MethodPut, "/x", project.ID, map[string]any{
+		"environment": "preview", "enabled": false,
+	}))
+	if got, _ := h.DB.GetProjectBypassNonce(project.ID); got != "" {
+		t.Fatalf("nonce after disable = %q, want empty", got)
+	}
+}
+
 func TestBypassNonce_QueryRoundTrip(t *testing.T) {
 	h, project := newProtectionHandler(t)
 

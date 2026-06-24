@@ -48,9 +48,13 @@ func (h *ProtectionHandler) Get(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]bool{
-		"preview_enabled":    project.PreviewPassword != "",
-		"production_enabled": project.ProductionPassword != "",
+	previewURL, _, _ := h.bypassURL(project, "preview")
+	productionURL, _, _ := h.bypassURL(project, "production")
+	writeJSON(w, http.StatusOK, map[string]any{
+		"preview_enabled":       project.PreviewPassword != "",
+		"production_enabled":    project.ProductionPassword != "",
+		"preview_bypass_url":    previewURL,    // "" when unprotected / no domain yet
+		"production_bypass_url": productionURL,
 	})
 }
 
@@ -97,14 +101,27 @@ func (h *ProtectionHandler) Update(w http.ResponseWriter, r *http.Request) {
 			Metadata:     map[string]any{"environment": req.Environment, "custom": custom},
 		})
 
+		// Enrich the success response with the bypass link (best-effort: a build
+		// failure here just yields an empty url — protection itself succeeded).
+		bypassLink := ""
+		if updated, gerr := h.DB.GetProject(project.ID); gerr == nil && updated != nil {
+			bypassLink, _, _ = h.bypassURL(updated, req.Environment)
+		}
+
 		writeJSON(w, http.StatusOK, map[string]any{
 			"environment": req.Environment,
 			"enabled":     true,
 			"password":    plaintext,
+			"bypass_url":  bypassLink,
 		})
 	} else {
 		if err := h.DB.ClearProjectPassword(project.ID, req.Environment); err != nil {
 			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to clear password"})
+			return
+		}
+
+		if err := h.DB.ClearProjectBypassNonce(project.ID); err != nil {
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to clear bypass link"})
 			return
 		}
 
@@ -217,6 +234,125 @@ func (h *ProtectionHandler) RevealPassword(w http.ResponseWriter, r *http.Reques
 	writeJSON(w, http.StatusOK, map[string]any{
 		"environment": environment,
 		"password":    plaintext,
+	})
+}
+
+// ensureBypassNonce returns the project's bypass nonce, lazily creating one
+// (16-char base64url) on first use.
+func (h *ProtectionHandler) ensureBypassNonce(projectID string) (string, error) {
+	nonce, err := h.DB.GetProjectBypassNonce(projectID)
+	if err != nil {
+		return "", err
+	}
+	if nonce != "" {
+		return nonce, nil
+	}
+	raw := make([]byte, 12)
+	if _, err := rand.Read(raw); err != nil {
+		return "", fmt.Errorf("generate bypass nonce: %w", err)
+	}
+	nonce = base64.RawURLEncoding.EncodeToString(raw)
+	if err := h.DB.SetProjectBypassNonce(projectID, nonce); err != nil {
+		return "", err
+	}
+	return nonce, nil
+}
+
+// bypassURL builds the stable bypass link for one protected environment:
+// "https://<primary-domain>/?_dpkbypass=<token>". Returns ("","",nil) when the
+// env isn't protected; returns ("", token, nil) when protected but no SSL-active
+// domain exists yet (the token is valid the moment a domain appears).
+func (h *ProtectionHandler) bypassURL(project *db.Project, environment string) (linkURL string, token string, err error) {
+	if !project.IsEnvironmentProtected(environment) {
+		return "", "", nil
+	}
+	nonce, err := h.ensureBypassNonce(project.ID)
+	if err != nil {
+		return "", "", err
+	}
+	token = auth.MintStaticBypassToken(h.JWTSecret, project.ID, environment, nonce)
+
+	previewInstanceID := ""
+	if environment == "preview" {
+		if inst, ierr := h.DB.GetDefaultPreviewInstance(project.ID); ierr == nil && inst != nil {
+			previewInstanceID = inst.ID
+		}
+	}
+	primary, derr := h.DB.GetPrimaryDomainForTarget(project.ID, environment, previewInstanceID)
+	if derr != nil || primary == nil {
+		return "", token, nil // token usable once a domain exists
+	}
+	return fmt.Sprintf("https://%s/?%s=%s", primary.DomainName, auth.SiteAuthStaticBypassParam, token), token, nil
+}
+
+// BypassLink handles GET /api/projects/{id}/protection/bypass-link?environment=
+func (h *ProtectionHandler) BypassLink(w http.ResponseWriter, r *http.Request) {
+	projectID := chi.URLParam(r, "id")
+	project, _, ok := loadAuthorizedProject(w, r, h.DB, projectID)
+	if !ok {
+		return
+	}
+	environment := r.URL.Query().Get("environment")
+	if environment != "preview" && environment != "production" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "environment must be 'preview' or 'production'"})
+		return
+	}
+	if !project.IsEnvironmentProtected(environment) {
+		writeJSON(w, http.StatusConflict, map[string]string{"error": "environment is not password-protected"})
+		return
+	}
+	url, token, err := h.bypassURL(project, environment)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "internal error"})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"environment": environment,
+		"param":       auth.SiteAuthStaticBypassParam,
+		"token":       token,
+		"url":         url, // "" until an SSL-active domain exists
+	})
+}
+
+// RotateBypass handles POST /api/projects/{id}/protection/bypass/rotate?environment=
+func (h *ProtectionHandler) RotateBypass(w http.ResponseWriter, r *http.Request) {
+	projectID := chi.URLParam(r, "id")
+	project, claims, ok := loadAuthorizedProject(w, r, h.DB, projectID)
+	if !ok {
+		return
+	}
+	environment := r.URL.Query().Get("environment")
+	if environment != "preview" && environment != "production" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "environment must be 'preview' or 'production'"})
+		return
+	}
+	raw := make([]byte, 12)
+	if _, err := rand.Read(raw); err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "internal error"})
+		return
+	}
+	if err := h.DB.SetProjectBypassNonce(project.ID, base64.RawURLEncoding.EncodeToString(raw)); err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "internal error"})
+		return
+	}
+	h.Audit.Record(audit.Entry{
+		UserID:       claims.UserID,
+		Action:       "protection.bypass_rotate",
+		ResourceType: "project",
+		ResourceID:   project.ID,
+		ProjectID:    project.ID,
+		Metadata:     map[string]any{"environment": environment},
+	})
+	url, token, err := h.bypassURL(project, environment)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "internal error"})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"environment": environment,
+		"param":       auth.SiteAuthStaticBypassParam,
+		"token":       token,
+		"url":         url,
 	})
 }
 
