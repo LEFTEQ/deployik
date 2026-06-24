@@ -266,6 +266,8 @@ func NewRouter(cfg *RouterConfig) *chi.Mux {
 			r.Get("/projects/{id}/protection/password", protectionHandler.RevealPassword)
 			r.With(mutationLimiter.Middleware("protection_update")).Put("/projects/{id}/protection", protectionHandler.Update)
 			r.With(mutationLimiter.Middleware("protection_regenerate")).Post("/projects/{id}/protection/regenerate", protectionHandler.Regenerate)
+			r.Get("/projects/{id}/protection/bypass-link", protectionHandler.BypassLink)
+			r.With(mutationLimiter.Middleware("protection_bypass_rotate")).Post("/projects/{id}/protection/bypass/rotate", protectionHandler.RotateBypass)
 
 			// Auto-build
 			autobuildHandler := &handlers.AutoBuildHandler{
