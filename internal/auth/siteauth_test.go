@@ -85,3 +85,42 @@ func TestExtractBypassToken(t *testing.T) {
 		}
 	}
 }
+
+func TestStaticBypass_RoundTrip(t *testing.T) {
+	tok := MintStaticBypassToken(testSecret, "proj-1", "preview", "nonce-abc")
+	if !VerifyStaticBypass(testSecret, tok, "proj-1", "preview", "nonce-abc") {
+		t.Fatal("freshly-minted static bypass token failed verification")
+	}
+}
+
+func TestStaticBypass_RotatedNonceRevokes(t *testing.T) {
+	tok := MintStaticBypassToken(testSecret, "proj-1", "preview", "old-nonce")
+	if VerifyStaticBypass(testSecret, tok, "proj-1", "preview", "new-nonce") {
+		t.Fatal("token minted against old nonce must not verify against a rotated nonce")
+	}
+}
+
+func TestStaticBypass_EmptyNonceRejected(t *testing.T) {
+	if VerifyStaticBypass(testSecret, "anything", "proj-1", "preview", "") {
+		t.Fatal("empty nonce must never verify (no link issued)")
+	}
+}
+
+func TestStaticBypass_WrongProjectOrEnv(t *testing.T) {
+	tok := MintStaticBypassToken(testSecret, "proj-A", "preview", "n")
+	if VerifyStaticBypass(testSecret, tok, "proj-B", "preview", "n") {
+		t.Fatal("wrong project must not verify")
+	}
+	if VerifyStaticBypass(testSecret, tok, "proj-A", "production", "n") {
+		t.Fatal("wrong environment must not verify")
+	}
+}
+
+func TestExtractStaticBypassToken(t *testing.T) {
+	if got := ExtractStaticBypassToken("/path?a=1&_dpkbypass=deadbeef&b=2"); got != "deadbeef" {
+		t.Fatalf("got %q, want deadbeef", got)
+	}
+	if got := ExtractStaticBypassToken("/path?_dpkauth=x.y"); got != "" {
+		t.Fatalf("got %q, want empty (different param)", got)
+	}
+}

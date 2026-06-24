@@ -17,6 +17,12 @@ import (
 // every nginx vhost.
 const SiteAuthBypassParam = "_dpkauth"
 
+// SiteAuthStaticBypassParam is the query parameter carrying the STABLE
+// (non-expiring, rotate-to-revoke) bypass token. Unlike _dpkauth it is bound to
+// the project's bypass_nonce, so revocation is a DB nonce rotation rather than
+// an expiry.
+const SiteAuthStaticBypassParam = "_dpkbypass"
+
 // SiteAuthBypassTTL is the validity window of a freshly-minted bypass token.
 // Short on purpose: the token rides in the URL (and therefore in nginx access
 // logs), so we want it to be useless quickly.
@@ -70,10 +76,12 @@ func VerifySiteAuthBypass(secret, token, expectedProject, expectedEnv string) bo
 	return hmac.Equal([]byte(sig), []byte(expected))
 }
 
-// ExtractBypassToken pulls the bypass token out of a request URI like
-// "/path?other=1&_dpkauth=12345.deadbeef". Returns "" when not present or the
-// URI fails to parse.
+// ExtractBypassToken pulls the short-lived _dpkauth token out of a request URI.
 func ExtractBypassToken(requestURI string) string {
+	return extractQueryParam(requestURI, SiteAuthBypassParam)
+}
+
+func extractQueryParam(requestURI, param string) string {
 	q := strings.IndexByte(requestURI, '?')
 	if q < 0 {
 		return ""
@@ -82,5 +90,32 @@ func ExtractBypassToken(requestURI string) string {
 	if err != nil {
 		return ""
 	}
-	return values.Get(SiteAuthBypassParam)
+	return values.Get(param)
+}
+
+// MintStaticBypassToken returns a stable signed token authorising the site-auth
+// gate for the given project + environment, bound to the project's bypass nonce.
+// No expiry: rotating the nonce is what revokes it. Domain separation
+// ("staticbypass:" prefix) keeps it non-interchangeable with _dpkauth + cookies.
+func MintStaticBypassToken(secret, projectID, environment, nonce string) string {
+	msg := fmt.Sprintf("staticbypass:%s:%s:%s", projectID, environment, nonce)
+	mac := hmac.New(sha256.New, []byte(secret))
+	mac.Write([]byte(msg))
+	return hex.EncodeToString(mac.Sum(nil))
+}
+
+// VerifyStaticBypass returns true only when token is the valid HMAC for the
+// given project + environment + nonce. An empty nonce or token always returns
+// false (a project with no issued link cannot be bypassed).
+func VerifyStaticBypass(secret, token, expectedProject, expectedEnv, nonce string) bool {
+	if nonce == "" || token == "" {
+		return false
+	}
+	expected := MintStaticBypassToken(secret, expectedProject, expectedEnv, nonce)
+	return hmac.Equal([]byte(token), []byte(expected))
+}
+
+// ExtractStaticBypassToken pulls the _dpkbypass token out of a request URI.
+func ExtractStaticBypassToken(requestURI string) string {
+	return extractQueryParam(requestURI, SiteAuthStaticBypassParam)
 }
