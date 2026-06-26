@@ -115,8 +115,7 @@ export function DeployMenu({
           <AlertDialogHeader>
             <AlertDialogTitle>Deploy preview branch</AlertDialogTitle>
             <AlertDialogDescription>
-              Deploying a branch creates or updates its preview URL under
-              preview.example.com.
+              Deploying a branch creates or updates its preview URL.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <div className="space-y-2">

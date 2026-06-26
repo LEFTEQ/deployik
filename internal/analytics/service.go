@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/LEFTEQ/lovinka-deployik/internal/db"
+	"github.com/lefteq/lovinka-deployik/internal/db"
 )
 
 type Service struct {
@@ -588,9 +588,9 @@ func preferredAnalyticsDomain(project *db.Project, groups DomainGroups) string {
 		return groups.Preview[0]
 	}
 	if project != nil && strings.TrimSpace(project.Name) != "" {
-		return strings.TrimSpace(project.Name) + ".preview.example.com"
+		return strings.TrimSpace(project.Name) + "." + db.PreviewDomainSuffix
 	}
-	return "preview.example.com"
+	return db.PreviewDomainSuffix
 }
 
 func hostnamesForEnvironment(groups DomainGroups, environment EnvironmentFilter) []string {

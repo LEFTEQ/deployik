@@ -86,6 +86,12 @@ export function NewProject() {
     staleTime: staleTimes.github,
   });
 
+  const { data: platform } = useQuery({
+    queryKey: queryKeys.platform(),
+    queryFn: () => api.getPlatformInfo(),
+    staleTime: staleTimes.platform,
+  });
+
   const { data: branches } = useQuery({
     queryKey: queryKeys.githubBranches(
       selectedRepo?.owner.login ?? "",
@@ -407,7 +413,8 @@ export function NewProject() {
             <p className="text-xs text-muted-foreground">
               Used as subdomain:{" "}
               <span className="font-mono font-medium">
-                {name || "my-app"}.preview.example.com
+                {name || "my-app"}.
+                {platform?.preview_domain_suffix || "preview.example.com"}
               </span>
             </p>
           </div>

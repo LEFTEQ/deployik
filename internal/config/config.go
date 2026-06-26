@@ -27,6 +27,8 @@ type Config struct {
 	SSLEmail                string
 	BuildDir                string
 	VPSHost                 string
+	BaseDomain              string
+	PreviewDomainSuffix     string
 	AnalyticsUmamiURL       string
 	AnalyticsUmamiPublicURL string
 	AnalyticsUmamiScriptURL string
@@ -61,7 +63,7 @@ func Load() (*Config, error) {
 		ProxyHTMLDir:            getEnv("PROXY_HTML_DIR", "/opt/nginx-proxy/html"),
 		SSLEmail:                getEnv("SSL_EMAIL", "admin@example.com"),
 		BuildDir:                getEnv("BUILD_DIR", "/tmp/deployik-builds"),
-		VPSHost:                 getEnv("VPS_HOST", "203.0.113.10"),
+		VPSHost:                 strings.TrimSpace(os.Getenv("VPS_HOST")),
 		AnalyticsUmamiURL:       strings.TrimRight(strings.TrimSpace(os.Getenv("ANALYTICS_UMAMI_URL")), "/"),
 		AnalyticsUmamiPublicURL: strings.TrimRight(strings.TrimSpace(os.Getenv("ANALYTICS_UMAMI_PUBLIC_URL")), "/"),
 		AnalyticsUmamiScriptURL: strings.TrimSpace(os.Getenv("ANALYTICS_UMAMI_SCRIPT_URL")),
@@ -89,6 +91,18 @@ func Load() (*Config, error) {
 
 	cfg.WebhookURL = getEnv("WEBHOOK_URL", cfg.FrontendURL+"/api/webhooks/github")
 	cfg.ScreenshotDir = getEnv("SCREENSHOT_DIR", filepath.Join(cfg.DataDir, "screenshots"))
+
+	// Auto-generated preview domains (e.g. my-app.preview.<base-domain>) need a
+	// base domain the operator controls. Set BASE_DOMAIN (the apex, e.g.
+	// example.com) for the default preview.<base-domain> suffix, or override the
+	// full suffix directly with PREVIEW_DOMAIN_SUFFIX. The trailing dot is
+	// tolerated. Whether this is required is enforced at startup (see main.go):
+	// mandatory in production, falls back to a local suffix in DEV_MODE.
+	cfg.BaseDomain = strings.TrimSpace(strings.TrimSuffix(strings.TrimSpace(os.Getenv("BASE_DOMAIN")), "."))
+	cfg.PreviewDomainSuffix = strings.TrimSpace(strings.TrimSuffix(strings.TrimSpace(os.Getenv("PREVIEW_DOMAIN_SUFFIX")), "."))
+	if cfg.PreviewDomainSuffix == "" && cfg.BaseDomain != "" {
+		cfg.PreviewDomainSuffix = "preview." + cfg.BaseDomain
+	}
 
 	if users := os.Getenv("ALLOWED_GITHUB_USERS"); users != "" {
 		cfg.AllowedGithubUsers = splitCSV(users)

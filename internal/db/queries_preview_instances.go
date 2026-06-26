@@ -9,10 +9,14 @@ import (
 	"unicode"
 )
 
-const (
-	PreviewDomainSuffix = "preview.example.com"
-	MaxDNSLabelLength   = 63
-)
+// PreviewDomainSuffix is the DNS suffix for auto-generated preview domains
+// (e.g. my-app.preview.example.com). It carries a neutral default so tests and
+// DEV_MODE work out of the box, and is overwritten exactly once at startup from
+// BASE_DOMAIN / PREVIEW_DOMAIN_SUFFIX (see cmd/server/main.go). Treat it as
+// set-once configuration, not a runtime-mutable value.
+var PreviewDomainSuffix = "preview.example.com"
+
+const MaxDNSLabelLength = 63
 
 func NormalizePreviewBranchSlug(projectName, branch string) (string, error) {
 	maxBranchLen := MaxDNSLabelLength - len(projectName) - 1

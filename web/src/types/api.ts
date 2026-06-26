@@ -82,6 +82,7 @@ export interface GroupInvite {
 
 export interface PlatformInfo {
   dns_target_ip: string;
+  preview_domain_suffix: string;
 }
 
 // An App bundles several projects (each its own container/build/domain) into one

@@ -14,19 +14,19 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/LEFTEQ/lovinka-deployik/internal/analytics"
-	"github.com/LEFTEQ/lovinka-deployik/internal/api"
-	"github.com/LEFTEQ/lovinka-deployik/internal/build"
-	"github.com/LEFTEQ/lovinka-deployik/internal/config"
-	"github.com/LEFTEQ/lovinka-deployik/internal/crypto"
-	"github.com/LEFTEQ/lovinka-deployik/internal/db"
-	"github.com/LEFTEQ/lovinka-deployik/internal/domain"
-	projectemail "github.com/LEFTEQ/lovinka-deployik/internal/email"
-	"github.com/LEFTEQ/lovinka-deployik/internal/github"
-	"github.com/LEFTEQ/lovinka-deployik/internal/push"
-	"github.com/LEFTEQ/lovinka-deployik/internal/services"
-	"github.com/LEFTEQ/lovinka-deployik/internal/version"
-	"github.com/LEFTEQ/lovinka-deployik/internal/ws"
+	"github.com/lefteq/lovinka-deployik/internal/analytics"
+	"github.com/lefteq/lovinka-deployik/internal/api"
+	"github.com/lefteq/lovinka-deployik/internal/build"
+	"github.com/lefteq/lovinka-deployik/internal/config"
+	"github.com/lefteq/lovinka-deployik/internal/crypto"
+	"github.com/lefteq/lovinka-deployik/internal/db"
+	"github.com/lefteq/lovinka-deployik/internal/domain"
+	projectemail "github.com/lefteq/lovinka-deployik/internal/email"
+	"github.com/lefteq/lovinka-deployik/internal/github"
+	"github.com/lefteq/lovinka-deployik/internal/push"
+	"github.com/lefteq/lovinka-deployik/internal/services"
+	"github.com/lefteq/lovinka-deployik/internal/version"
+	"github.com/lefteq/lovinka-deployik/internal/ws"
 )
 
 //go:embed all:web_dist
@@ -59,6 +59,20 @@ func main() {
 			log.Fatalf("Failed to load config: %v", err)
 		}
 	}
+
+	// Auto preview domains (e.g. my-app.preview.<base-domain>) need a base domain
+	// the operator controls; without one, every project would mint preview URLs
+	// that can never pass DNS verification or get a certificate. Required in
+	// production, with a local-only fallback in DEV_MODE so `make dev-api` works
+	// without DNS. db.PreviewDomainSuffix is read by the preview-domain helpers.
+	if cfg.PreviewDomainSuffix == "" {
+		if os.Getenv("DEV_MODE") == "true" {
+			cfg.PreviewDomainSuffix = "preview.localhost"
+		} else {
+			log.Fatal("BASE_DOMAIN (or PREVIEW_DOMAIN_SUFFIX) is required: set BASE_DOMAIN to a domain you control (e.g. example.com) so auto preview domains resolve to this server")
+		}
+	}
+	db.PreviewDomainSuffix = cfg.PreviewDomainSuffix
 
 	// Initialize encryptor
 	encryptor, err := crypto.NewEncryptor(cfg.EncryptionKey)
