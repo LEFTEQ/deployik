@@ -6,8 +6,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/LEFTEQ/lovinka-deployik/internal/crypto"
-	"github.com/LEFTEQ/lovinka-deployik/internal/db"
+	"github.com/lefteq/lovinka-deployik/internal/crypto"
+	"github.com/lefteq/lovinka-deployik/internal/db"
 )
 
 func newTestDB(t *testing.T) *db.DB {

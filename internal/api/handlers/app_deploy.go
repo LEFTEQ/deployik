@@ -10,8 +10,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/LEFTEQ/lovinka-deployik/internal/build"
-	"github.com/LEFTEQ/lovinka-deployik/internal/db"
+	"github.com/lefteq/lovinka-deployik/internal/build"
+	"github.com/lefteq/lovinka-deployik/internal/db"
 )
 
 const appDeployMemberTimeout = 20 * time.Minute

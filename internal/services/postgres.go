@@ -13,7 +13,7 @@ import (
 
 	"github.com/docker/docker/errdefs"
 
-	"github.com/LEFTEQ/lovinka-deployik/internal/build"
+	"github.com/lefteq/lovinka-deployik/internal/build"
 )
 
 // PostgresPort is the in-network TCP port Postgres listens on. The same value

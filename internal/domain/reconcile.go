@@ -7,7 +7,7 @@ import (
 	"log"
 	"strings"
 
-	"github.com/LEFTEQ/lovinka-deployik/internal/db"
+	"github.com/lefteq/lovinka-deployik/internal/db"
 )
 
 // DockerInspector is used by reconcile to inspect running containers for host-port mode.

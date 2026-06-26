@@ -1,8 +1,8 @@
 package authz
 
 import (
-	"github.com/LEFTEQ/lovinka-deployik/internal/auth"
-	"github.com/LEFTEQ/lovinka-deployik/internal/db"
+	"github.com/lefteq/lovinka-deployik/internal/auth"
+	"github.com/lefteq/lovinka-deployik/internal/db"
 )
 
 func CanAccessProject(claims *auth.Claims, project *db.Project) bool {

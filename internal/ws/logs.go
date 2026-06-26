@@ -6,9 +6,9 @@ import (
 
 	"github.com/gorilla/websocket"
 
-	"github.com/LEFTEQ/lovinka-deployik/internal/api/middleware"
-	"github.com/LEFTEQ/lovinka-deployik/internal/authz"
-	"github.com/LEFTEQ/lovinka-deployik/internal/db"
+	"github.com/lefteq/lovinka-deployik/internal/api/middleware"
+	"github.com/lefteq/lovinka-deployik/internal/authz"
+	"github.com/lefteq/lovinka-deployik/internal/db"
 )
 
 // LogsHandler handles WebSocket connections for build log streaming.

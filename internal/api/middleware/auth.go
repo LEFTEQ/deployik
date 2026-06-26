@@ -5,8 +5,8 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/LEFTEQ/lovinka-deployik/internal/auth"
-	"github.com/LEFTEQ/lovinka-deployik/internal/db"
+	"github.com/lefteq/lovinka-deployik/internal/auth"
+	"github.com/lefteq/lovinka-deployik/internal/db"
 )
 
 // Authenticate extracts and validates a credential from the request and

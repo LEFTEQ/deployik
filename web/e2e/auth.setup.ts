@@ -24,7 +24,7 @@ const projects: SeedProject[] = [
   {
     name: "my-nextjs-app",
     github_repo: "lovinka-deployik",
-    github_owner: "LEFTEQ",
+    github_owner: "lefteq",
     branch: "main",
     framework: "nextjs",
     package_manager: "bun",
@@ -34,8 +34,8 @@ const projects: SeedProject[] = [
   },
   {
     name: "static-site",
-    github_repo: "infra-repo",
-    github_owner: "LEFTEQ",
+    github_repo: "demo-repo",
+    github_owner: "lefteq",
     branch: "main",
     framework: "vite",
     package_manager: "npm",

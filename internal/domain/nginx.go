@@ -220,10 +220,10 @@ type NginxConfig struct {
 	// HTTP3 adds QUIC listeners + the Alt-Svc discovery header. Requires the
 	// proxy's nginx to be built with http_v3_module, UDP 443 reachable, and a
 	// `reuseport` quic listener configured once elsewhere (on the Lovinka VPS:
-	// 00-default-https.conf in infra-repo) — this template never emits
+	// 00-default-https.conf in the proxy config) — this template never emits
 	// reuseport itself, nginx allows it only once per address:port.
 	// The Alt-Svc value is the infra-owned $h3_alt_svc geo variable
-	// (00-h3-policy.conf in infra-repo): empty for VPN clients so they
+	// (00-h3-policy.conf in the proxy config): empty for VPN clients so they
 	// stay on h2/TCP (QUIC over the tunnel showed multi-minute response
 	// stalls browsers can't fall back from mid-request), the h3
 	// advertisement for everyone else. nginx fails the config test on an

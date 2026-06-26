@@ -8,7 +8,7 @@ import (
 
 	webpush "github.com/SherClockHolmes/webpush-go"
 
-	"github.com/LEFTEQ/lovinka-deployik/internal/db"
+	"github.com/lefteq/lovinka-deployik/internal/db"
 )
 
 // EventType selects the per-device preference gate for a notification.

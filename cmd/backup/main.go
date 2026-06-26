@@ -6,7 +6,7 @@ import (
 	"log"
 	"os"
 
-	"github.com/LEFTEQ/lovinka-deployik/internal/backup"
+	"github.com/lefteq/lovinka-deployik/internal/backup"
 )
 
 func main() {

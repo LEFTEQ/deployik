@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/LEFTEQ/lovinka-deployik/internal/db"
+	"github.com/lefteq/lovinka-deployik/internal/db"
 )
 
 func batchNames(batches [][]db.Project) [][]string {

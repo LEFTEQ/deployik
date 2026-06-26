@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/LEFTEQ/lovinka-deployik/internal/db"
+	"github.com/lefteq/lovinka-deployik/internal/db"
 )
 
 func TestReconcileActiveConfigsSkipsWWWForPreviewSubdomain(t *testing.T) {
@@ -47,7 +47,7 @@ func TestReconcileActiveConfigsSkipsWWWForPreviewSubdomain(t *testing.T) {
 		}
 	}
 
-	confPath := filepath.Join(confDir, "deployik-demo-web2-preview-lovinka-com.conf")
+	confPath := filepath.Join(confDir, "deployik-demo-web2-preview-example-com.conf")
 	content, err := os.ReadFile(confPath)
 	if err != nil {
 		t.Fatalf("read nginx config: %v", err)

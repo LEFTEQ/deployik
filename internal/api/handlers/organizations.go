@@ -3,8 +3,8 @@ package handlers
 import (
 	"net/http"
 
-	"github.com/LEFTEQ/lovinka-deployik/internal/auth"
-	"github.com/LEFTEQ/lovinka-deployik/internal/db"
+	"github.com/lefteq/lovinka-deployik/internal/auth"
+	"github.com/lefteq/lovinka-deployik/internal/db"
 )
 
 type OrganizationHandler struct {

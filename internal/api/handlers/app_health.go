@@ -4,8 +4,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/LEFTEQ/lovinka-deployik/internal/build"
-	"github.com/LEFTEQ/lovinka-deployik/internal/db"
+	"github.com/lefteq/lovinka-deployik/internal/build"
+	"github.com/lefteq/lovinka-deployik/internal/db"
 )
 
 // appHealthCache is a short-TTL cache for the app health "unified view" payload,

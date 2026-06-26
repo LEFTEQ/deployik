@@ -6,7 +6,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/LEFTEQ/lovinka-deployik/internal/version"
+	"github.com/lefteq/lovinka-deployik/internal/version"
 )
 
 func TestHealthHandler_WithVersion(t *testing.T) {

@@ -5,8 +5,8 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/LEFTEQ/lovinka-deployik/internal/auth"
-	"github.com/LEFTEQ/lovinka-deployik/internal/db"
+	"github.com/lefteq/lovinka-deployik/internal/auth"
+	"github.com/lefteq/lovinka-deployik/internal/db"
 )
 
 func TestLogsHandlerRejectsForeignDeploymentAccess(t *testing.T) {

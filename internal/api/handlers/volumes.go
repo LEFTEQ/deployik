@@ -10,10 +10,10 @@ import (
 	"github.com/docker/docker/errdefs"
 	"github.com/go-chi/chi/v5"
 
-	"github.com/LEFTEQ/lovinka-deployik/internal/audit"
-	"github.com/LEFTEQ/lovinka-deployik/internal/auth"
-	"github.com/LEFTEQ/lovinka-deployik/internal/build"
-	"github.com/LEFTEQ/lovinka-deployik/internal/db"
+	"github.com/lefteq/lovinka-deployik/internal/audit"
+	"github.com/lefteq/lovinka-deployik/internal/auth"
+	"github.com/lefteq/lovinka-deployik/internal/build"
+	"github.com/lefteq/lovinka-deployik/internal/db"
 )
 
 // VolumeHandler manages Docker data volumes for projects.

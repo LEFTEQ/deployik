@@ -9,9 +9,9 @@ import (
 	"io"
 	"log"
 
-	"github.com/LEFTEQ/lovinka-deployik/internal/build"
-	"github.com/LEFTEQ/lovinka-deployik/internal/crypto"
-	"github.com/LEFTEQ/lovinka-deployik/internal/db"
+	"github.com/lefteq/lovinka-deployik/internal/build"
+	"github.com/lefteq/lovinka-deployik/internal/crypto"
+	"github.com/lefteq/lovinka-deployik/internal/db"
 	"github.com/docker/docker/errdefs"
 )
 

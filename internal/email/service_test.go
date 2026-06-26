@@ -6,8 +6,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/LEFTEQ/lovinka-deployik/internal/crypto"
-	"github.com/LEFTEQ/lovinka-deployik/internal/db"
+	"github.com/lefteq/lovinka-deployik/internal/crypto"
+	"github.com/lefteq/lovinka-deployik/internal/db"
 )
 
 type fakeSender struct {
@@ -111,7 +111,7 @@ func TestServiceSaveSettingsWritesEnvAndSecretsAndBuildsPrompt(t *testing.T) {
 		SMTPUser:                "noreply@acmegym.cz",
 		SMTPPassword:            "smtp-password",
 		EmailFrom:               "noreply@acmegym.cz",
-		EmailFromName:           "acmegym",
+		EmailFromName:           "AcmeGym",
 		ContactEmailTo:          "owner@acmegym.cz, sales@acmegym.cz",
 		RecaptchaSiteKey:        "site-key",
 		RecaptchaSecretKey:      "secret-key",
@@ -180,7 +180,7 @@ func TestServiceTestSMTPUsesStoredSecretsAndRecordsSuccess(t *testing.T) {
 		SMTPUser:                "noreply@acmegym.cz",
 		SMTPPassword:            "smtp-password",
 		EmailFrom:               "noreply@acmegym.cz",
-		EmailFromName:           "acmegym",
+		EmailFromName:           "AcmeGym",
 		ContactEmailTo:          "owner@acmegym.cz",
 		RecaptchaSiteKey:        "site-key",
 		RecaptchaSecretKey:      "secret-key",
@@ -223,7 +223,7 @@ func TestServiceTestSMTPFallsBackToFromAddressWhenOwnerRecipientsEmpty(t *testin
 		SMTPUser:                "noreply@acmegym.cz",
 		SMTPPassword:            "smtp-password",
 		EmailFrom:               "noreply@acmegym.cz",
-		EmailFromName:           "acmegym",
+		EmailFromName:           "AcmeGym",
 		ContactEmailTo:          "",
 		RecaptchaSiteKey:        "",
 		RecaptchaScoreThreshold: 0.5,
@@ -259,7 +259,7 @@ func TestServiceTestSMTPRecordsFailure(t *testing.T) {
 		SMTPUser:                "noreply@acmegym.cz",
 		SMTPPassword:            "smtp-password",
 		EmailFrom:               "noreply@acmegym.cz",
-		EmailFromName:           "acmegym",
+		EmailFromName:           "AcmeGym",
 		ContactEmailTo:          "owner@acmegym.cz",
 		RecaptchaSiteKey:        "site-key",
 		RecaptchaSecretKey:      "secret-key",
@@ -379,7 +379,7 @@ func TestBuildSiteContext(t *testing.T) {
 		if ctx.SiteURL != "https://acmegym.cz" {
 			t.Fatalf("SiteURL = %q, want https://acmegym.cz", ctx.SiteURL)
 		}
-		wantAll := []string{"acmesite.preview.example.com", "acmegym.cz", "www.acmegym.cz"}
+		wantAll := []string{"acmegym.cz", "acmesite.preview.example.com", "www.acmegym.cz"}
 		if !equalStrings(ctx.AllowedHosts, wantAll) {
 			t.Fatalf("AllowedHosts = %#v, want %#v", ctx.AllowedHosts, wantAll)
 		}
@@ -425,7 +425,7 @@ func TestServiceWritesSiteVariablesAndPromptIncludesContext(t *testing.T) {
 		SMTPUser:                "noreply@acmegym.cz",
 		SMTPPassword:            "smtp-password",
 		EmailFrom:               "noreply@acmegym.cz",
-		EmailFromName:           "acmegym",
+		EmailFromName:           "AcmeGym",
 		ContactEmailTo:          "owner@acmegym.cz",
 		RecaptchaSiteKey:        "site-key",
 		RecaptchaSecretKey:      "secret-key",
@@ -486,7 +486,7 @@ func TestGetProjectPayloadBackfillsSiteVariablesForLegacyProjects(t *testing.T) 
 		SMTPSecurity:            db.EmailSMTPSecurityStartTLS,
 		SMTPUser:                "noreply@acmegym.cz",
 		EmailFrom:               "noreply@acmegym.cz",
-		EmailFromName:           "acmegym",
+		EmailFromName:           "AcmeGym",
 		ContactEmailTo:          "owner@acmegym.cz",
 		RecaptchaSiteKey:        "site-key",
 		RecaptchaMode:           db.EmailRecaptchaModeV3,

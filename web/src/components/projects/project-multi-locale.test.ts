@@ -46,7 +46,7 @@ describe("project multi locale utilities", () => {
   test("builds a next-intl prompt with selected locales and project context", () => {
     const prompt = buildMultiLocalePrompt({
       projectName: "my-nextjs-app",
-      githubOwner: "LEFTEQ",
+      githubOwner: "lefteq",
       githubRepo: "lovinka-deployik",
       rootDirectory: "apps/site",
       defaultLocale: "cs",
@@ -54,7 +54,7 @@ describe("project multi locale utilities", () => {
     });
 
     expect(prompt).toContain("my-nextjs-app");
-    expect(prompt).toContain("LEFTEQ/lovinka-deployik");
+    expect(prompt).toContain("lefteq/lovinka-deployik");
     expect(prompt).toContain("Root directory: apps/site");
     expect(prompt).toContain("Default locale: cs");
     expect(prompt).toContain("Supported locales: cs, en, sk");

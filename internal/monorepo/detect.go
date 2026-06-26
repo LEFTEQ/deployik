@@ -9,7 +9,7 @@ import (
 
 	"gopkg.in/yaml.v3"
 
-	"github.com/LEFTEQ/lovinka-deployik/internal/projectconfig"
+	"github.com/lefteq/lovinka-deployik/internal/projectconfig"
 )
 
 // DetectPackageManager determines the package manager from root-level file presence.

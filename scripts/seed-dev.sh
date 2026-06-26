@@ -22,7 +22,7 @@ PROJECT=$(curl -s -b "$COOKIE_JAR" -X POST "$API/projects" \
   -d '{
     "name": "my-nextjs-app",
     "github_repo": "lovinka-deployik",
-    "github_owner": "LEFTEQ",
+    "github_owner": "lefteq",
     "branch": "main",
     "framework": "nextjs",
     "package_manager": "bun",
@@ -50,8 +50,8 @@ curl -s -b "$COOKIE_JAR" -X POST "$API/projects" \
   -H 'Content-Type: application/json' \
   -d '{
     "name": "static-site",
-    "github_repo": "infra-repo",
-    "github_owner": "LEFTEQ",
+    "github_repo": "my-static-site",
+    "github_owner": "lefteq",
     "branch": "main",
     "framework": "vite",
     "package_manager": "npm",

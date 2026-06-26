@@ -304,7 +304,7 @@ export function ProjectEmailTab({ projectId }: { projectId: string }) {
                     onChange={(event) =>
                       patchForm({ email_from_name: event.target.value })
                     }
-                    placeholder="acmegym"
+                    placeholder="AcmeGym"
                   />
                 </Field>
                 <Field label="From Address" htmlFor="email-from">

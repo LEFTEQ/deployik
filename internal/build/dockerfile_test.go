@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/LEFTEQ/lovinka-deployik/internal/projectconfig"
+	"github.com/lefteq/lovinka-deployik/internal/projectconfig"
 )
 
 func TestGenerateDockerfileSupportsRootDirectoryAndNextOutput(t *testing.T) {

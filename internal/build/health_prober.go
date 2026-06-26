@@ -6,7 +6,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/LEFTEQ/lovinka-deployik/internal/db"
+	"github.com/lefteq/lovinka-deployik/internal/db"
 )
 
 // MemberProbe is the result of a live container probe for one member.

@@ -13,8 +13,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/LEFTEQ/lovinka-deployik/internal/crypto"
-	"github.com/LEFTEQ/lovinka-deployik/internal/db"
+	"github.com/lefteq/lovinka-deployik/internal/crypto"
+	"github.com/lefteq/lovinka-deployik/internal/db"
 )
 
 const (
@@ -589,7 +589,7 @@ func buildAIPrompt(project *db.Project, record *db.ProjectEmailSettings, site si
 	prompt.WriteString(fmt.Sprintf("- Package manager: %s\n", packageManager))
 	prompt.WriteString(fmt.Sprintf("- Root directory: %s\n\n", rootDirectory))
 
-	prompt.WriteString("Deployment context (this app runs on Deployik on the Lovinka VPS):\n")
+	prompt.WriteString("Deployment context (this app runs on Deployik):\n")
 	prompt.WriteString(fmt.Sprintf("- Production hostnames: %s\n", joinHosts(site.ProductionHosts)))
 	prompt.WriteString(fmt.Sprintf("- Preview hostnames: %s\n", joinHosts(site.PreviewHosts)))
 	prompt.WriteString(fmt.Sprintf("- Canonical site URL: %s\n", firstNonEmpty(site.SiteURL, "(none yet — production domain not configured)")))

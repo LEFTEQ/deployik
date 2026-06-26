@@ -7,7 +7,7 @@ package services
 import (
 	"fmt"
 
-	"github.com/LEFTEQ/lovinka-deployik/internal/db"
+	"github.com/lefteq/lovinka-deployik/internal/db"
 )
 
 // ServiceSpec is a fully-resolved (plaintext-password) sidecar specification.

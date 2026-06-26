@@ -10,11 +10,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/LEFTEQ/lovinka-deployik/internal/audit"
-	"github.com/LEFTEQ/lovinka-deployik/internal/auth"
-	"github.com/LEFTEQ/lovinka-deployik/internal/crypto"
-	"github.com/LEFTEQ/lovinka-deployik/internal/db"
-	"github.com/LEFTEQ/lovinka-deployik/internal/github"
+	"github.com/lefteq/lovinka-deployik/internal/audit"
+	"github.com/lefteq/lovinka-deployik/internal/auth"
+	"github.com/lefteq/lovinka-deployik/internal/crypto"
+	"github.com/lefteq/lovinka-deployik/internal/db"
+	"github.com/lefteq/lovinka-deployik/internal/github"
 )
 
 type AuthHandler struct {

@@ -5,8 +5,8 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
-	"github.com/LEFTEQ/lovinka-deployik/internal/analytics"
-	"github.com/LEFTEQ/lovinka-deployik/internal/db"
+	"github.com/lefteq/lovinka-deployik/internal/analytics"
+	"github.com/lefteq/lovinka-deployik/internal/db"
 )
 
 type ProjectAnalyticsHandler struct {

@@ -3,7 +3,7 @@ package handlers
 import (
 	"testing"
 
-	"github.com/LEFTEQ/lovinka-deployik/internal/db"
+	"github.com/lefteq/lovinka-deployik/internal/db"
 )
 
 // TestAppMemberTriggerSourceIsDBValid guards the regression where coordinated

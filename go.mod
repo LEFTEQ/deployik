@@ -1,4 +1,4 @@
-module github.com/LEFTEQ/lovinka-deployik
+module github.com/lefteq/lovinka-deployik
 
 go 1.25.0
 

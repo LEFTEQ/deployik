@@ -10,10 +10,10 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
-	"github.com/LEFTEQ/lovinka-deployik/internal/audit"
-	"github.com/LEFTEQ/lovinka-deployik/internal/auth"
-	"github.com/LEFTEQ/lovinka-deployik/internal/db"
-	"github.com/LEFTEQ/lovinka-deployik/internal/github"
+	"github.com/lefteq/lovinka-deployik/internal/audit"
+	"github.com/lefteq/lovinka-deployik/internal/auth"
+	"github.com/lefteq/lovinka-deployik/internal/db"
+	"github.com/lefteq/lovinka-deployik/internal/github"
 )
 
 func newAutoBuildRequest(t *testing.T, userID, projectID string, body any) *http.Request {

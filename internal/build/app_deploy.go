@@ -5,7 +5,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/LEFTEQ/lovinka-deployik/internal/db"
+	"github.com/lefteq/lovinka-deployik/internal/db"
 )
 
 // AppSiblingEnv returns runtime env vars that expose each sibling member's

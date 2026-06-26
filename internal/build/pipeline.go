@@ -9,13 +9,13 @@ import (
 	"sync"
 	"time"
 
-	"github.com/LEFTEQ/lovinka-deployik/internal/auth"
-	"github.com/LEFTEQ/lovinka-deployik/internal/crypto"
-	"github.com/LEFTEQ/lovinka-deployik/internal/db"
-	"github.com/LEFTEQ/lovinka-deployik/internal/domain"
-	"github.com/LEFTEQ/lovinka-deployik/internal/projectconfig"
-	"github.com/LEFTEQ/lovinka-deployik/internal/push"
-	"github.com/LEFTEQ/lovinka-deployik/internal/ws"
+	"github.com/lefteq/lovinka-deployik/internal/auth"
+	"github.com/lefteq/lovinka-deployik/internal/crypto"
+	"github.com/lefteq/lovinka-deployik/internal/db"
+	"github.com/lefteq/lovinka-deployik/internal/domain"
+	"github.com/lefteq/lovinka-deployik/internal/projectconfig"
+	"github.com/lefteq/lovinka-deployik/internal/push"
+	"github.com/lefteq/lovinka-deployik/internal/ws"
 )
 
 // defaultMaxBuildDuration caps a single deployment when MaxBuildDuration is unset.

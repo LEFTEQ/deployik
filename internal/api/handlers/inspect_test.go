@@ -16,20 +16,20 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
-	"github.com/LEFTEQ/lovinka-deployik/internal/auth"
-	"github.com/LEFTEQ/lovinka-deployik/internal/crypto"
-	"github.com/LEFTEQ/lovinka-deployik/internal/db"
-	"github.com/LEFTEQ/lovinka-deployik/internal/monorepo"
+	"github.com/lefteq/lovinka-deployik/internal/auth"
+	"github.com/lefteq/lovinka-deployik/internal/crypto"
+	"github.com/lefteq/lovinka-deployik/internal/db"
+	"github.com/lefteq/lovinka-deployik/internal/monorepo"
 )
 
 func TestInspectHandler_MissingBranch(t *testing.T) {
 	h := &InspectHandler{} // DB and Encryptor unused — check fires before DB access
 
 	rctx := chi.NewRouteContext()
-	rctx.URLParams.Add("owner", "LEFTEQ")
+	rctx.URLParams.Add("owner", "lefteq")
 	rctx.URLParams.Add("repo", "acme")
 
-	req := httptest.NewRequest(http.MethodGet, "/api/github/repos/LEFTEQ/acme/inspect", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/github/repos/lefteq/acme/inspect", nil)
 	req = req.WithContext(context.WithValue(req.Context(), chi.RouteCtxKey, rctx))
 
 	w := httptest.NewRecorder()
@@ -101,7 +101,7 @@ func TestInspectHandler_HappyPath(t *testing.T) {
 		DB:        database,
 		Encryptor: enc,
 		InspectFn: func(ctx context.Context, _ monorepo.RepoInspector, owner, repo, ref string) (*monorepo.Report, error) {
-			if owner != "LEFTEQ" || repo != "acme" || ref != "main" {
+			if owner != "lefteq" || repo != "acme" || ref != "main" {
 				t.Errorf("unexpected inspect args: owner=%q repo=%q ref=%q", owner, repo, ref)
 			}
 			return wantReport, nil
@@ -110,10 +110,10 @@ func TestInspectHandler_HappyPath(t *testing.T) {
 
 	// Build request with chi route context.
 	rctx := chi.NewRouteContext()
-	rctx.URLParams.Add("owner", "LEFTEQ")
+	rctx.URLParams.Add("owner", "lefteq")
 	rctx.URLParams.Add("repo", "acme")
 
-	req := httptest.NewRequest(http.MethodGet, "/api/github/repos/LEFTEQ/acme/inspect?branch=main", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/github/repos/lefteq/acme/inspect?branch=main", nil)
 	ctx := context.WithValue(req.Context(), chi.RouteCtxKey, rctx)
 	ctx = auth.WithClaims(ctx, &auth.Claims{UserID: user.ID})
 	req = req.WithContext(ctx)

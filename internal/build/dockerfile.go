@@ -9,7 +9,7 @@ import (
 	"strings"
 	"text/template"
 
-	"github.com/LEFTEQ/lovinka-deployik/internal/projectconfig"
+	"github.com/lefteq/lovinka-deployik/internal/projectconfig"
 )
 
 // DockerfileData holds values for the Dockerfile template.

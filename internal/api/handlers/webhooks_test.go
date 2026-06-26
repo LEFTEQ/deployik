@@ -12,8 +12,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/LEFTEQ/lovinka-deployik/internal/build"
-	"github.com/LEFTEQ/lovinka-deployik/internal/db"
+	"github.com/lefteq/lovinka-deployik/internal/build"
+	"github.com/lefteq/lovinka-deployik/internal/db"
 )
 
 const webhookSecretForTests = "webhook-secret"

@@ -6,10 +6,10 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
-	"github.com/LEFTEQ/lovinka-deployik/internal/audit"
-	"github.com/LEFTEQ/lovinka-deployik/internal/auth"
-	"github.com/LEFTEQ/lovinka-deployik/internal/db"
-	projectemail "github.com/LEFTEQ/lovinka-deployik/internal/email"
+	"github.com/lefteq/lovinka-deployik/internal/audit"
+	"github.com/lefteq/lovinka-deployik/internal/auth"
+	"github.com/lefteq/lovinka-deployik/internal/db"
+	projectemail "github.com/lefteq/lovinka-deployik/internal/email"
 )
 
 type ProjectEmailHandler struct {

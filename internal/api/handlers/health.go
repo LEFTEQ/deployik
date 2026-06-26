@@ -3,7 +3,7 @@ package handlers
 import (
 	"net/http"
 
-	"github.com/LEFTEQ/lovinka-deployik/internal/version"
+	"github.com/lefteq/lovinka-deployik/internal/version"
 )
 
 // HealthHandler serves GET /api/health. Includes build version metadata so

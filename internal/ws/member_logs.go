@@ -9,9 +9,9 @@ import (
 
 	"github.com/gorilla/websocket"
 
-	"github.com/LEFTEQ/lovinka-deployik/internal/api/middleware"
-	"github.com/LEFTEQ/lovinka-deployik/internal/authz"
-	"github.com/LEFTEQ/lovinka-deployik/internal/db"
+	"github.com/lefteq/lovinka-deployik/internal/api/middleware"
+	"github.com/lefteq/lovinka-deployik/internal/authz"
+	"github.com/lefteq/lovinka-deployik/internal/db"
 )
 
 // MemberContainerResolver resolves the running application container for a
