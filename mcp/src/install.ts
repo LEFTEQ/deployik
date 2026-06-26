@@ -27,8 +27,6 @@ export interface InstallAllOpts {
   cwd?: string;
 }
 
-const DEFAULT_URL = "https://deployik.example.com";
-
 export async function installAll(opts: InstallAllOpts): Promise<number> {
   const cwd = opts.cwd ?? process.cwd();
   const existing = opts.skipMcp
@@ -47,11 +45,15 @@ export async function installAll(opts: InstallAllOpts): Promise<number> {
   if (!opts.skipMcp) {
     if (!opts.yes && !url) {
       process.stdout.write(section(1, 4, "Deployik server URL"));
-      process.stdout.write(`\n${dim("Public default works for the example.com instance. For VPN-only")}\n`);
-      process.stdout.write(`${dim("installs, point at the internal hostname (e.g. http://10.x.x.x:8080).")}\n\n`);
-      url = await prompt("Deployik URL", DEFAULT_URL);
+      process.stdout.write(`\n${dim("Enter the URL of YOUR Deployik instance (e.g. https://deployik.example.com,")}\n`);
+      process.stdout.write(`${dim("or an internal hostname like http://10.x.x.x:8080 for VPN-only installs).")}\n\n`);
+      url = await prompt("Deployik URL", "");
     }
-    if (!url) url = DEFAULT_URL;
+    if (!url) {
+      return abort(
+        "Deployik URL is required. Pass --url=<https://your-deployik-url> or set DEPLOYIK_URL.",
+      );
+    }
     const reach = await probeHealth(url);
     if (reach.ok) {
       process.stdout.write("  " + ok(`reachable${reach.version ? ` (deployik ${reach.version})` : ""}\n`));

@@ -6,7 +6,7 @@ import type { Group } from "../client/types";
 const groups: Group[] = [
   {
     id: "grp_personal",
-    name: "LEFTEQ Personal",
+    name: "lefteq Personal",
     slug: "lefteq-personal",
     is_default: true,
     membership_role: "owner",

@@ -4,7 +4,7 @@ import { buildCreateProjectPayload } from "./projects";
 
 const baseArgs = {
   name: "docs-site",
-  github_owner: "LEFTEQ",
+  github_owner: "lefteq",
   github_repo: "docs",
   branch: "main",
   framework: "nextjs" as const,

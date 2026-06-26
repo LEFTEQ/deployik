@@ -46,7 +46,7 @@ SCOPES (default: --global)
 
 FLAGS
   --yes, -y                          Skip confirmation prompts (use defaults).
-  --url=<url>                        Deployik URL (default: https://deployik.example.com).
+  --url=<url>                        Deployik URL (required). Pass it or set DEPLOYIK_URL.
   --token=<dpk_...>                  Personal Access Token. Required for install
                                      unless DEPLOYIK_TOKEN env var is set.
 
@@ -209,7 +209,14 @@ function installDaemonCommand(flags: ParsedFlags): number {
     );
     return 2;
   }
-  const url = flags.url ?? process.env.DEPLOYIK_URL ?? "https://deployik.example.com";
+  const url = flags.url ?? process.env.DEPLOYIK_URL ?? "";
+  if (!url) {
+    process.stderr.write(
+      `deployik-mcp install --daemon: missing Deployik URL.\n` +
+      `  Pass --url=<https://your-deployik-url> or set DEPLOYIK_URL in your environment.\n`,
+    );
+    return 2;
+  }
   const sourceDir = resolveMcpSourceDir();
   try {
     const result = installDaemon({

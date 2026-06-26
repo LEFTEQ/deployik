@@ -30,7 +30,7 @@ export interface RepoBinding {
 }
 
 const PUBLIC_FILE = ".deployik.json";
-const PUBLIC_SCHEMA = "https://example.com/schemas/deployik.json";
+const PUBLIC_SCHEMA = "https://raw.githubusercontent.com/lefteq/lovinka-deployik/main/mcp/schemas/deployik.json";
 const GITIGNORE_LINE = ".deployik/";
 
 export function publicConfigPath(cwd: string): string {
