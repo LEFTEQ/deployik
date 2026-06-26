@@ -1,6 +1,25 @@
 # Deployik
 
-Deployik is a self-hosted, single-binary deployment platform you run on your own VPS — a lightweight Vercel alternative that deploys Next.js, static sites, Node APIs, and user-provided Dockerfile apps from GitHub repositories with automatic domains, SSL certificates, environment variables, auto-build previews, opt-in production auto-deploy, and blue-green zero-downtime deployments.
+### Your own self-hosted deployment platform — with AI built in.
+
+Deploy your projects to **your own server** in one click. Deployik is a self-hosted
+Vercel alternative you actually own: connect a GitHub repo and every push ships a
+preview, your main branch auto-deploys to production, custom domains get **automatic
+HTTPS**, and you drive the whole thing from any AI assistant over MCP — no platform
+lock-in, no per-seat pricing, no handing your source to a third party.
+
+- 🚀 **Push to deploy** — connect GitHub, every branch gets a live preview; production auto-deploys on push
+- 🔒 **Automatic SSL** — custom domains verified and provisioned via Let's Encrypt, renewed for you
+- 🌐 **Automatic domains** — every project and branch gets a preview URL on your own domain
+- ♻️ **Zero-downtime** — blue-green container swaps with health checks; rollbacks in one click
+- 🔑 **GitHub login + previews you can lock** — OAuth sign-in and per-environment password protection
+- 🤖 **AI-native** — create projects, set secrets, deploy, and debug from Claude, Cursor, or any MCP client
+- 📦 **Any stack** — Next.js, Vite, Astro, static sites, Node APIs, or bring your own Dockerfile
+- 🧩 **Batteries included** — encrypted env vars & secrets, persistent volumes, monorepo support, analytics & contact-form email
+- 🪶 **One binary** — the Go backend embeds the React dashboard and ships as a single container on your VPS
+
+A lightweight, single-binary alternative to Vercel/Netlify that runs on one VPS and keeps
+your code, your secrets, and your domains entirely under your control.
 
 ## Features
 
