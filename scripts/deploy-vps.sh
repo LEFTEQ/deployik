@@ -8,7 +8,7 @@ if [ -z "$IMAGE_TAG" ]; then
   exit 1
 fi
 
-DEPLOY_HOST="${DEPLOY_HOST:-203.0.113.10}"
+DEPLOY_HOST="${DEPLOY_HOST:?set DEPLOY_HOST to your server address}"
 DEPLOY_USER="${DEPLOY_USER:-deploy}"
 REMOTE_APP_DIR="${REMOTE_APP_DIR:-/opt/apps/deployik}"
 

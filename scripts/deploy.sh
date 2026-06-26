@@ -17,10 +17,10 @@ BLUE='\033[0;34m'
 NC='\033[0m'
 
 TAG=${1:-latest}
-HOST="203.0.113.10"
-USER="deploy"
-APP_DIR="/opt/apps/deployik"
-IMAGE="ghcr.io/lefteq/lovinka-deployik"
+HOST="${DEPLOY_HOST:?set DEPLOY_HOST to your server (e.g. DEPLOY_HOST=1.2.3.4 ./scripts/deploy.sh)}"
+USER="${DEPLOY_USER:-deploy}"
+APP_DIR="${REMOTE_APP_DIR:-/opt/apps/deployik}"
+IMAGE="${DEPLOYIK_IMAGE:-ghcr.io/lefteq/lovinka-deployik}"
 
 if [ "$1" = "--help" ] || [ "$1" = "-h" ]; then
     echo "Deployik Deploy Script"
@@ -68,4 +68,4 @@ EOF
 echo ""
 echo -e "${GREEN}✓ Deploy successful!${NC}"
 echo -e "Deployed: ${IMAGE}:${TAG}"
-echo -e "URL: https://deployik.example.com"
+echo -e "URL: ${DEPLOYIK_URL:-https://deployik.example.com}"

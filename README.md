@@ -1,13 +1,13 @@
 # Deployik
 
-Self-hosted deployment platform for the [Lovinka](https://example.com) VPS. A lightweight Vercel alternative that deploys Next.js, static sites, Node APIs, and user-provided Dockerfile apps from GitHub repositories with automatic domains, SSL certificates, environment variables, auto-build previews, opt-in production auto-deploy, and blue-green zero-downtime deployments.
+Deployik is a self-hosted, single-binary deployment platform you run on your own VPS — a lightweight Vercel alternative that deploys Next.js, static sites, Node APIs, and user-provided Dockerfile apps from GitHub repositories with automatic domains, SSL certificates, environment variables, auto-build previews, opt-in production auto-deploy, and blue-green zero-downtime deployments.
 
 ## Features
 
 - **GitHub Integration** -- Import repos, select branches, deploy with one click
 - **Framework Support** -- Next.js (standalone), Vite, Astro, generic static sites, Node APIs, and custom Dockerfiles
 - **Blue-Green Deploys** -- Zero-downtime container swaps with automatic health checks
-- **Automatic Domains** -- Preview URLs generated per project and branch (`{name}.preview.example.com`, `{name}-{branch}.preview.example.com`)
+- **Automatic Domains** -- Preview URLs generated per project and branch (`{name}.preview.<your-domain>`, `{name}-{branch}.preview.<your-domain>`), where the base domain is set via `BASE_DOMAIN`
 - **Custom Domains** -- Add your own domain with DNS verification and auto-provisioned SSL (Let's Encrypt)
 - **Auto-Build on Push** -- GitHub webhooks deploy previews automatically; production can opt in to track pushes to the production branch without creating release tags
 - **Environment Variables and Secrets** -- Separate stores with shared/preview/production scoping, encrypted at rest (AES-256-GCM)
@@ -56,7 +56,7 @@ Self-hosted deployment platform for the [Lovinka](https://example.com) VPS. A li
                               │ docker pull + restart
                               ▼
 ┌──────────────────────────────────────────────────────────┐
-│                     Hetzner VPS                          │
+│                     Your VPS                             │
 │                                                          │
 │  ┌──────────┐    ┌────────────┐    ┌─────────────────┐  │
 │  │  nginx   │───▶│  Deployik  │───▶│ Docker Engine   │  │
@@ -78,7 +78,7 @@ nginx-proxy container is on the same Docker network as deployed apps, so it reac
 
 ```
 ┌──────────────────────────────────────────────────────────┐
-│                     Hetzner VPS                          │
+│                     Your VPS                             │
 │                                                          │
 │  ┌──────────┐    ┌────────────┐    ┌─────────────────┐  │
 │  │ Apache/  │───▶│  Deployik  │───▶│ Docker Engine   │  │
@@ -108,7 +108,7 @@ Each container's port 3000 is bound to a random localhost port. Deployik writes 
 ### 1. Clone and install dependencies
 
 ```bash
-git clone https://github.com/LEFTEQ/lovinka-deployik.git
+git clone https://github.com/lefteq/lovinka-deployik.git
 cd lovinka-deployik
 
 go mod download
@@ -135,11 +135,21 @@ ENCRYPTION_KEY=$ENCRYPTION_KEY
 GITHUB_CLIENT_ID=your_client_id_here
 GITHUB_CLIENT_SECRET=your_client_secret_here
 
+# Base domain you control. Auto preview domains become my-app.preview.<BASE_DOMAIN>,
+# so you need a wildcard DNS A-record (*.preview.<BASE_DOMAIN>) pointing at this
+# server. REQUIRED in production — Deployik refuses to start without it (outside
+# DEV_MODE). See .env.example for the full list of settings.
+BASE_DOMAIN=example.com
+
 DEV_MODE=true
 DATABASE_PATH=data/deployik.db
 FRONTEND_URL=https://your-domain.com
 EOF
 ```
+
+> Tip: on a fresh Docker host, `scripts/bootstrap.sh` creates the `proxy`
+> network and host directories, generates `JWT_SECRET`/`ENCRYPTION_KEY`, and
+> scaffolds `.env` for you. Then fill in the GitHub credentials and `BASE_DOMAIN`.
 
 ### 4. Choose your proxy mode
 
@@ -226,6 +236,7 @@ SSL_EMAIL=admin@yourdomain.com
 | `ENCRYPTION_KEY` | Key for AES-256-GCM encryption of env vars, secrets, and GitHub tokens |
 | `GITHUB_CLIENT_ID` | GitHub OAuth App client ID |
 | `GITHUB_CLIENT_SECRET` | GitHub OAuth App client secret |
+| `BASE_DOMAIN` | Base domain you control for auto preview domains (`*.preview.<BASE_DOMAIN>`). Required outside `DEV_MODE`; or set `PREVIEW_DOMAIN_SUFFIX` directly |
 
 ### Optional Environment Variables
 
@@ -237,7 +248,7 @@ SSL_EMAIL=admin@yourdomain.com
 | `ALLOWED_GITHUB_USERS` | _(empty = all)_ | Comma-separated GitHub usernames allowed to log in |
 | `FRONTEND_URL` | `http://localhost:5173` | Frontend URL for OAuth redirect |
 | `BUILD_DIR` | `/tmp/deployik-builds` | Temporary directory for git clones and Docker builds |
-| `VPS_HOST` | `203.0.113.10` | VPS IP address for DNS verification |
+| `VPS_HOST` | _(none)_ | Your VPS public IP, used for DNS verification of custom domains |
 
 ### Proxy Configuration
 
@@ -407,7 +418,7 @@ Projects can provision a GitHub webhook from the new-project wizard or Project S
 - Before deploying code with a new SQLite migration, create a live backup on the VPS:
 
 ```bash
-ssh deploy@203.0.113.10 "/opt/scripts/deployik-backup.sh backup"
+ssh deploy@<your-vps-ip> "/opt/scripts/deployik-backup.sh backup"
 ```
 
 Build logs are streamed in real-time via WebSocket and persisted to SQLite for later viewing.

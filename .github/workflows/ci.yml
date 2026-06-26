@@ -9,9 +9,11 @@ on:
 env:
   REGISTRY: ghcr.io
   IMAGE_NAME: ${{ github.repository }}
-  DEPLOY_HOST: 203.0.113.10
-  DEPLOY_USER: deploy
-  REMOTE_APP_DIR: /opt/apps/deployik
+  # Set the DEPLOY_HOST repo variable (Settings → Secrets and variables →
+  # Actions → Variables) to your server. Only used by the owner-gated deploy job.
+  DEPLOY_HOST: ${{ vars.DEPLOY_HOST }}
+  DEPLOY_USER: ${{ vars.DEPLOY_USER || 'deploy' }}
+  REMOTE_APP_DIR: ${{ vars.REMOTE_APP_DIR || '/opt/apps/deployik' }}
 
 jobs:
   test:
@@ -83,7 +85,11 @@ jobs:
   deploy-vps:
     needs: build-and-push
     runs-on: ubuntu-latest
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    # Only the upstream repo deploys to its VPS. Forks build + push their own
+    # image but skip this job (it would SSH to infrastructure they don't own).
+    # Configure DEPLOY_HOST/DEPLOY_USER/REMOTE_APP_DIR + the VPS_DEPLOY_SSH_KEY
+    # secret and change this owner check to run your own self-host deploy.
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && github.repository_owner == 'lefteq'
 
     steps:
       - uses: actions/checkout@v4

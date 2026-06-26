@@ -3,49 +3,57 @@ name: deployik
 # =============================================================================
 # Deployik - Self-hosted Deployment Platform
 # =============================================================================
-# Works with central nginx-proxy at /opt/nginx-proxy
-# Usage: docker compose up -d
+# Prerequisites (run scripts/bootstrap.sh once, or set them up yourself):
+#   1. A shared external Docker network named `proxy` that an nginx-proxy
+#      container also joins (Deployik writes vhosts; nginx-proxy serves them):
+#        docker network create proxy
+#   2. The host directories below (override paths via the *_DIR env vars):
+#        /opt/nginx-proxy/{conf.d,html,certs}, /opt/backups/deployik
+#   3. A `.env` file (copy from ../.env.example) with at least JWT_SECRET,
+#      ENCRYPTION_KEY, GITHUB_CLIENT_ID, GITHUB_CLIENT_SECRET, and BASE_DOMAIN.
+#
+# Usage (from the repo root): docker compose -f docker/docker-compose.yml up -d
 # =============================================================================
 
 services:
   app:
-    image: ghcr.io/lefteq/lovinka-deployik:${IMAGE_TAG:-latest}
+    image: ${DEPLOYIK_IMAGE:-ghcr.io/lefteq/lovinka-deployik}:${IMAGE_TAG:-latest}
     container_name: deployik
     restart: unless-stopped
+    # env_file supplies the required secrets and BASE_DOMAIN; see .env.example.
     env_file: .env
     environment:
       PORT: 8080
       DATABASE_PATH: /data/deployik.db
       DATA_DIR: /data
       NGINX_CONF_DIR: /nginx-conf
-      PROXY_CONTAINER_NAME: nginx-proxy
-      PROXY_CERTS_DIR: /opt/nginx-proxy/certs
-      PROXY_HTML_DIR: /opt/nginx-proxy/html
-      SSL_EMAIL: admin@example.com
+      PROXY_CONTAINER_NAME: ${PROXY_CONTAINER_NAME:-nginx-proxy}
+      PROXY_CERTS_DIR: ${NGINX_PROXY_DIR:-/opt/nginx-proxy}/certs
+      PROXY_HTML_DIR: ${NGINX_PROXY_DIR:-/opt/nginx-proxy}/html
+      SSL_EMAIL: ${SSL_EMAIL:-admin@example.com}
       BUILD_DIR: /tmp/deployik-builds
-      ANALYTICS_UMAMI_URL: ${ANALYTICS_UMAMI_URL:-http://umami-app:3000}
-      ANALYTICS_UMAMI_PUBLIC_URL: ${ANALYTICS_UMAMI_PUBLIC_URL:-https://analytics.example.com}
-      ANALYTICS_UMAMI_SCRIPT_URL: ${ANALYTICS_UMAMI_SCRIPT_URL:-https://cdn.example.com/deployik-analytics/umami/latest.js}
+      # Analytics is optional. Leave these unset (the defaults below are empty)
+      # unless you run your own Umami instance; point them at it if you do.
+      ANALYTICS_UMAMI_URL: ${ANALYTICS_UMAMI_URL:-}
+      ANALYTICS_UMAMI_PUBLIC_URL: ${ANALYTICS_UMAMI_PUBLIC_URL:-}
+      ANALYTICS_UMAMI_SCRIPT_URL: ${ANALYTICS_UMAMI_SCRIPT_URL:-}
       ANALYTICS_UMAMI_USERNAME: ${ANALYTICS_UMAMI_USERNAME:-}
       ANALYTICS_UMAMI_PASSWORD: ${ANALYTICS_UMAMI_PASSWORD:-}
-      # Loki is centralized on the devops VPS (no loki container on lovinka-vps);
-      # reach it over the WireGuard mesh, the same path promtail/vmagent use to
-      # push. monitoring-loki:3100 would be unreachable here.
-      ANALYTICS_LOKI_URL: ${ANALYTICS_LOKI_URL:-http://203.0.113.13:3100}
+      # Optional: point at your own Loki to enable runtime analytics.
+      ANALYTICS_LOKI_URL: ${ANALYTICS_LOKI_URL:-}
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
-      - /opt/nginx-proxy/conf.d:/nginx-conf
+      - ${NGINX_PROXY_DIR:-/opt/nginx-proxy}/conf.d:/nginx-conf
       # Shared auth page dir: WriteAuthPage() writes auth.html here on startup
       # (PROXY_HTML_DIR), and nginx-proxy serves it from the same host dir at
       # /var/www/html. Without this mount the page is written inside the
       # container only and never reaches the proxy.
-      - /opt/nginx-proxy/html:/opt/nginx-proxy/html
+      - ${NGINX_PROXY_DIR:-/opt/nginx-proxy}/html:${NGINX_PROXY_DIR:-/opt/nginx-proxy}/html
       - deployik_data:/data
-      - /opt/backups/deployik:/backups
+      - ${BACKUPS_DIR:-/opt/backups/deployik}:/backups
       - /tmp/deployik-builds:/tmp/deployik-builds
     networks:
       - proxy
-      - monitoring-internal
     healthcheck:
       test: ['CMD-SHELL', 'wget -q --spider http://localhost:8080/api/health || exit 1']
       interval: 30s
@@ -77,7 +85,7 @@ volumes:
   deployik_data:
 
 networks:
+  # Shared with the nginx-proxy container. Create it once with
+  # `docker network create proxy` (scripts/bootstrap.sh does this for you).
   proxy:
-    external: true
-  monitoring-internal:
     external: true
