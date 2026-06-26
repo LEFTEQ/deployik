@@ -85,11 +85,11 @@ jobs:
   deploy-vps:
     needs: build-and-push
     runs-on: ubuntu-latest
-    # Only the upstream repo deploys to its VPS. Forks build + push their own
-    # image but skip this job (it would SSH to infrastructure they don't own).
-    # Configure DEPLOY_HOST/DEPLOY_USER/REMOTE_APP_DIR + the VPS_DEPLOY_SSH_KEY
-    # secret and change this owner check to run your own self-host deploy.
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && github.repository_owner == 'lefteq'
+    # Only the private upstream repo (which holds the VPS_DEPLOY_SSH_KEY secret +
+    # DEPLOY_HOST variable) deploys. Forks and the public mirror build + push their
+    # own image but skip this job. To run your own self-host deploy, set the secret
+    # + DEPLOY_HOST variable and change this condition to your repository.
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && github.repository == 'LEFTEQ/lovinka-deployik'
 
     steps:
       - uses: actions/checkout@v4
