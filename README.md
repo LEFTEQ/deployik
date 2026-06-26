@@ -21,6 +21,16 @@ lock-in, no per-seat pricing, no handing your source to a third party.
 A lightweight, single-binary alternative to Vercel/Netlify that runs on one VPS and keeps
 your code, your secrets, and your domains entirely under your control.
 
+![Deployik — projects dashboard](docs/screenshots/dashboard.png)
+
+## Screenshots
+
+| Project overview | Deployment history |
+|:---:|:---:|
+| ![Project overview — dual preview/production environments, domains, recent deploys](docs/screenshots/project-overview.png) | ![Deployment history with status, duration, and logs](docs/screenshots/deployments.png) |
+| **Real-time build logs** | **Custom domains & automatic SSL** |
+| ![Streaming build logs with the full deploy lifecycle](docs/screenshots/build-logs.png) | ![Domain inventory with DNS verification and SSL status](docs/screenshots/domains.png) |
+
 ## Features
 
 - **GitHub Integration** -- Import repos, select branches, deploy with one click
