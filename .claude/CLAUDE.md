@@ -25,7 +25,7 @@ Self-hosted Vercel alternative for the Lovinka VPS. Deploys Next.js and static w
 | Build production | `make build` |
 | Docker build | `make docker-build` |
 | Manual deploy | `./scripts/deploy.sh [tag]` |
-| Production DB backup | `ssh deploy@203.0.113.10 "/opt/scripts/deployik-backup.sh backup"` |
+| Production DB backup | `ssh deploy@<your-vps-ip> "/opt/scripts/deployik-backup.sh backup"` |
 
 ## Project Structure
 
@@ -469,7 +469,7 @@ After a successful deployment, the pipeline asynchronously captures a screenshot
 ### Production Health-Check Monitoring
 
 Deployik does not poll deployed apps after a deploy. External uptime monitoring is
-driven from the separate **devops VPS** (`203.0.113.11`), not the lovinka-vps, so a
+driven from the separate **devops VPS** (`<your-monitoring-host>`), not the lovinka-vps, so a
 total lovinka-vps/nginx outage is still detectable. Deployik's only role is target
 discovery:
 
@@ -478,13 +478,13 @@ discovery:
    `http_sd` document of one target per active project — its primary SSL-active
    **production** domain. Token-gated by `MONITORING_TOKEN`; system-scoped (not per-user)
    so it spans every project.
-2. The devops Prometheus (`devops-infra/apps/monitoring/`) uses `http_sd_configs`
+2. The devops Prometheus (`<your-monitoring-stack>/apps/monitoring/`) uses `http_sd_configs`
    against that endpoint and blackbox-probes each URL with a `http_app_up` module that
    treats `200/204/3xx/401/403` as UP and `5xx`/connection failure/timeout as DOWN (so a
    crashed container → nginx 502 → alert, while password-protected 401s stay UP).
 3. Alert rules (`alerts/deployik.yml`) fire `DeployikProdAppDown` (critical, 3m),
    `DeployikProdSlow`, `DeployikProdCertExpiringSoon`, `DeployikProbeAbsent` →
-   Alertmanager catch-all → `monitoring-bot` Telegram. New production apps are
+   Alertmanager catch-all → `<your-alert-channel>` Telegram. New production apps are
    monitored automatically once their domain goes SSL-active; no manual prometheus.yml edits.
    The `health_path`/`protected` labels are emitted now for a future strict-200 health
    probe of protected sites.
@@ -540,7 +540,7 @@ Build-time env vars (`NEXT_PUBLIC_*`) are injected as `ENV` lines in the builder
 
 ### Domain Management
 
-- **Auto domains:** Created on project creation (`{name}.preview.example.com`), cannot be deleted
+- **Auto domains:** Created on project creation (`{name}.preview.<base-domain>`), cannot be deleted
 - **Custom domains:** User adds domain, must verify DNS (A record pointing to VPS IP), then SSL is provisioned
 - **SSL provisioning:** Runs certbot in a Docker container with bind-mounted cert/html dirs (`--keep-until-expiring` for idempotency)
 - **Nginx config:** Generated from Go template, written to shared conf.d directory, nginx tested (`-t`) then reloaded (`-s reload`). Supports password protection blocks (`auth_request` + auth page).
@@ -617,6 +617,7 @@ Production runs via `docker/docker-compose.yml` with:
 | `ENCRYPTION_KEY` | Derives AES-256-GCM key for encrypting env vars, secrets, GitHub tokens, webhook secrets, passwords |
 | `GITHUB_CLIENT_ID` | GitHub OAuth App client ID |
 | `GITHUB_CLIENT_SECRET` | GitHub OAuth App client secret |
+| `BASE_DOMAIN` | Base domain for auto preview domains (`*.preview.<BASE_DOMAIN>`). Required outside `DEV_MODE`; or set `PREVIEW_DOMAIN_SUFFIX` to override the full suffix. Read once at startup into `db.PreviewDomainSuffix` |
 
 ### Optional
 
@@ -635,7 +636,7 @@ Production runs via `docker/docker-compose.yml` with:
 | `PROXY_HTML_DIR` | `/opt/nginx-proxy/html` | Host path for ACME challenges |
 | `SSL_EMAIL` | `admin@example.com` | Let's Encrypt registration email |
 | `BUILD_DIR` | `/tmp/deployik-builds` | Temp dir for builds (cleaned after each deploy) |
-| `VPS_HOST` | `203.0.113.10` | Expected IP for DNS verification |
+| `VPS_HOST` | `<your-vps-ip>` | Expected IP for DNS verification |
 | `WEBHOOK_URL` | `{FRONTEND_URL}/api/webhooks/github` | Public URL for GitHub webhook callbacks |
 | `SCREENSHOT_DIR` | `{DATA_DIR}/screenshots` | Directory to store deployment screenshots |
 | `PROXY_TYPE` | `docker` | `docker` (nginx-proxy container on the same Docker network, containers reachable by name) or `host-port` (each deployed container binds to a random localhost port; the host proxy reaches it via `127.0.0.1:<port>`) |

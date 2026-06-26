@@ -37,7 +37,7 @@ Every recipe ends with a friendly "stuck on a step?" line. If the user uses it, 
    - **Branch** — usually `main` or `master`.
    - **Framework** — auto-detected. If wrong, change it; install/build/output reset to that framework's defaults.
    - **Group** — choose the dashboard group/tab this project should live in.
-6. Click **Create project**. Deployik creates the auto-domain `{project-name}.preview.example.com`, sets up the GitHub webhook for auto-deploy, and starts the first preview deployment.
+6. Click **Create project**. Deployik creates the auto-domain `{project-name}.preview.<your-domain>`, sets up the GitHub webhook for auto-deploy, and starts the first preview deployment.
 7. The page navigates to the project Overview. The **Preview** strip shows the deployment progressing through queued → building → live.
 
 **Gotcha:** the GitHub OAuth scope must include `admin:repo_hook` for the webhook step to work. If you signed in before that scope was added, sign out and back in.

@@ -105,8 +105,8 @@ group's id as `group_id` (the API still accepts the legacy field name
 ```json
 {
   "name": "fleet",
-  "github_repo": "QTTa",
-  "github_owner": "LEFTEQ",
+  "github_repo": "my-app",
+  "github_owner": "your-org",
   "branch": "main",
   "framework": "static",
   "package_manager": "auto",
@@ -124,7 +124,7 @@ group's id as `group_id` (the API still accepts the legacy field name
 **Invocation:**
 
 ```
-deployik api POST /api/projects '{"name":"fleet","github_repo":"QTTa","github_owner":"LEFTEQ","branch":"main","framework":"static","package_manager":"auto","root_directory":"apps/fleet","output_directory":"","build_command":"","install_command":"","node_version":"22","port":8080,"data_volume_enabled":true,"data_mount_path":"/data"}'
+deployik api POST /api/projects '{"name":"fleet","github_repo":"my-app","github_owner":"your-org","branch":"main","framework":"static","package_manager":"auto","root_directory":"apps/fleet","output_directory":"","build_command":"","install_command":"","node_version":"22","port":8080,"data_volume_enabled":true,"data_mount_path":"/data"}'
 ```
 
 **When the repo inspector misses the app:** Dockerfile-only or Go-only folders may not appear in the JS-oriented repo inspector because they have no `package.json`. That is not evidence Deployik cannot run them. If the user knows the folder, create the project directly with `root_directory` and `framework: "static"`.

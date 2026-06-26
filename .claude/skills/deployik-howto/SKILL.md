@@ -35,7 +35,7 @@ If a sub-step happens outside Deployik (a registrar's DNS panel, the Google reCA
 ## When NOT to use
 
 - Questions about Deployik's source code, build pipeline internals, or how a Go handler/React page is implemented. Those are not dashboard tasks.
-- Self-hosting / VPS / nginx / SSL provider questions — those belong to the infra-repo repo and a different audience.
+- Self-hosting / VPS / nginx / SSL provider questions — those are infrastructure/hosting questions for a different audience.
 
 ## How to choose the mode
 
